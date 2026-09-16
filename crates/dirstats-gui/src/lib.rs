@@ -34,6 +34,50 @@ struct Gui {
     style: Style,
     /// Selected node, anywhere under the zoom directory.
     selected: Option<NodeId>,
+    /// User-adjustable column widths; `None` until the font is known.
+    columns: Option<Columns>,
+}
+
+/// Widths of every column in the flat header. The treemap takes whatever is
+/// left between the size and extensions columns.
+#[derive(Clone, Copy, Debug)]
+struct Columns {
+    name: f32,
+    bar: f32,
+    share: f32,
+    size: f32,
+    ext_name: f32,
+    ext_share: f32,
+    ext_size: f32,
+}
+
+impl Columns {
+    const MIN: Columns =
+        Columns { name: 80.0, bar: 24.0, share: 40.0, size: 56.0, ext_name: 60.0, ext_share: 40.0, ext_size: 56.0 };
+    /// Least width the treemap keeps when other columns grow.
+    const MIN_MAP: f32 = 120.0;
+    /// Width of the draggable divider between columns.
+    const DIVIDER: f32 = 6.0;
+
+    fn initial(window: f32, mono_char: f32) -> Self {
+        Self {
+            name: (window * 0.22).clamp(160.0, 420.0),
+            bar: 60.0,
+            share: mono_char * 6.0,
+            size: mono_char * 10.0,
+            ext_name: 140.0,
+            ext_share: mono_char * 6.0,
+            ext_size: mono_char * 10.0,
+        }
+    }
+
+    fn tree_width(&self) -> f32 {
+        self.name + self.bar + self.share + self.size
+    }
+
+    fn extensions_width(&self) -> f32 {
+        self.ext_name + self.ext_share + self.ext_size
+    }
 }
 
 impl Gui {
@@ -47,6 +91,7 @@ impl Gui {
             texture: None,
             style: Style::Squarified,
             selected: None,
+            columns: None,
         }
     }
 
@@ -115,26 +160,127 @@ impl eframe::App for Gui {
             self.zoom(id);
         }
 
-        egui::TopBottomPanel::top("header").show(ctx, |ui| self.header(ui));
+        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| self.header(ui));
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| self.footer(ui));
-        // Panel widths follow the window and the font rather than fixed pixels.
-        let window = ctx.content_rect().width();
+        // Keep the panel's background fill but no margin, so the columns run edge to edge.
+        let frame = egui::Frame::central_panel(&ctx.style()).inner_margin(0.0);
+        egui::CentralPanel::default().frame(frame).show(ctx, |ui| self.body(ui));
+    }
+}
+
+impl Gui {
+    /// One flat header across the window, then the tree, treemap and
+    /// extensions laid out under their columns.
+    fn body(&mut self, ui: &mut egui::Ui) {
         // Resolve the font before taking the fonts lock: touching the style
         // inside that closure deadlocks the context.
-        let mono_font = egui::TextStyle::Monospace.resolve(&ctx.style());
-        let mono_char = ctx.fonts_mut(|f| f.glyph_width(&mono_font, '0'));
-        let spacing = ctx.style().spacing.item_spacing.x;
-        // Figures are "100.0%  999.9 GiB" (18 monospace chars) plus swatch and gaps.
-        let legend_fixed = mono_char * 18.0 + 14.0 + spacing * 4.0 + 16.0;
-        egui::SidePanel::left("entries")
-            .default_width((window * 0.32).clamp(280.0, 600.0))
-            .min_width(240.0)
-            .show(ctx, |ui| self.entry_list(ui));
-        egui::SidePanel::right("extensions")
-            .default_width(legend_fixed + 120.0)
-            .min_width(legend_fixed + 40.0)
-            .show(ctx, |ui| self.legend(ui));
-        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| self.treemap(ui));
+        let mono_font = egui::TextStyle::Monospace.resolve(ui.style());
+        let mono_char = ui.fonts_mut(|f| f.glyph_width(&mono_font, '0'));
+        let full = ui.available_rect_before_wrap();
+        let mut columns = *self.columns.get_or_insert_with(|| Columns::initial(full.width(), mono_char));
+        let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
+
+        // Header strip with titles and draggable dividers.
+        let header = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), row_height + 4.0));
+        ui.painter().rect_filled(header, 0.0, ui.visuals().faint_bg_color);
+        let total_fixed = columns.tree_width() + columns.extensions_width();
+        let map_width = (full.width() - total_fixed).max(Columns::MIN_MAP);
+        let widths = [
+            columns.name,
+            columns.bar,
+            columns.share,
+            columns.size,
+            map_width,
+            columns.ext_name,
+            columns.ext_share,
+            columns.ext_size,
+        ];
+        let titles = ["Name", "", "%", "Size", "Treemap", "Extension", "%", "Size"];
+        let right_aligned = [false, false, true, true, false, false, true, true];
+        let mut x = full.min.x;
+        let mut starts = [0.0; 8];
+        for (i, &w) in widths.iter().enumerate() {
+            starts[i] = x;
+            let cell = egui::Rect::from_min_size(egui::pos2(x, header.min.y), egui::vec2(w, header.height()));
+            let layout = if right_aligned[i] {
+                egui::Layout::right_to_left(egui::Align::Center)
+            } else {
+                egui::Layout::left_to_right(egui::Align::Center)
+            };
+            ui.scope_builder(egui::UiBuilder::new().max_rect(cell.shrink2(egui::vec2(6.0, 0.0))).layout(layout), |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(titles[i]).strong()).truncate());
+            });
+            x += w;
+            // Divider at the right edge of every column but the last.
+            if i + 1 < widths.len() {
+                let grip = egui::Rect::from_center_size(egui::pos2(x, header.center().y), egui::vec2(Columns::DIVIDER, header.height()));
+                let response = ui.interact(grip, ui.id().with(("divider", i)), Sense::drag());
+                if response.hovered() || response.dragged() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                }
+                let stroke = if response.dragged() { ui.visuals().selection.stroke } else { ui.visuals().widgets.noninteractive.bg_stroke };
+                // Guide lines run the full height only between regions; inside
+                // the file list the header tick is enough.
+                let range = if i == 3 || i == 4 { full.y_range() } else { header.y_range() };
+                ui.painter().vline(x, range, stroke);
+                let delta = response.drag_delta().x;
+                if delta != 0.0 {
+                    let min = Columns::MIN;
+                    // Each divider resizes the column to its left; the treemap
+                    // absorbs the difference. The treemap's own right edge
+                    // resizes the extension column the other way.
+                    let (col, min_w, sign) = match i {
+                        0 => (&mut columns.name, min.name, 1.0),
+                        1 => (&mut columns.bar, min.bar, 1.0),
+                        2 => (&mut columns.share, min.share, 1.0),
+                        3 => (&mut columns.size, min.size, 1.0),
+                        4 => (&mut columns.ext_name, min.ext_name, -1.0),
+                        5 => (&mut columns.ext_name, min.ext_name, 1.0),
+                        _ => (&mut columns.ext_share, min.ext_share, 1.0),
+                    };
+                    *col = (*col + sign * delta).max(min_w);
+                    // Keep the treemap from being squeezed out.
+                    let overflow = columns.tree_width() + columns.extensions_width() + Columns::MIN_MAP - full.width();
+                    if overflow > 0.0 {
+                        let col = match i {
+                            0 => &mut columns.name,
+                            1 => &mut columns.bar,
+                            2 => &mut columns.share,
+                            3 => &mut columns.size,
+                            4 | 5 => &mut columns.ext_name,
+                            _ => &mut columns.ext_share,
+                        };
+                        *col -= overflow;
+                    }
+                }
+            }
+        }
+        self.columns = Some(columns);
+
+        // Body regions under the header.
+        let body = egui::Rect::from_min_max(egui::pos2(full.min.x, header.max.y + 1.0), full.max);
+        let region = |from: usize, to: usize| {
+            let x0 = starts[from];
+            let x1 = if to + 1 < starts.len() { starts[to + 1] } else { full.max.x };
+            egui::Rect::from_min_max(egui::pos2(x0, body.min.y), egui::pos2(x1, body.max.y))
+        };
+        let tree_rect = region(0, 3);
+        let map_rect = region(4, 4);
+        let ext_rect = region(5, 7);
+
+        let mut tree_ui = ui.new_child(egui::UiBuilder::new().max_rect(tree_rect).id_salt("tree"));
+        tree_ui.set_clip_rect(tree_rect);
+        let tree_columns = [starts[0], starts[1], starts[2], starts[3], starts[4]];
+        self.entry_list(&mut tree_ui, tree_columns, row_height);
+
+        let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(map_rect).id_salt("map"));
+        map_ui.set_clip_rect(map_rect);
+        self.treemap(&mut map_ui);
+
+        let mut ext_ui = ui.new_child(egui::UiBuilder::new().max_rect(ext_rect).id_salt("extensions"));
+        ext_ui.set_clip_rect(ext_rect);
+        let ext_edges = [starts[5], starts[6], starts[7], full.max.x];
+        self.legend(&mut ext_ui, ext_edges, row_height);
     }
 }
 
@@ -204,66 +350,62 @@ impl Gui {
         });
     }
 
-    /// Extensions ranked by total size with their swatches, largest first.
-    fn legend(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Extensions");
+    /// Extensions ranked by total size, largest first, in cells aligned to
+    /// the header: swatch and name, share, size.
+    fn legend(&mut self, ui: &mut egui::Ui, edges: [f32; 4], row_height: f32) {
         let Some(colors) = &self.colors else {
             ui.label("waiting for scan…");
             return;
         };
         let total: u64 = colors.entries().iter().map(|(_, size, _)| size).sum();
-        let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
         let entries = colors.entries();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_height, entries.len(), |ui, range| {
+        let pad = 6.0;
+        let mono = egui::TextStyle::Monospace.resolve(ui.style());
+        egui::ScrollArea::vertical().id_salt("legend").auto_shrink([false, false]).show_rows(ui, row_height, entries.len(), |ui, range| {
             for (ext, size, color) in &entries[range] {
-                ui.horizontal(|ui| {
-                    let [r, g, b] = color.to_srgb();
-                    let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
-                    ui.painter().rect_filled(rect, 3.0, Color32::from_rgb(r, g, b));
-                    let full = ext.as_deref().map_or("(none)".to_string(), |e| format!(".{e}"));
-                    // Right-to-left: the figures take their width first and the
-                    // label gets whatever is left, ending in an ellipsis if cut.
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.monospace(format!("{:>5.1}%  {:>9}", format::percent(*size, total), format::size(*size)));
-                        ui.add(egui::Label::new(&full).truncate()).on_hover_text(&full);
-                    });
-                });
+                let (row_rect, row) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::hover());
+                if row.hovered() {
+                    ui.painter().rect_filled(row_rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+                }
+                let text = ui.visuals().text_color();
+                let (top, bottom) = (row_rect.min.y, row_rect.max.y);
+                let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
+
+                let name_cell = cell(edges[0], edges[1]);
+                let [r, g, b] = color.to_srgb();
+                let swatch = egui::Rect::from_center_size(egui::pos2(name_cell.min.x + pad + 7.0, name_cell.center().y), egui::vec2(14.0, 14.0));
+                ui.painter().with_clip_rect(name_cell).rect_filled(swatch, 3.0, Color32::from_rgb(r, g, b));
+                let full = ext.as_deref().map_or("(none)".to_string(), |e| format!(".{e}"));
+                let label_rect = egui::Rect::from_min_max(egui::pos2(swatch.max.x + pad, top), egui::pos2(name_cell.max.x - pad, bottom));
+                if label_rect.width() > 4.0 {
+                    let mut name_ui = ui.new_child(egui::UiBuilder::new().max_rect(label_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                    name_ui.set_clip_rect(label_rect.intersect(ui.clip_rect()));
+                    name_ui.add(egui::Label::new(&full).truncate().selectable(false)).on_hover_text(&full);
+                }
+                for (from, to, value) in [
+                    (edges[1], edges[2], format!("{:.1}", format::percent(*size, total))),
+                    (edges[2], edges[3], format::size(*size)),
+                ] {
+                    let c = cell(from, to);
+                    ui.painter().with_clip_rect(c).text(egui::pos2(c.max.x - pad, c.center().y), egui::Align2::RIGHT_CENTER, value, mono.clone(), text);
+                }
             }
         });
     }
 
-    fn entry_list(&mut self, ui: &mut egui::Ui) {
+    /// Rows of the tree. `edges` are the absolute x positions of the name,
+    /// bar, share and size columns and the right edge of size, straight from
+    /// the header, so cells always line up with it.
+    fn entry_list(&mut self, ui: &mut egui::Ui, edges: [f32; 5], row_height: f32) {
         let Some(tree) = &self.app.tree else {
             ui.label("waiting for scan…");
             return;
         };
         let rows = self.app.tree_rows();
         let selected = self.selected;
-        let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
         let indent = 16.0;
+        let pad = 6.0;
         let mono = egui::TextStyle::Monospace.resolve(ui.style());
-        let mono_char = ui.fonts_mut(|f| f.glyph_width(&mono, '0'));
-        // Fixed columns, right to left: size (9 chars), share (6 chars), bar.
-        let size_w = mono_char * 9.0;
-        let share_w = mono_char * 6.0;
-        let bar_w = 60.0;
-        let spacing = ui.spacing().item_spacing.x;
-
-        // Header.
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                for (w, title) in [(size_w, "Size"), (share_w, "%")] {
-                    ui.allocate_ui_with_layout(egui::vec2(w, row_height), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.strong(title);
-                    });
-                }
-                ui.add_space(bar_w);
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.strong("Name");
-                });
-            });
-        });
-        ui.separator();
 
         let mut select = None;
         let mut toggle = None;
@@ -284,19 +426,22 @@ impl Gui {
                     ui.painter().rect_filled(row_rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
                 }
                 let text = if is_selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+                let (top, bottom) = (row_rect.min.y, row_rect.max.y);
+                let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
 
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-                child.add_space(indent * depth as f32);
-                let arrow = if !is_dir {
-                    " "
-                } else if self.app.expanded.contains(&id) {
-                    "▾"
-                } else {
-                    "▸"
-                };
-                let expander = child.add_sized([14.0, row_height], egui::Label::new(egui::RichText::new(arrow).color(text)).sense(Sense::click()));
-                if is_dir && expander.clicked() {
-                    toggle = Some(id);
+                // Name column: indent, expander, then a truncating label clipped to the column.
+                let name_cell = cell(edges[0], edges[1]);
+                let expander_rect = egui::Rect::from_min_size(
+                    egui::pos2(edges[0] + pad + indent * depth as f32, top),
+                    egui::vec2(14.0, row_height),
+                );
+                if is_dir {
+                    let arrow = if self.app.expanded.contains(&id) { "▾" } else { "▸" };
+                    let response = ui.interact(expander_rect, ui.id().with(("expander", id)), Sense::click());
+                    ui.painter().with_clip_rect(name_cell).text(expander_rect.center(), egui::Align2::CENTER_CENTER, arrow, egui::TextStyle::Body.resolve(ui.style()), text);
+                    if response.clicked() {
+                        toggle = Some(id);
+                    }
                 }
                 let mut name = node.name.to_string_lossy().into_owned();
                 if is_dir {
@@ -305,24 +450,31 @@ impl Gui {
                 if node.error {
                     name.push_str("  !");
                 }
-                let fixed = size_w + share_w + bar_w + spacing * 3.0;
-                let name_w = (child.available_width() - fixed).max(20.0);
-                child.allocate_ui_with_layout(
-                    egui::vec2(name_w, row_height),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| ui.add(egui::Label::new(egui::RichText::new(name).color(text)).truncate()),
-                );
+                let label_rect = egui::Rect::from_min_max(egui::pos2(expander_rect.max.x + 2.0, top), egui::pos2(name_cell.max.x - pad, bottom));
+                if label_rect.width() > 4.0 {
+                    let mut name_ui = ui.new_child(egui::UiBuilder::new().max_rect(label_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                    name_ui.set_clip_rect(label_rect.intersect(ui.clip_rect()));
+                    name_ui.add(egui::Label::new(egui::RichText::new(name).color(text)).truncate().selectable(false));
+                }
 
-                let (bar, _) = child.allocate_exact_size(egui::vec2(bar_w, row_height - 10.0), Sense::hover());
-                child.painter().rect_filled(bar, 2.0, child.visuals().faint_bg_color);
-                let mut filled = bar;
-                filled.set_width(bar.width() * (share / 100.0) as f32);
-                child.painter().rect_filled(filled, 2.0, child.visuals().weak_text_color());
-                for (w, value) in [(share_w, format!("{share:.1}")), (size_w, format::size(size))] {
-                    child.allocate_ui_with_layout(
-                        egui::vec2(w, row_height),
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| ui.label(egui::RichText::new(value).monospace().color(text)),
+                // Bar column.
+                let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
+                if bar.width() > 0.0 {
+                    ui.painter().rect_filled(bar, 2.0, ui.visuals().faint_bg_color);
+                    let mut filled = bar;
+                    filled.set_width(bar.width() * (share / 100.0) as f32);
+                    ui.painter().rect_filled(filled, 2.0, ui.visuals().weak_text_color());
+                }
+
+                // Share and size: right-aligned monospace, clipped to their cells.
+                for (from, to, value) in [(edges[2], edges[3], format!("{share:.1}")), (edges[3], edges[4], format::size(size))] {
+                    let c = cell(from, to);
+                    ui.painter().with_clip_rect(c).text(
+                        egui::pos2(c.max.x - pad, c.center().y),
+                        egui::Align2::RIGHT_CENTER,
+                        value,
+                        mono.clone(),
+                        text,
                     );
                 }
 
