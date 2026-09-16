@@ -41,6 +41,10 @@ pub struct App {
     pub options: ScanOptions,
     /// One-line status for the front end to show, cleared on the next action.
     pub message: Option<String>,
+    /// Node under the pointer, for front ends with one.
+    pub hovered: Option<NodeId>,
+    /// Root of the last scan, for [`App::rescan`].
+    last_root: Option<PathBuf>,
 }
 
 impl App {
@@ -52,7 +56,16 @@ impl App {
     /// Start scanning `root` on a worker thread, cancelling any running scan.
     pub fn start_scan(&mut self, root: impl Into<PathBuf>) {
         self.cancel_scan();
-        self.scan = Some(RunningScan::spawn(root.into(), self.options.clone()));
+        let root = root.into();
+        self.last_root = Some(root.clone());
+        self.scan = Some(RunningScan::spawn(root, self.options.clone()));
+    }
+
+    /// Scan the last root again with the current options.
+    pub fn rescan(&mut self) {
+        if let Some(root) = self.last_root.clone() {
+            self.start_scan(root);
+        }
     }
 
     pub fn cancel_scan(&mut self) {
@@ -84,7 +97,41 @@ impl App {
 
     pub fn set_tree(&mut self, tree: Tree) {
         self.cursor = Some(Cursor { dir: tree.root(), selected: 0, history: Vec::new() });
+        self.hovered = None;
         self.tree = Some(tree);
+    }
+
+    /// Current directory node.
+    #[must_use]
+    pub fn dir(&self) -> Option<NodeId> {
+        self.cursor.as_ref().map(|c| c.dir)
+    }
+
+    /// Make `dir` the current directory, remembering the way back. Any node
+    /// with children is accepted, so a treemap can zoom straight into a deep folder.
+    pub fn zoom_to(&mut self, dir: NodeId) -> bool {
+        let Some(tree) = &self.tree else { return false };
+        if tree.children(dir).is_empty() {
+            return false;
+        }
+        let Some(cursor) = &mut self.cursor else { return false };
+        if cursor.dir == dir {
+            return false;
+        }
+        cursor.history.push((cursor.dir, cursor.selected));
+        cursor.dir = dir;
+        cursor.selected = 0;
+        true
+    }
+
+    /// Select `id` wherever it is: zoom to its parent, then pick it.
+    pub fn reveal(&mut self, id: NodeId) -> bool {
+        let Some(tree) = &self.tree else { return false };
+        let Some(parent) = tree.node(id).parent else { return false };
+        if self.dir() != Some(parent) {
+            self.zoom_to(parent);
+        }
+        self.select(id)
     }
 
     #[must_use]
@@ -234,5 +281,18 @@ mod tests {
         app.move_selection(5);
         assert_eq!(app.cursor.as_ref().unwrap().selected, 1);
         assert!(!app.back());
+    }
+
+    #[test]
+    fn zooms_and_reveals_deep_nodes() {
+        let mut app = app_with_scan();
+        let tree = app.tree.as_ref().unwrap();
+        let sub = tree.children(tree.root())[0];
+        let big = tree.children(sub)[0];
+        assert!(app.reveal(big));
+        assert_eq!(app.dir(), Some(sub));
+        assert_eq!(app.selected(), Some(big));
+        assert!(app.back());
+        assert_eq!(app.dir(), Some(app.tree.as_ref().unwrap().root()));
     }
 }

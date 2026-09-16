@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license = "GPL-3.0-or-later"
-description = "Graphical front end for dirstats"
+description = "Graphical front end for dirstats (egui)"
 
 [features]
 default = []

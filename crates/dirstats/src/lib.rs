@@ -14,6 +14,8 @@ pub use dirstats_scan as scan;
 pub use dirstats_treemap as treemap;
 #[cfg(feature = "tui")]
 pub use dirstats_tui as tui;
+#[cfg(feature = "gui")]
+pub use dirstats_gui as gui;
 
 use clap::{Parser, ValueEnum};
 use dirstats_scan::{ScanOptions, SizeMetric};
@@ -74,6 +76,10 @@ pub struct Cli {
     /// Print the largest entries instead of opening an interface.
     #[arg(long)]
     pub summary: bool,
+    /// Open the graphical interface instead of the terminal one.
+    #[cfg(feature = "gui")]
+    #[arg(long)]
+    pub gui: bool,
     /// Write a cushion treemap PNG to this file and exit.
     #[cfg(feature = "png")]
     #[arg(long, value_name = "FILE")]
@@ -148,6 +154,15 @@ pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::er
     encoder.set_depth(png::BitDepth::Eight);
     encoder.write_header()?.write_image_data(&map.pixels)?;
     println!("wrote {}", out.display());
+    Ok(())
+}
+
+/// Start the graphical interface.
+#[cfg(feature = "gui")]
+pub fn run_gui(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    let mut app = dirstats_app::App::new(cli.scan_options());
+    app.start_scan(&cli.path);
+    dirstats_gui::run(app).map_err(|e| e.to_string())?;
     Ok(())
 }
 

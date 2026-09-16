@@ -20,6 +20,7 @@ trash = { version = "5.2", default-features = false }
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
 dua-core = "4.1"
 png = "0.17"
+rayon = "1.10"
 tempfile = "3"
 # Fast non-cryptographic hasher (Zlib, by Orson Peters).
 foldhash = "0.1"

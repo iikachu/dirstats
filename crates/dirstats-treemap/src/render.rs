@@ -105,18 +105,64 @@ pub struct Treemap {
     pub pixels: Vec<u8>,
     /// Parents precede their descendants.
     pub items: Vec<VisibleItem>,
+    /// Leaf item indices per `GRID_CELL`-pixel cell, row-major.
+    grid: Vec<Vec<u32>>,
+    grid_columns: usize,
 }
 
+/// Size of a hit-test grid cell in pixels (WinDirStat uses the same).
+const GRID_CELL: i32 = 16;
+
 impl Treemap {
+    fn build_grid(&mut self) {
+        let columns = ((self.width as i32 + GRID_CELL - 1) / GRID_CELL).max(1) as usize;
+        let rows = ((self.height as i32 + GRID_CELL - 1) / GRID_CELL).max(1) as usize;
+        let mut grid = vec![Vec::new(); columns * rows];
+        // Only leaves are needed: the deepest item at a point is always a leaf
+        // of the visible tree, and items are recorded parent-first.
+        let mut is_leaf = vec![true; self.items.len()];
+        let mut last_at_depth: Vec<usize> = Vec::new();
+        for (i, item) in self.items.iter().enumerate() {
+            last_at_depth.truncate(item.depth as usize);
+            if let Some(&parent) = last_at_depth.last() {
+                is_leaf[parent] = false;
+            }
+            last_at_depth.push(i);
+        }
+        for (i, item) in self.items.iter().enumerate() {
+            if !is_leaf[i] || item.rect.is_empty() {
+                continue;
+            }
+            let (c0, c1) = (item.rect.left / GRID_CELL, (item.rect.right - 1) / GRID_CELL);
+            let (r0, r1) = (item.rect.top / GRID_CELL, (item.rect.bottom - 1) / GRID_CELL);
+            for r in r0..=r1 {
+                for c in c0..=c1 {
+                    grid[r as usize * columns + c as usize].push(i as u32);
+                }
+            }
+        }
+        self.grid = grid;
+        self.grid_columns = columns;
+    }
+
     /// Deepest visible node at a pixel.
-    // TODO: WinDirStat builds a 16px grid index for this; linear is fine for a draft.
     #[must_use]
     pub fn hit_test(&self, x: i32, y: i32) -> Option<NodeId> {
-        self.items
-            .iter()
+        if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
+            return None;
+        }
+        let cell = &self.grid[(y / GRID_CELL) as usize * self.grid_columns + (x / GRID_CELL) as usize];
+        cell.iter()
+            .map(|&i| &self.items[i as usize])
             .filter(|item| item.rect.contains(x, y))
             .max_by_key(|item| item.depth)
             .map(|item| item.node)
+    }
+
+    /// The visible item for `node`, if it is on screen.
+    #[must_use]
+    pub fn item(&self, node: NodeId) -> Option<&VisibleItem> {
+        self.items.iter().find(|item| item.node == node)
     }
 }
 
@@ -130,6 +176,8 @@ impl Treemap {
 #[derive(Clone, Debug)]
 pub struct ExtensionColors {
     colors: foldhash::HashMap<Option<String>, Oklch>,
+    /// (extension, total bytes, colour), largest first.
+    ranked: Vec<(Option<String>, u64, Oklch)>,
     directory: Oklch,
 }
 
@@ -148,12 +196,21 @@ impl ExtensionColors {
 
         // Golden-angle steps never repeat and keep every prefix well spread.
         const GOLDEN_ANGLE: f64 = 137.507_764_05;
-        let colors = ranked
+        let ranked: Vec<_> = ranked
             .into_iter()
             .enumerate()
-            .map(|(i, (ext, _))| (ext, Oklch::new(PALETTE_LIGHTNESS, PALETTE_CHROMA, (i as f64 * GOLDEN_ANGLE) % 360.0)))
+            .map(|(i, (ext, total))| {
+                (ext, total, Oklch::new(PALETTE_LIGHTNESS, PALETTE_CHROMA, (i as f64 * GOLDEN_ANGLE) % 360.0))
+            })
             .collect();
-        Self { colors, directory: Oklch::grey(PALETTE_LIGHTNESS) }
+        let colors = ranked.iter().map(|(ext, _, color)| (ext.clone(), *color)).collect();
+        Self { colors, ranked, directory: Oklch::grey(PALETTE_LIGHTNESS) }
+    }
+
+    /// Extensions largest first with their total bytes and colour; `None` is "no extension".
+    #[must_use]
+    pub fn entries(&self) -> &[(Option<String>, u64, Oklch)] {
+        &self.ranked
     }
 
     #[must_use]
@@ -266,13 +323,26 @@ pub fn render(
     canvas.finish(items)
 }
 
+/// One leaf to rasterise; collected during layout, drawn afterwards.
+#[derive(Clone, Copy)]
+struct Job {
+    rect: Rect,
+    surface: [f64; 4],
+    color: Oklch,
+    glow: bool,
+}
+
 struct Canvas<'a> {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
     options: &'a TreemapOptions,
     light: [f64; 3],
+    jobs: Vec<Job>,
 }
+
+/// Rows per rasterisation band; each band is drawn independently.
+const BAND_ROWS: i32 = 32;
 
 impl<'a> Canvas<'a> {
     fn new(width: u32, height: u32, options: &'a TreemapOptions) -> Self {
@@ -284,29 +354,67 @@ impl<'a> Canvas<'a> {
             pixels: vec![255; width as usize * height as usize * 4],
             options,
             light: [lx / len, ly / len, lz / len],
+            jobs: Vec::new(),
         }
     }
 
-    fn finish(self, items: Vec<VisibleItem>) -> Treemap {
-        Treemap { width: self.width, height: self.height, pixels: self.pixels, items }
-    }
-
-    fn put(&mut self, x: i32, y: i32, color: Oklch) {
-        self.put_rgb(x, y, color.to_srgb());
-    }
-
-    fn put_rgb(&mut self, x: i32, y: i32, rgb: Rgb) {
-        let i = (y as usize * self.width as usize + x as usize) * 4;
-        self.pixels[i..i + 3].copy_from_slice(&rgb);
+    fn finish(mut self, items: Vec<VisibleItem>) -> Treemap {
+        self.rasterise();
+        let mut map = Treemap {
+            width: self.width,
+            height: self.height,
+            pixels: self.pixels,
+            items,
+            grid: Vec::new(),
+            grid_columns: 1,
+        };
+        map.build_grid();
+        map
     }
 
     fn fill(&mut self, rect: Rect, color: Oklch) {
         let rgb = color.to_srgb();
+        let width = self.width as usize;
         for y in rect.top..rect.bottom {
             for x in rect.left..rect.right {
-                self.put_rgb(x, y, rgb);
+                let i = (y as usize * width + x as usize) * 4;
+                self.pixels[i..i + 3].copy_from_slice(&rgb);
             }
         }
+    }
+
+    /// Draw every collected job, one horizontal band at a time. Bands are
+    /// independent, so with the `parallel` feature they run on all cores.
+    fn rasterise(&mut self) {
+        let (width, height) = (self.width as i32, self.height as i32);
+        if width == 0 || height == 0 || self.jobs.is_empty() {
+            return;
+        }
+        let bands = ((height + BAND_ROWS - 1) / BAND_ROWS) as usize;
+        let mut by_band: Vec<Vec<usize>> = vec![Vec::new(); bands];
+        for (i, job) in self.jobs.iter().enumerate() {
+            let (b0, b1) = (job.rect.top / BAND_ROWS, (job.rect.bottom - 1) / BAND_ROWS);
+            for b in b0..=b1 {
+                by_band[b as usize].push(i);
+            }
+        }
+        let light = self.light;
+        let jobs = &self.jobs;
+        let band_bytes = BAND_ROWS as usize * width as usize * 4;
+        let draw_band = |(band, pixels): (usize, &mut [u8])| {
+            let top = band as i32 * BAND_ROWS;
+            let bottom = (top + BAND_ROWS).min(height);
+            for &i in &by_band[band] {
+                shade_job(&jobs[i], light, width, top, bottom, pixels);
+            }
+        };
+        #[cfg(feature = "parallel")]
+        {
+            use rayon::prelude::*;
+            self.pixels.par_chunks_mut(band_bytes).enumerate().for_each(draw_band);
+        }
+        #[cfg(not(feature = "parallel"))]
+        self.pixels.chunks_mut(band_bytes).enumerate().for_each(draw_band);
     }
 
     fn draw_leaf(&mut self, rect: Rect, surface: &[f64; 4], color: Oklch) {
@@ -316,31 +424,48 @@ impl<'a> Canvas<'a> {
         let options = self.options;
         // The palette supplies hue and chroma; the options set the face lightness.
         let color = color.scale_chroma(options.saturation).with_lightness(options.lightness * color.l / PALETTE_LIGHTNESS);
-        match options.shading {
-            Shading::Glow if options.cushion_shading() => self.draw_cushion(rect, surface, color),
-            _ => self.fill(rect, color),
-        }
+        let glow = options.shading == Shading::Glow && options.cushion_shading();
+        self.jobs.push(Job { rect, surface: *surface, color, glow });
     }
+}
 
-    fn draw_cushion(&mut self, rect: Rect, surface: &[f64; 4], color: Oklch) {
-        let [lx, ly, lz] = self.light;
-        let nx_step = -2.0 * surface[0];
-
-        for y in rect.top..rect.bottom {
-            let ny = -(2.0 * surface[1] * (f64::from(y) + 0.5) + surface[3]);
-            let ny_ly_lz = ny * ly + lz;
-            let ny2_1 = ny * ny + 1.0;
-            let mut nx = -(2.0 * surface[0] * (f64::from(rect.left) + 0.5) + surface[2]);
+/// Shade one job's pixels within the band `top..bottom`; `pixels` is that band.
+fn shade_job(job: &Job, light: [f64; 3], width: i32, top: i32, bottom: i32, pixels: &mut [u8]) {
+    let rect = job.rect;
+    let (y0, y1) = (rect.top.max(top), rect.bottom.min(bottom));
+    if y0 >= y1 {
+        return;
+    }
+    let put = |pixels: &mut [u8], x: i32, y: i32, rgb: Rgb| {
+        let i = ((y - top) as usize * width as usize + x as usize) * 4;
+        pixels[i..i + 3].copy_from_slice(&rgb);
+    };
+    if !job.glow {
+        let rgb = job.color.to_srgb();
+        for y in y0..y1 {
             for x in rect.left..rect.right {
-                let cosa = ((nx * lx + ny_ly_lz) / (nx * nx + ny2_1).sqrt()).clamp(0.0, 1.0);
-                // Lightness moves additively around the face, so hue and chroma
-                // stay put. The diffuse term is eased so light spreads over the
-                // whole box; a broad, weak highlight adds the glow.
-                let lit = cosa * cosa * (3.0 - 2.0 * cosa) - 0.5;
-                let highlight = cosa * cosa * GLOW_HIGHLIGHT;
-                self.put(x, y, color.lighten(GLOW_RANGE * lit + highlight));
-                nx += nx_step;
+                put(pixels, x, y, rgb);
             }
+        }
+        return;
+    }
+    let [lx, ly, lz] = light;
+    let surface = job.surface;
+    let nx_step = -2.0 * surface[0];
+    for y in y0..y1 {
+        let ny = -(2.0 * surface[1] * (f64::from(y) + 0.5) + surface[3]);
+        let ny_ly_lz = ny * ly + lz;
+        let ny2_1 = ny * ny + 1.0;
+        let mut nx = -(2.0 * surface[0] * (f64::from(rect.left) + 0.5) + surface[2]);
+        for x in rect.left..rect.right {
+            let cosa = ((nx * lx + ny_ly_lz) / (nx * nx + ny2_1).sqrt()).clamp(0.0, 1.0);
+            // Lightness moves additively around the face, so hue and chroma
+            // stay put. The diffuse term is eased so light spreads over the
+            // whole box; a broad, weak highlight adds the glow.
+            let lit = cosa * cosa * (3.0 - 2.0 * cosa) - 0.5;
+            let highlight = cosa * cosa * GLOW_HIGHLIGHT;
+            put(pixels, x, y, job.color.lighten(GLOW_RANGE * lit + highlight).to_srgb());
+            nx += nx_step;
         }
     }
 }

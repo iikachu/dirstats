@@ -18,12 +18,12 @@ path = "src/main.rs"
 default = ["tui", "open", "trash"]
 # Terminal front end (ratatui + crossterm).
 tui = ["dep:dirstats-tui"]
-# Graphical front end; reserved, not implemented yet.
-gui = []
+# Graphical front end (egui). Pick it at run time with --gui.
+gui = ["dep:dirstats-gui"]
 # Open the selected entry with the desktop.
-open = ["dirstats-app/open", "dirstats-tui?/open"]
+open = ["dirstats-app/open", "dirstats-tui?/open", "dirstats-gui?/open"]
 # Move-to-trash action.
-trash = ["dirstats-app/trash", "dirstats-tui?/trash"]
+trash = ["dirstats-app/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
 # Write a cushion treemap PNG with `--png`.
 png = ["dep:png"]
 
@@ -32,5 +32,6 @@ dirstats-app.workspace = true
 dirstats-scan.workspace = true
 dirstats-treemap.workspace = true
 dirstats-tui = { workspace = true, optional = true }
+dirstats-gui = { workspace = true, optional = true }
 clap.workspace = true
 png = { workspace = true, optional = true }

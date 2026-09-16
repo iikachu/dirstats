@@ -24,6 +24,12 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     if cli.summary {
         return dirstats::print_summary(cli);
     }
+    // With both front ends built, --gui picks the window; a GUI-only build
+    // always opens it.
+    #[cfg(feature = "gui")]
+    if cli.gui || cfg!(not(feature = "tui")) {
+        return dirstats::run_gui(cli);
+    }
     #[cfg(feature = "tui")]
     {
         dirstats::run_tui(cli)?;

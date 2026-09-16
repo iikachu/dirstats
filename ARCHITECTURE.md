@@ -18,7 +18,7 @@ a front end.
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
 | Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
 | App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash) |
-| Front end | `dirstats-tui`, later `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
+| Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
 
 Rules:
@@ -40,7 +40,7 @@ separate, defaults chosen for the common case.
 [features]
 default = ["tui", "trash"]
 tui   = ["dep:dirstats-tui"]        # ratatui + crossterm front end
-gui   = ["dep:dirstats-gui"]        # later; not built yet
+gui   = ["dep:dirstats-gui"]        # egui window; --gui at run time
 trash = ["dirstats-app/trash"]      # move-to-trash action
 serde = ["dirstats-scan/serde"]     # save/load scans
 ```
@@ -54,8 +54,7 @@ Per-crate features:
   (example output).
 
 `cargo build` gives the TUI binary. `cargo build --no-default-features`
-gives only the library. `cargo build --features gui` adds the GUI once it
-exists.
+gives only the library. `cargo build --features gui` adds the GUI.
 
 ## Platform and filesystem support
 
@@ -78,8 +77,11 @@ the right strategy without per-entry cost.
 
 - TUI (now): ratatui + crossterm, modelled on dua-cli's interactive mode
   plus a cell-based treemap. Keyboard-first, works over SSH.
-- GUI (later): same `dirstats-app` state, pixel treemap from
-  `dirstats-treemap::render`, native file actions.
+- GUI (now): eframe/egui with the same `dirstats-app` state. The pixel
+  treemap from `dirstats-treemap::render` is uploaded as a texture and
+  re-rendered only when the tree, directory, layout or panel size changes.
+  Hover uses the grid hit-test index; click reveals, double-click zooms,
+  right-click opens or trashes.
 
 ## Roadmap
 
@@ -88,7 +90,8 @@ the right strategy without per-entry cost.
 2. Add a CI matrix (macOS, Linux, Windows) so all platform code compiles.
 3. Fill the platform gaps listed above, starting with Windows volume
    boundaries and directory error marking.
-4. Hilbert and Moore layouts; frames, labels, size-ranked extension colours,
-   grid hit-test index, parallel cushions.
-5. Save and load scans; benchmarks against dua, gdu, ncdu.
-6. GUI front end.
+4. Done: size-ranked extension colours, grid hit-test index, parallel
+   rasterisation, GUI front end.
+5. Hilbert and Moore layouts; frames and labels.
+6. Save and load scans; benchmarks against dua, gdu, ncdu.
+7. App bundles and icons.

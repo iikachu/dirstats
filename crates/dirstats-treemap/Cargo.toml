@@ -8,8 +8,14 @@ description = "Treemap layouts and cushion rendering for dirstats trees"
 keywords = ["treemap", "disk-usage", "visualization"]
 categories = ["visualization"]
 
+[features]
+default = ["parallel"]
+# Rasterise treemap bands on all cores.
+parallel = ["dep:rayon"]
+
 [dependencies]
 dirstats-scan.workspace = true
+rayon = { workspace = true, optional = true }
 foldhash.workspace = true
 
 

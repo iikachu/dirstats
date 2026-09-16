@@ -10,17 +10,20 @@ Inventory X behind one layered workspace; see [ARCHITECTURE.md](ARCHITECTURE.md)
 | [`dirstats-treemap`](crates/dirstats-treemap) | Rows/squarified layouts, OKLCH glow rendering, hit testing | GPL-3.0-or-later |
 | [`dirstats-app`](crates/dirstats-app) | Front-end-agnostic state: background scan, navigation, actions | GPL-3.0-or-later |
 | [`dirstats-tui`](crates/dirstats-tui) | Terminal interface (ratatui): entry list and cell treemap | GPL-3.0-or-later |
+| [`dirstats-gui`](crates/dirstats-gui) | Graphical interface (egui): entry list, glow treemap, legend | GPL-3.0-or-later |
 | [`dirstats`](crates/dirstats) | Library + binary; picks a front end by feature flag | GPL-3.0-or-later |
 
 ```sh
 cargo install --path crates/dirstats     # TUI with open and trash actions
 dirstats ~/Downloads                     # interactive
 dirstats --summary ~/Downloads           # print the largest entries
+cargo run -p dirstats --features gui -- --gui ~/Downloads   # window
 cargo run -p dirstats --features png -- --png map.png ~/Downloads   # --shading glow|flat
 ```
 
 Features of the `dirstats` crate: `tui` (default), `open` (default), `trash`
-(default), `png`, and `gui` (reserved). `--no-default-features` builds the
+(default), `png`, and `gui`. With both front ends built, `--gui` opens the
+window; a `gui`-only build always does. `--no-default-features` builds the
 library only.
 
 ## Library use
@@ -47,15 +50,17 @@ Done:
 - Allocated or apparent size, hard links counted once, same-filesystem limit (Unix)
 - Rows and squarified layouts; glow shading in OKLCH; hit testing
 - Terminal front end with background scanning, keyboard navigation, open and trash
+- Graphical front end (egui): hover and click on the treemap, zoom, context
+  menu, extension legend
+- Grid hit-test index and parallel treemap rasterisation
 
 Planned:
 - Hilbert/Moore layouts (from the MIT-licensed HPI prototype)
 - NTFS MFT fast path (WinDirStat `FinderNtfs.cpp`; GPL, so a separate crate)
 - Linux `statx`/`getdents64` fast path
 - APFS clone accounting (`dua-core` `apfs_clone_metadata`)
-- Volume boundaries on Windows, parallel cushion rendering, grid hit-test
-  index, extension colors ranked by size, saving and loading scans
-- GUI front end (feature `gui`), CI across all three platforms
+- Volume boundaries on Windows, saving and loading scans
+- CI across all three platforms, app bundles
 
 ## License
 

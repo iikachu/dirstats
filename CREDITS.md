@@ -43,7 +43,12 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
   - `crates/dirstats-tui`: keyboard model and feature-flag layout follow
     dua-cli's interactive mode.
 
-## ratatui, crossterm, clap, open, trash — runtime dependencies
+## egui / eframe — GUI toolkit
+
+- By Emil Ernerfeldt and contributors, MIT OR Apache-2.0. Used as a
+  dependency of `crates/dirstats-gui`.
+
+## ratatui, crossterm, clap, open, trash, rayon — runtime dependencies
 
 - ratatui (MIT, by the ratatui developers), crossterm (MIT, by Timon and
   contributors), clap (MIT OR Apache-2.0, by the clap developers), open
