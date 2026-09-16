@@ -1,0 +1,17 @@
+[package]
+name = "dirstats-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "Graphical front end for dirstats"
+
+[features]
+default = []
+trash = ["dirstats-app/trash"]
+open = ["dirstats-app/open"]
+
+[dependencies]
+dirstats-app.workspace = true
+dirstats-treemap.workspace = true
+eframe.workspace = true

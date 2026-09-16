@@ -129,7 +129,7 @@ impl Treemap {
 /// size; the hue assignment is ours.
 #[derive(Clone, Debug)]
 pub struct ExtensionColors {
-    colors: std::collections::HashMap<Option<String>, Oklch>,
+    colors: foldhash::HashMap<Option<String>, Oklch>,
     directory: Oklch,
 }
 
@@ -137,7 +137,7 @@ impl ExtensionColors {
     /// Rank every extension in `tree` and assign hues.
     #[must_use]
     pub fn rank(tree: &Tree) -> Self {
-        let mut totals: std::collections::HashMap<Option<String>, u64> = std::collections::HashMap::new();
+        let mut totals: foldhash::HashMap<Option<String>, u64> = foldhash::HashMap::default();
         for (id, node) in tree.nodes() {
             if node.kind != Kind::Directory {
                 *totals.entry(extension_of(node)).or_default() += tree.size(id);

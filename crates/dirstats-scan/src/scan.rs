@@ -13,7 +13,7 @@
 
 use crate::tree::{Kind, Node, NodeId, SizeMetric, Tree};
 use dua_core::{Entry, Order};
-use std::collections::HashSet;
+use foldhash::HashSet;
 use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
@@ -81,7 +81,7 @@ pub fn scan_with(
     let mut tree = Tree::new();
     // Maps dua-core's dense directory ids to tree nodes.
     let mut directory_nodes: Vec<Option<NodeId>> = Vec::new();
-    let mut seen_links = HashSet::new();
+    let mut seen_links = HashSet::default();
 
     while let Some(item) = walk.next_cancellable(cancel) {
         let entry = match item {

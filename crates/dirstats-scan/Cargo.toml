@@ -11,6 +11,7 @@ categories = ["filesystem"]
 [dependencies]
 # Parallel native directory traversal (MIT, by Sebastian Thiel).
 dua-core.workspace = true
+foldhash.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
