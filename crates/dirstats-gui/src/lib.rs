@@ -38,7 +38,7 @@ enum Selection {
 }
 
 /// Period of the highlight pulse.
-const PULSE_SECONDS: f64 = 1.2;
+const PULSE_SECONDS: f64 = 2.4;
 
 /// Chroma multiplier for boxes of the extension hovered in the legend.
 const HIGHLIGHT_CHROMA: f64 = 1.6;
