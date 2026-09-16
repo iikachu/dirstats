@@ -15,6 +15,7 @@ open = ["dep:open"]
 
 [dependencies]
 dirstats-scan.workspace = true
+foldhash.workspace = true
 trash = { workspace = true, optional = true }
 open = { workspace = true, optional = true }
 

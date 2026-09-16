@@ -680,6 +680,7 @@ name = "dirstats-app"
 version = "0.1.0"
 dependencies = [
  "dirstats-scan",
+ "foldhash 0.1.5",
  "open",
  "tempfile",
  "trash",

@@ -32,6 +32,8 @@ struct Gui {
     map_key: Option<(u64, NodeId, u32, u32)>,
     texture: Option<TextureHandle>,
     style: Style,
+    /// Selected node, anywhere under the zoom directory.
+    selected: Option<NodeId>,
 }
 
 impl Gui {
@@ -44,11 +46,13 @@ impl Gui {
             map_key: None,
             texture: None,
             style: Style::Squarified,
+            selected: None,
         }
     }
 
     fn tree_changed(&mut self) {
         self.tree_version += 1;
+        self.selected = None;
         self.colors = self.app.tree.as_ref().map(ExtensionColors::rank);
         self.map = None;
         self.map_key = None;
@@ -75,6 +79,25 @@ impl Gui {
     }
 }
 
+impl Gui {
+    /// Select a node and open the tree down to it, without changing the zoom.
+    fn select(&mut self, id: NodeId) {
+        self.selected = Some(id);
+        self.app.expand_to(id);
+    }
+
+    /// Zoom into `id`, or its parent when it is a file.
+    fn zoom(&mut self, id: NodeId) {
+        let Some(tree) = &self.app.tree else { return };
+        let target = if tree.children(id).is_empty() { tree.node(id).parent } else { Some(id) };
+        if let Some(target) = target
+            && self.app.zoom_to(target)
+        {
+            self.map_key = None;
+        }
+    }
+}
+
 impl eframe::App for Gui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.app.poll() {
@@ -86,13 +109,31 @@ impl eframe::App for Gui {
         if ctx.input(|i| i.key_pressed(Key::Backspace)) && self.app.back() {
             self.map_key = None;
         }
-        if ctx.input(|i| i.key_pressed(Key::Enter)) && self.app.enter() {
-            self.map_key = None;
+        if ctx.input(|i| i.key_pressed(Key::Enter))
+            && let Some(id) = self.selected
+        {
+            self.zoom(id);
         }
 
         egui::TopBottomPanel::top("header").show(ctx, |ui| self.header(ui));
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| self.footer(ui));
-        egui::SidePanel::left("entries").default_width(420.0).show(ctx, |ui| self.entry_list(ui));
+        // Panel widths follow the window and the font rather than fixed pixels.
+        let window = ctx.content_rect().width();
+        // Resolve the font before taking the fonts lock: touching the style
+        // inside that closure deadlocks the context.
+        let mono_font = egui::TextStyle::Monospace.resolve(&ctx.style());
+        let mono_char = ctx.fonts_mut(|f| f.glyph_width(&mono_font, '0'));
+        let spacing = ctx.style().spacing.item_spacing.x;
+        // Figures are "100.0%  999.9 GiB" (18 monospace chars) plus swatch and gaps.
+        let legend_fixed = mono_char * 18.0 + 14.0 + spacing * 4.0 + 16.0;
+        egui::SidePanel::left("entries")
+            .default_width((window * 0.32).clamp(280.0, 600.0))
+            .min_width(240.0)
+            .show(ctx, |ui| self.entry_list(ui));
+        egui::SidePanel::right("extensions")
+            .default_width(legend_fixed + 120.0)
+            .min_width(legend_fixed + 40.0)
+            .show(ctx, |ui| self.legend(ui));
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ctx, |ui| self.treemap(ui));
     }
 }
@@ -149,24 +190,44 @@ impl Gui {
         });
     }
 
+    /// One fixed-height line: the hovered path, or the last message.
     fn footer(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            if let Some(message) = &self.app.message {
-                ui.label(message);
-                ui.separator();
-            }
+        ui.horizontal(|ui| {
+            ui.set_height(ui.text_style_height(&egui::TextStyle::Monospace));
             if let (Some(tree), Some(hovered)) = (&self.app.tree, self.app.hovered) {
-                ui.monospace(format!("{}  {}", format::size(tree.size(hovered)), tree.path(hovered).display()));
-                ui.separator();
+                ui.monospace(format!("{:>10}  {}", format::size(tree.size(hovered)), tree.path(hovered).display()));
+            } else if let Some(message) = &self.app.message {
+                ui.label(message);
+            } else {
+                ui.label(" ");
             }
-            if let Some(colors) = &self.colors {
-                for (ext, total, color) in colors.entries().iter().take(14) {
+        });
+    }
+
+    /// Extensions ranked by total size with their swatches, largest first.
+    fn legend(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Extensions");
+        let Some(colors) = &self.colors else {
+            ui.label("waiting for scan…");
+            return;
+        };
+        let total: u64 = colors.entries().iter().map(|(_, size, _)| size).sum();
+        let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
+        let entries = colors.entries();
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_height, entries.len(), |ui, range| {
+            for (ext, size, color) in &entries[range] {
+                ui.horizontal(|ui| {
                     let [r, g, b] = color.to_srgb();
-                    let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), Sense::hover());
-                    ui.painter().rect_filled(rect, 2.0, Color32::from_rgb(r, g, b));
-                    let label = ext.as_deref().map_or("(none)".to_string(), |e| format!(".{e}"));
-                    ui.label(format!("{label} {}", format::size(*total)));
-                }
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
+                    ui.painter().rect_filled(rect, 3.0, Color32::from_rgb(r, g, b));
+                    let full = ext.as_deref().map_or("(none)".to_string(), |e| format!(".{e}"));
+                    // Right-to-left: the figures take their width first and the
+                    // label gets whatever is left, ending in an ellipsis if cut.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.monospace(format!("{:>5.1}%  {:>9}", format::percent(*size, total), format::size(*size)));
+                        ui.add(egui::Label::new(&full).truncate()).on_hover_text(&full);
+                    });
+                });
             }
         });
     }
@@ -176,56 +237,117 @@ impl Gui {
             ui.label("waiting for scan…");
             return;
         };
-        let Some(dir) = self.app.dir() else { return };
-        let total = tree.size(dir);
-        let entries: Vec<NodeId> = self.app.entries().to_vec();
-        let selected = self.app.selected();
+        let rows = self.app.tree_rows();
+        let selected = self.selected;
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
+        let indent = 16.0;
+        let mono = egui::TextStyle::Monospace.resolve(ui.style());
+        let mono_char = ui.fonts_mut(|f| f.glyph_width(&mono, '0'));
+        // Fixed columns, right to left: size (9 chars), share (6 chars), bar.
+        let size_w = mono_char * 9.0;
+        let share_w = mono_char * 6.0;
+        let bar_w = 60.0;
+        let spacing = ui.spacing().item_spacing.x;
+
+        // Header.
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                for (w, title) in [(size_w, "Size"), (share_w, "%")] {
+                    ui.allocate_ui_with_layout(egui::vec2(w, row_height), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.strong(title);
+                    });
+                }
+                ui.add_space(bar_w);
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.strong("Name");
+                });
+            });
+        });
+        ui.separator();
+
         let mut select = None;
-        let mut enter = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_height, entries.len(), |ui, range| {
-            for &id in &entries[range] {
+        let mut toggle = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_height, rows.len(), |ui, range| {
+            for &(id, depth) in &rows[range] {
                 let node = tree.node(id);
                 let size = tree.size(id);
-                let share = format::percent(size, total);
+                let parent_size = node.parent.map_or(size, |p| tree.size(p));
+                let share = format::percent(size, parent_size);
+                let is_dir = !tree.children(id).is_empty();
+                let is_selected = selected == Some(id);
+
+                // Whole-row background and click target.
+                let (row_rect, row) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::click());
+                if is_selected {
+                    ui.painter().rect_filled(row_rect, 2.0, ui.visuals().selection.bg_fill);
+                } else if row.hovered() {
+                    ui.painter().rect_filled(row_rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+                }
+                let text = if is_selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                child.add_space(indent * depth as f32);
+                let arrow = if !is_dir {
+                    " "
+                } else if self.app.expanded.contains(&id) {
+                    "▾"
+                } else {
+                    "▸"
+                };
+                let expander = child.add_sized([14.0, row_height], egui::Label::new(egui::RichText::new(arrow).color(text)).sense(Sense::click()));
+                if is_dir && expander.clicked() {
+                    toggle = Some(id);
+                }
                 let mut name = node.name.to_string_lossy().into_owned();
-                if !tree.children(id).is_empty() {
+                if is_dir {
                     name.push('/');
                 }
-                let response = ui.horizontal(|ui| {
-                    let is_selected = selected == Some(id);
-                    let response = ui.selectable_label(is_selected, format!("{:>10}", format::size(size)));
-                    let (bar, _) = ui.allocate_exact_size(egui::vec2(80.0, row_height - 8.0), Sense::hover());
-                    ui.painter().rect_filled(bar, 2.0, ui.visuals().faint_bg_color);
-                    let mut filled = bar;
-                    filled.set_width(bar.width() * (share / 100.0) as f32);
-                    ui.painter().rect_filled(filled, 2.0, ui.visuals().selection.bg_fill);
-                    ui.label(format!("{share:>5.1}%"));
-                    ui.label(name);
-                    if node.error {
-                        ui.colored_label(Color32::RED, "!");
-                    }
-                    response
-                });
-                let row = response.response.union(response.inner);
+                if node.error {
+                    name.push_str("  !");
+                }
+                let fixed = size_w + share_w + bar_w + spacing * 3.0;
+                let name_w = (child.available_width() - fixed).max(20.0);
+                child.allocate_ui_with_layout(
+                    egui::vec2(name_w, row_height),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| ui.add(egui::Label::new(egui::RichText::new(name).color(text)).truncate()),
+                );
+
+                let (bar, _) = child.allocate_exact_size(egui::vec2(bar_w, row_height - 10.0), Sense::hover());
+                child.painter().rect_filled(bar, 2.0, child.visuals().faint_bg_color);
+                let mut filled = bar;
+                filled.set_width(bar.width() * (share / 100.0) as f32);
+                child.painter().rect_filled(filled, 2.0, child.visuals().weak_text_color());
+                for (w, value) in [(share_w, format!("{share:.1}")), (size_w, format::size(size))] {
+                    child.allocate_ui_with_layout(
+                        egui::vec2(w, row_height),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| ui.label(egui::RichText::new(value).monospace().color(text)),
+                    );
+                }
+
                 if row.clicked() {
                     select = Some(id);
                 }
                 if row.double_clicked() {
-                    enter = Some(id);
+                    if is_dir {
+                        toggle = Some(id);
+                    }
+                    select = Some(id);
                 }
                 if row.hovered() {
                     self.app.hovered = Some(id);
                 }
+                if is_selected && is_dir && ui.input(|i| i.key_pressed(Key::Space)) {
+                    toggle = Some(id);
+                }
             }
         });
-        if let Some(id) = select {
-            self.app.select(id);
+        if let Some(id) = toggle {
+            self.app.toggle_expanded(id);
         }
-        if let Some(id) = enter
-            && self.app.zoom_to(id)
-        {
-            self.map_key = None;
+        if let Some(id) = select {
+            self.selected = Some(id);
         }
     }
 
@@ -258,7 +380,7 @@ impl Gui {
                 painter.rect_stroke(rect, 0.0, egui::Stroke::new(width, color), egui::StrokeKind::Inside);
             }
         };
-        if let Some(selected) = self.app.selected() {
+        if let Some(selected) = self.selected {
             outline(selected, Color32::WHITE, 2.0);
         }
         if let Some(node) = hovered {
@@ -270,7 +392,7 @@ impl Gui {
             if response.double_clicked() {
                 zoom = Some(node);
             } else if response.clicked() {
-                self.app.reveal(node);
+                self.select(node);
             }
             response.context_menu(|ui| {
                 let path = self.app.path_of(node);
@@ -282,16 +404,16 @@ impl Gui {
                 }
                 #[cfg(feature = "open")]
                 if ui.button("Open").clicked() {
-                    self.app.reveal(node);
-                    if let Err(err) = self.app.open_selected() {
+                    self.select(node);
+                    if let Err(err) = self.app.open_node(node) {
                         self.app.message = Some(format!("open failed: {err}"));
                     }
                     ui.close();
                 }
                 #[cfg(feature = "trash")]
                 if ui.button("Move to trash").clicked() {
-                    self.app.reveal(node);
-                    if let Err(err) = self.app.trash_selected() {
+                    self.select(node);
+                    if let Err(err) = self.app.trash_node(node) {
                         self.app.message = Some(format!("trash failed: {err}"));
                     }
                     ui.close();
@@ -299,17 +421,8 @@ impl Gui {
             });
         }
         if let Some(node) = zoom {
-            // Zoom into the deepest directory containing the clicked leaf.
-            let target = if self.app.tree.as_ref().is_some_and(|t| !t.children(node).is_empty()) {
-                Some(node)
-            } else {
-                self.app.tree.as_ref().and_then(|t| t.node(node).parent)
-            };
-            if let Some(target) = target
-                && self.app.zoom_to(target)
-            {
-                self.map_key = None;
-            }
+            self.zoom(node);
         }
     }
 }
+

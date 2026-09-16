@@ -43,6 +43,8 @@ pub struct App {
     pub message: Option<String>,
     /// Node under the pointer, for front ends with one.
     pub hovered: Option<NodeId>,
+    /// Directories opened in a tree view.
+    pub expanded: foldhash::HashSet<NodeId>,
     /// Root of the last scan, for [`App::rescan`].
     last_root: Option<PathBuf>,
 }
@@ -98,7 +100,47 @@ impl App {
     pub fn set_tree(&mut self, tree: Tree) {
         self.cursor = Some(Cursor { dir: tree.root(), selected: 0, history: Vec::new() });
         self.hovered = None;
+        self.expanded.clear();
         self.tree = Some(tree);
+    }
+
+    /// Open or close a directory in a tree view. Returns the new state.
+    pub fn toggle_expanded(&mut self, id: NodeId) -> bool {
+        if !self.expanded.remove(&id) {
+            self.expanded.insert(id);
+            return true;
+        }
+        false
+    }
+
+    /// Open every directory from the current directory down to `id`'s parent.
+    pub fn expand_to(&mut self, id: NodeId) {
+        let Some(tree) = &self.tree else { return };
+        let stop = self.dir();
+        let mut current = tree.node(id).parent;
+        while let Some(dir) = current {
+            if Some(dir) == stop {
+                break;
+            }
+            self.expanded.insert(dir);
+            current = tree.node(dir).parent;
+        }
+    }
+
+    /// Rows of a tree view rooted at the current directory: each node in
+    /// display order with its depth below the root, following `expanded`.
+    #[must_use]
+    pub fn tree_rows(&self) -> Vec<(NodeId, u32)> {
+        let (Some(tree), Some(dir)) = (&self.tree, self.dir()) else { return Vec::new() };
+        let mut rows = Vec::new();
+        let mut stack: Vec<(NodeId, u32)> = tree.children(dir).iter().rev().map(|&c| (c, 0)).collect();
+        while let Some((id, depth)) = stack.pop() {
+            rows.push((id, depth));
+            if self.expanded.contains(&id) {
+                stack.extend(tree.children(id).iter().rev().map(|&c| (c, depth + 1)));
+            }
+        }
+        rows
     }
 
     /// Current directory node.
@@ -231,7 +273,14 @@ impl App {
     /// Open the selected entry with the desktop's default handler.
     #[cfg(feature = "open")]
     pub fn open_selected(&mut self) -> io::Result<()> {
-        let path = self.selected().and_then(|id| self.path_of(id)).ok_or(io::ErrorKind::NotFound)?;
+        let id = self.selected().ok_or(io::ErrorKind::NotFound)?;
+        self.open_node(id)
+    }
+
+    /// Open `id` with the desktop's default handler.
+    #[cfg(feature = "open")]
+    pub fn open_node(&mut self, id: NodeId) -> io::Result<()> {
+        let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
         open::that_detached(&path)?;
         self.message = Some(format!("opened {}", path.display()));
         Ok(())
@@ -240,7 +289,14 @@ impl App {
     /// Move the selected entry to the trash. The tree is not rescanned.
     #[cfg(feature = "trash")]
     pub fn trash_selected(&mut self) -> io::Result<()> {
-        let path = self.selected().and_then(|id| self.path_of(id)).ok_or(io::ErrorKind::NotFound)?;
+        let id = self.selected().ok_or(io::ErrorKind::NotFound)?;
+        self.trash_node(id)
+    }
+
+    /// Move `id` to the trash. The tree is not rescanned.
+    #[cfg(feature = "trash")]
+    pub fn trash_node(&mut self, id: NodeId) -> io::Result<()> {
+        let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
         trash::delete(&path).map_err(io::Error::other)?;
         self.message = Some(format!("moved to trash: {}", path.display()));
         Ok(())
@@ -281,6 +337,19 @@ mod tests {
         app.move_selection(5);
         assert_eq!(app.cursor.as_ref().unwrap().selected, 1);
         assert!(!app.back());
+    }
+
+    #[test]
+    fn tree_rows_follow_expansion() {
+        let mut app = app_with_scan();
+        assert_eq!(app.tree_rows().len(), 2, "two top-level entries");
+        let sub = app.entries()[0];
+        assert!(app.toggle_expanded(sub));
+        let rows = app.tree_rows();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[1].1, 1, "child of sub is one level deeper");
+        assert!(!app.toggle_expanded(sub));
+        assert_eq!(app.tree_rows().len(), 2);
     }
 
     #[test]
