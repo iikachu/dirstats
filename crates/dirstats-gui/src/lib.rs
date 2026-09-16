@@ -37,6 +37,39 @@ enum Selection {
     Extension(Option<String>),
 }
 
+/// What a node's context menu asked for; applied after the menu closes.
+#[derive(Clone, Copy, Debug)]
+enum NodeAction {
+    Zoom,
+    #[cfg(feature = "open")]
+    Open,
+    #[cfg(feature = "trash")]
+    Trash,
+}
+
+/// Menu items for a node: the same in the tree and the treemap. `is_dir`
+/// decides whether "Zoom in" is offered. Returns the chosen action.
+fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<NodeAction> {
+    let mut action = None;
+    ui.label(egui::RichText::new(path.display().to_string()).weak());
+    ui.separator();
+    if is_dir && ui.button("Zoom in").clicked() {
+        action = Some(NodeAction::Zoom);
+    }
+    #[cfg(feature = "open")]
+    if ui.button("Open").clicked() {
+        action = Some(NodeAction::Open);
+    }
+    #[cfg(feature = "trash")]
+    if ui.button("Move to trash").clicked() {
+        action = Some(NodeAction::Trash);
+    }
+    if action.is_some() {
+        ui.close();
+    }
+    action
+}
+
 /// Period of the highlight pulse.
 const PULSE_SECONDS: f64 = 2.4;
 
@@ -268,6 +301,26 @@ impl Gui {
         self.selection = Some(Selection::Node(id));
         self.app.expand_to(id);
         self.scroll_to = Some(id);
+    }
+
+    /// Carry out a context-menu action on `node`.
+    fn apply(&mut self, node: NodeId, action: NodeAction) {
+        self.select(node);
+        match action {
+            NodeAction::Zoom => self.zoom(node),
+            #[cfg(feature = "open")]
+            NodeAction::Open => {
+                if let Err(err) = self.app.open_node(node) {
+                    self.app.message = Some(format!("open failed: {err}"));
+                }
+            }
+            #[cfg(feature = "trash")]
+            NodeAction::Trash => {
+                if let Err(err) = self.app.trash_node(node) {
+                    self.app.message = Some(format!("trash failed: {err}"));
+                }
+            }
+        }
     }
 
     /// Zoom into `id`, or its parent when it is a file.
@@ -750,6 +803,7 @@ impl Gui {
 
         let mut select = None;
         let mut toggle = None;
+        let mut menu_action: Option<(NodeId, NodeAction)> = None;
         let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if let Some(target) = self.scroll_to.take()
             && let Some(index) = rows.iter().position(|&(id, _)| id == target)
@@ -842,9 +896,15 @@ impl Gui {
                     );
                 }
 
-                if row.clicked() {
+                if row.clicked() || row.secondary_clicked() {
                     select = Some(id);
                 }
+                let path = tree.path(id);
+                row.context_menu(|ui| {
+                    if let Some(action) = node_menu(ui, &path, is_dir) {
+                        menu_action = Some((id, action));
+                    }
+                });
                 if row.double_clicked() {
                     if is_dir {
                         toggle = Some(id);
@@ -868,6 +928,9 @@ impl Gui {
         }
         if let Some(id) = select {
             self.selection = Some(Selection::Node(id));
+        }
+        if let Some((id, action)) = menu_action {
+            self.apply(id, action);
         }
     }
 
@@ -966,39 +1029,19 @@ impl Gui {
             None => {}
         }
 
-        let mut zoom = None;
         if let Some(node) = hovered {
             if response.clicked() {
                 self.select(node);
             }
-            response.context_menu(|ui| {
-                let path = self.app.path_of(node);
-                ui.label(path.as_ref().map_or(String::new(), |p| p.display().to_string()));
-                ui.separator();
-                if ui.button("Zoom in").clicked() {
-                    zoom = Some(node);
-                    ui.close();
-                }
-                #[cfg(feature = "open")]
-                if ui.button("Open").clicked() {
-                    self.select(node);
-                    if let Err(err) = self.app.open_node(node) {
-                        self.app.message = Some(format!("open failed: {err}"));
-                    }
-                    ui.close();
-                }
-                #[cfg(feature = "trash")]
-                if ui.button("Move to trash").clicked() {
-                    self.select(node);
-                    if let Err(err) = self.app.trash_node(node) {
-                        self.app.message = Some(format!("trash failed: {err}"));
-                    }
-                    ui.close();
-                }
-            });
-        }
-        if let Some(node) = zoom {
-            self.zoom(node);
+            let (path, is_dir) = match &self.app.tree {
+                Some(tree) => (tree.path(node), !tree.children(node).is_empty()),
+                None => (std::path::PathBuf::new(), false),
+            };
+            let mut action = None;
+            response.context_menu(|ui| action = node_menu(ui, &path, is_dir));
+            if let Some(action) = action {
+                self.apply(node, action);
+            }
         }
     }
 }
