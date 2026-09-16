@@ -305,6 +305,9 @@ struct Gui {
     menu_node: Option<NodeId>,
     /// Text to put on the clipboard at the end of the frame.
     pending_copy: Option<String>,
+    /// When the current footer message appeared, so it outranks the hover
+    /// path for a while; failures stay until the next action.
+    message_since: Option<(std::time::Instant, String)>,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -370,6 +373,7 @@ impl Gui {
             hover_active: true,
             menu_node: None,
             pending_copy: None,
+            message_since: None,
         }
     }
 
@@ -786,14 +790,36 @@ impl Gui {
 
     /// One fixed-height line: the hovered path, or the last message.
     fn footer(&mut self, ui: &mut egui::Ui) {
+        const HOLD: std::time::Duration = std::time::Duration::from_secs(4);
+        // Track when the message last changed.
+        match (&self.app.message, &self.message_since) {
+            (Some(m), Some((_, seen))) if m == seen => {}
+            (Some(m), _) => self.message_since = Some((std::time::Instant::now(), m.clone())),
+            (None, _) => self.message_since = None,
+        }
+        let is_failure = self.app.message.as_deref().is_some_and(|m| m.contains("failed"));
+        let fresh = self.message_since.as_ref().is_some_and(|(at, _)| at.elapsed() < HOLD);
+        if fresh {
+            ui.ctx().request_repaint_after(HOLD);
+        }
         ui.horizontal(|ui| {
             ui.set_height(ui.text_style_height(&egui::TextStyle::Monospace));
-            if let (Some(tree), Some(hovered)) = (&self.app.tree, self.app.hovered) {
-                ui.monospace(format!("{:>10}  {}", format::size(tree.size(hovered)), tree.path(hovered).display()));
-            } else if let Some(message) = &self.app.message {
-                ui.label(message);
-            } else {
-                ui.label(" ");
+            let hovered = self.app.tree.as_ref().zip(self.app.hovered);
+            match (&self.app.message, hovered) {
+                // A failure, or any fresh message, outranks the hover path.
+                (Some(message), _) if is_failure || fresh => {
+                    let text = egui::RichText::new(message);
+                    ui.label(if is_failure { text.color(ui.visuals().error_fg_color).strong() } else { text });
+                }
+                (_, Some((tree, hovered))) => {
+                    ui.monospace(format!("{:>10}  {}", format::size(tree.size(hovered)), tree.path(hovered).display()));
+                }
+                (Some(message), None) => {
+                    ui.label(message);
+                }
+                (None, None) => {
+                    ui.label(" ");
+                }
             }
         });
     }
