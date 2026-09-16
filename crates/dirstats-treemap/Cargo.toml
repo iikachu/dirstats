@@ -1,0 +1,16 @@
+[package]
+name = "dirstats-treemap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "Treemap layouts and cushion rendering for dirstats trees"
+keywords = ["treemap", "disk-usage", "visualization"]
+categories = ["visualization"]
+
+[dependencies]
+dirstats-scan.workspace = true
+
+[dev-dependencies]
+png.workspace = true
+tempfile.workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "dirstats-scan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+description = "Parallel cross-platform disk usage scanning into a compact tree"
+keywords = ["disk-usage", "filesystem", "du", "scan"]
+categories = ["filesystem"]
+
+[dependencies]
+# Parallel native directory traversal (MIT, by Sebastian Thiel).
+dua-core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
