@@ -9,7 +9,7 @@ description = "Front-end-agnostic application state for dirstats"
 [features]
 default = []
 # Move-to-trash action.
-trash = ["dep:trash"]
+trash = ["dep:trash", "dep:objc2-foundation"]
 # Open and reveal actions via the desktop.
 open = ["dep:open"]
 
@@ -17,6 +17,10 @@ open = ["dep:open"]
 dirstats-scan.workspace = true
 foldhash.workspace = true
 trash = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Direct NSFileManager access for trashing with a Put Back location.
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }
 open = { workspace = true, optional = true }
 
 [dev-dependencies]

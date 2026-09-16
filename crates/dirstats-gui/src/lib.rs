@@ -46,11 +46,13 @@ enum NodeAction {
     Open,
     #[cfg(feature = "trash")]
     Trash,
+    #[cfg(feature = "trash")]
+    PutBack,
 }
 
 /// Menu items for a node: the same in the tree and the treemap. `is_dir`
 /// decides whether "Zoom in" is offered. Returns the chosen action.
-fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<NodeAction> {
+fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool, trashed: TrashState) -> Option<NodeAction> {
     let mut action = None;
     ui.set_max_width(320.0);
     ui.set_min_width(200.0);
@@ -86,14 +88,38 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<
     #[cfg(feature = "trash")]
     {
         menu_separator(ui);
-        if menu_item(ui, Some(icons::Glyph::Delete), "Move to Trash", true).clicked() {
-            action = Some(NodeAction::Trash);
+        match trashed {
+            TrashState::Present => {
+                if menu_item(ui, Some(icons::Glyph::Delete), "Move to Trash", true).clicked() {
+                    action = Some(NodeAction::Trash);
+                }
+            }
+            TrashState::CanPutBack => {
+                if menu_item(ui, Some(icons::Glyph::PutBack), "Put Back", false).clicked() {
+                    action = Some(NodeAction::PutBack);
+                }
+            }
+            TrashState::Trashed => {
+                ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), "In Trash", false));
+            }
         }
     }
+    #[cfg(not(feature = "trash"))]
+    let _ = trashed;
     if action.is_some() {
         ui.close();
     }
     action
+}
+
+/// Trash state of the node a menu is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrashState {
+    Present,
+    /// Trashed, and the app knows where it went.
+    CanPutBack,
+    /// Trashed, location unknown.
+    Trashed,
 }
 
 /// A menu row: optional leading icon in a fixed slot so labels line up,
@@ -173,6 +199,8 @@ mod icons {
         Copy,
         OpenInNew,
         Delete,
+        /// After `restore_from_trash`: the can with an upward arrow.
+        PutBack,
     }
 
     /// Paint an outline glyph scaled to fit `rect`.
@@ -208,6 +236,15 @@ mod icons {
                 painter.line_segment([p(9.0, 3.5), p(15.0, 3.5)], stroke);
                 painter.line_segment([p(15.0, 3.5), p(15.0, 6.5)], stroke);
                 painter.add(Shape::closed_line(vec![p(6.0, 6.5), p(18.0, 6.5), p(17.0, 21.0), p(7.0, 21.0)], stroke));
+            }
+            Glyph::PutBack => {
+                // The can, open at the top, with an arrow rising out of it.
+                painter.line_segment([p(4.0, 6.5), p(8.0, 6.5)], stroke);
+                painter.line_segment([p(16.0, 6.5), p(20.0, 6.5)], stroke);
+                painter.add(Shape::line(vec![p(6.0, 6.5), p(7.0, 21.0), p(17.0, 21.0), p(18.0, 6.5)], stroke));
+                painter.line_segment([p(12.0, 17.0), p(12.0, 4.0)], stroke);
+                painter.line_segment([p(8.5, 7.5), p(12.0, 4.0)], stroke);
+                painter.line_segment([p(15.5, 7.5), p(12.0, 4.0)], stroke);
             }
         }
     }
@@ -485,6 +522,16 @@ impl Gui {
         self.scroll_to = Some(id);
     }
 
+    fn trash_state(&self, node: NodeId) -> TrashState {
+        if self.app.can_put_back(node) {
+            TrashState::CanPutBack
+        } else if self.app.is_trashed(node) {
+            TrashState::Trashed
+        } else {
+            TrashState::Present
+        }
+    }
+
     /// Carry out a context-menu action on `node`.
     fn apply(&mut self, node: NodeId, action: NodeAction) {
         self.select(node);
@@ -507,6 +554,12 @@ impl Gui {
             NodeAction::Trash => {
                 if let Err(err) = self.app.trash_node(node) {
                     self.app.message = Some(format!("trash failed: {err}"));
+                }
+            }
+            #[cfg(feature = "trash")]
+            NodeAction::PutBack => {
+                if let Err(err) = self.app.put_back(node) {
+                    self.app.message = Some(format!("put back failed: {err}"));
                 }
             }
         }
@@ -1017,6 +1070,7 @@ impl Gui {
 
         // Computed before the row closure, which cannot borrow the app mutably.
         let trashed_rows: Vec<bool> = rows.iter().map(|&(id, _)| self.app.is_trashed(id)).collect();
+        let trash_states: Vec<TrashState> = rows.iter().map(|&(id, _)| self.trash_state(id)).collect();
         let mut select = None;
         let mut toggle = None;
         let mut menu_action: Option<(NodeId, NodeAction)> = None;
@@ -1130,8 +1184,9 @@ impl Gui {
                     select = Some(id);
                 }
                 let path = tree.path(id);
+                let trash_state = trash_states[row_index];
                 row.context_menu(|ui| {
-                    if let Some(action) = node_menu(ui, &path, is_dir) {
+                    if let Some(action) = node_menu(ui, &path, is_dir, trash_state) {
                         menu_action = Some((id, action));
                     }
                 });
@@ -1290,8 +1345,9 @@ impl Gui {
                 Some(tree) => (tree.path(node), !tree.children(node).is_empty()),
                 None => (std::path::PathBuf::new(), false),
             };
+            let trash_state = self.trash_state(node);
             let mut action = None;
-            let menu = response.context_menu(|ui| action = node_menu(ui, &path, is_dir));
+            let menu = response.context_menu(|ui| action = node_menu(ui, &path, is_dir, trash_state));
             if menu.is_none() {
                 self.menu_node = None;
             }

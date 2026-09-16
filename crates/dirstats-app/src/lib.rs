@@ -20,6 +20,8 @@ pub use scanner::{RunningScan, ScanStatus};
 
 #[cfg(any(feature = "open", feature = "trash"))]
 use std::io;
+#[cfg(feature = "trash")]
+use std::path::Path;
 use std::path::PathBuf;
 
 /// Navigation state within a finished [`Tree`].
@@ -45,8 +47,10 @@ pub struct App {
     pub hovered: Option<NodeId>,
     /// Directories opened in a tree view.
     pub expanded: foldhash::HashSet<NodeId>,
-    /// Nodes moved to the trash since the last scan; their descendants count too.
-    pub trashed: foldhash::HashSet<NodeId>,
+    /// Nodes moved to the trash since the last scan, with where they went
+    /// when known (macOS), which is what [`App::put_back`] needs. Their
+    /// descendants count as trashed too.
+    pub trashed: foldhash::HashMap<NodeId, Option<PathBuf>>,
     /// Root of the last scan, for [`App::rescan`].
     last_root: Option<PathBuf>,
 }
@@ -116,7 +120,7 @@ impl App {
         let Some(tree) = &self.tree else { return false };
         let mut current = Some(id);
         while let Some(n) = current {
-            if self.trashed.contains(&n) {
+            if self.trashed.contains_key(&n) {
                 return true;
             }
             current = tree.node(n).parent;
@@ -323,26 +327,59 @@ impl App {
     #[cfg(feature = "trash")]
     pub fn trash_node(&mut self, id: NodeId) -> io::Result<()> {
         let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
-        trash_context().delete(&path).map_err(io::Error::other)?;
-        self.trashed.insert(id);
+        let location = platform_trash(&path)?;
+        self.trashed.insert(id, location);
         self.message = Some(format!("moved to trash: {}", path.display()));
+        Ok(())
+    }
+
+    /// Whether [`App::put_back`] can restore `id`: it was trashed by this
+    /// app and the trash location is known.
+    #[must_use]
+    pub fn can_put_back(&self, id: NodeId) -> bool {
+        self.trashed.get(&id).is_some_and(|location| location.is_some())
+    }
+
+    /// Move `id` back from the trash to where it was scanned.
+    #[cfg(feature = "trash")]
+    pub fn put_back(&mut self, id: NodeId) -> io::Result<()> {
+        let original = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
+        let Some(Some(location)) = self.trashed.get(&id).cloned() else {
+            return Err(io::Error::new(io::ErrorKind::Unsupported, "trash location unknown"));
+        };
+        if original.exists() {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "something else is at the original path"));
+        }
+        std::fs::rename(&location, &original)?;
+        self.trashed.remove(&id);
+        self.message = Some(format!("put back: {}", original.display()));
         Ok(())
     }
 }
 
-/// How files are trashed. On macOS the direct NSFileManager call is used
-/// rather than scripting Finder, so no Automation permission is requested;
-/// the item still lands in the Trash. Elsewhere the crate default applies.
-#[cfg(feature = "trash")]
-fn trash_context() -> trash::TrashContext {
-    #[allow(unused_mut)]
-    let mut context = trash::TrashContext::default();
-    #[cfg(target_os = "macos")]
-    {
-        use trash::macos::{DeleteMethod, TrashContextExtMacos};
-        context.set_delete_method(DeleteMethod::NsFileManager);
-    }
-    context
+/// Move `path` to the trash and return where it went, when the platform
+/// reports it. On macOS the direct NSFileManager call is used rather than
+/// scripting Finder, so no Automation permission is requested, and the
+/// resulting URL is kept for Put Back. Elsewhere the trash crate's default
+/// applies and the location is unknown.
+#[cfg(all(feature = "trash", target_os = "macos"))]
+fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+    let Some(utf8) = path.to_str() else {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "path is not UTF-8"));
+    };
+    let url = NSURL::fileURLWithPath(&NSString::from_str(utf8));
+    let mut resulting = None;
+    NSFileManager::defaultManager()
+        .trashItemAtURL_resultingItemURL_error(&url, Some(&mut resulting))
+        .map_err(|err| io::Error::other(err.localizedDescription().to_string()))?;
+    Ok(resulting.and_then(|url| url.path()).map(|p| PathBuf::from(p.to_string())))
+}
+
+#[cfg(all(feature = "trash", not(target_os = "macos")))]
+fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
+    trash::delete(path).map_err(io::Error::other)?;
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -415,7 +452,7 @@ mod tests {
         let mut app = app_with_scan();
         let sub = app.entries()[0];
         let big = app.tree.as_ref().unwrap().children(sub)[0];
-        app.trashed.insert(sub);
+        app.trashed.insert(sub, None);
         assert!(app.is_trashed(sub) && app.is_trashed(big));
         assert!(!app.is_trashed(app.entries()[1]));
         let tree = app.tree.clone().unwrap();
