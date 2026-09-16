@@ -51,7 +51,17 @@ enum NodeAction {
 /// decides whether "Zoom in" is offered. Returns the chosen action.
 fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<NodeAction> {
     let mut action = None;
-    ui.label(egui::RichText::new(path.display().to_string()).weak());
+    ui.set_max_width(320.0);
+    // Header: file name in bold, its folder underneath in small weak text,
+    // both on one line each and cut with an ellipsis rather than wrapped.
+    let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+    let parent = path.parent().map(|p| p.display().to_string()).unwrap_or_default();
+    ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+        ui.add(egui::Label::new(egui::RichText::new(name).strong()).truncate().selectable(false));
+        if !parent.is_empty() {
+            ui.add(egui::Label::new(egui::RichText::new(parent).weak().small()).truncate().selectable(false));
+        }
+    });
     ui.separator();
     if is_dir && ui.button("Zoom in").clicked() {
         action = Some(NodeAction::Zoom);
