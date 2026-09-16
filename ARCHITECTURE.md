@@ -1,0 +1,94 @@
+# Architecture
+
+dirstats collects the best parts of the reference projects (WinDirStat,
+dua-cli, dust, Disk Inventory X, the HPI treemap prototype) into one Rust
+workspace with a clear separation of concerns, feature-flagged build
+targets, and per-platform fast paths for every well-known filesystem.
+
+## Layers
+
+Each layer is a crate. A crate depends only on layers below it and never on
+a front end.
+
+| Layer | Crate | Licence | Responsibility |
+|---|---|---|---|
+| Model | `dirstats-scan` (`tree` module) | Apache-2.0 | Arena tree, node kinds, size metrics, sorting, extension stats |
+| Scan | `dirstats-scan` (`scan` + `platform::*`) | Apache-2.0 | Parallel traversal, hard links, volume boundaries, per-filesystem fast paths |
+| Persist | `dirstats-scan` (feature `serde`) | Apache-2.0 | Save and load scans |
+| Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
+| Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
+| App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash) |
+| Front end | `dirstats-tui`, later `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
+| Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
+
+Rules:
+- Front ends talk to `dirstats-app` only. TUI and GUI must be swappable
+  without touching scan or treemap code.
+- Scanning never blocks a front end: `scan_with` runs on a worker thread and
+  reports through `Progress` and a cancel flag.
+- `dirstats-scan` stays free of GPL-derived code (see
+  `CREDITS.md`). GPL-derived fast paths (for example an NTFS MFT reader from
+  WinDirStat) go in a separate GPL crate that plugs in behind a trait.
+
+## Build targets and feature flags
+
+The top-level `dirstats` crate is both a library and a binary. Features
+follow dua-cli's convention: one flag per front end, capability flags kept
+separate, defaults chosen for the common case.
+
+```toml
+[features]
+default = ["tui", "trash"]
+tui   = ["dep:dirstats-tui"]        # ratatui + crossterm front end
+gui   = ["dep:dirstats-gui"]        # later; not built yet
+trash = ["dirstats-app/trash"]      # move-to-trash action
+serde = ["dirstats-scan/serde"]     # save/load scans
+```
+
+Per-crate features:
+- `dirstats-scan`: `serde`; `linux-fast` (statx/getdents64), `macos-fast`
+  (getattrlistbulk, already via dua-core), `windows-fast`
+  (FileIdBothDirectoryInfo, already via dua-core). Fast paths are on by
+  default on their platform and fall back to the generic walker.
+- `dirstats-treemap`: `parallel` (rayon cushion rendering), `png`
+  (example output).
+
+`cargo build` gives the TUI binary. `cargo build --no-default-features`
+gives only the library. `cargo build --features gui` adds the GUI once it
+exists.
+
+## Platform and filesystem support
+
+Every platform gets the fastest supported traversal and correct size
+accounting for each well-known filesystem. The scan layer exposes one
+`platform` trait with these responsibilities, each implemented per OS:
+
+| Concern | macOS | Linux | Windows |
+|---|---|---|---|
+| Bulk enumeration | `getattrlistbulk` (dua-core) | `getdents64` + `statx` (planned) | `FileIdBothDirectoryInfo` (dua-core); NTFS MFT reader (planned, GPL crate) |
+| Volume boundary | `st_dev` | `st_dev` / `statx` mount id | volume serial from `GetFileInformationByHandle` (planned) |
+| Hard links | `st_nlink` + inode set | `st_nlink` + inode set | file ID set; `nlink` via handle (planned) |
+| Allocated size | `st_blocks`; APFS clone accounting (planned) | `st_blocks`; cap inflated NTFS mounts (done) | allocation size from enumeration; compressed and sparse (planned) |
+| Filesystem quirks | firmlinks, packages (from Disk Inventory X) | bind mounts, btrfs subvolumes | reparse points, junctions, OneDrive placeholders |
+
+Detection of the filesystem type is done once per volume so the scan picks
+the right strategy without per-entry cost.
+
+## Front ends
+
+- TUI (now): ratatui + crossterm, modelled on dua-cli's interactive mode
+  plus a cell-based treemap. Keyboard-first, works over SSH.
+- GUI (later): same `dirstats-app` state, pixel treemap from
+  `dirstats-treemap::render`, native file actions.
+
+## Roadmap
+
+1. Done: `dirstats-app`, `dirstats-tui`, and the `dirstats` lib+bin crate
+   with the feature flags above; `--png` replaces the treemap example.
+2. Add a CI matrix (macOS, Linux, Windows) so all platform code compiles.
+3. Fill the platform gaps listed above, starting with Windows volume
+   boundaries and directory error marking.
+4. Hilbert and Moore layouts; frames, labels, size-ranked extension colours,
+   grid hit-test index, parallel cushions.
+5. Save and load scans; benchmarks against dua, gdu, ncdu.
+6. GUI front end.
