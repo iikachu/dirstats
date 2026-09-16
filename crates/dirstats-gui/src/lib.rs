@@ -399,7 +399,7 @@ impl Gui {
             for (ext, size, color) in &entries[range] {
                 let (row_rect, row) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::hover());
                 if row.hovered() {
-                    ui.painter().rect_filled(row_rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+                    ui.painter().rect_filled(row_rect, 0.0, ui.visuals().widgets.hovered.weak_bg_fill);
                 }
                 let text = ui.visuals().text_color();
                 let (top, bottom) = (row_rect.min.y, row_rect.max.y);
@@ -533,9 +533,9 @@ impl Gui {
                 // Whole-row background and click target.
                 let (row_rect, row) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::click());
                 if is_selected {
-                    ui.painter().rect_filled(row_rect, 2.0, ui.visuals().selection.bg_fill);
+                    ui.painter().rect_filled(row_rect, 0.0, ui.visuals().selection.bg_fill);
                 } else if row.hovered() {
-                    ui.painter().rect_filled(row_rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
+                    ui.painter().rect_filled(row_rect, 0.0, ui.visuals().widgets.hovered.weak_bg_fill);
                 }
                 let text = if is_selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
                 let (top, bottom) = (row_rect.min.y, row_rect.max.y);
