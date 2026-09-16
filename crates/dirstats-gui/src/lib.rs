@@ -968,9 +968,7 @@ impl Gui {
 
         let mut zoom = None;
         if let Some(node) = hovered {
-            if response.double_clicked() {
-                zoom = Some(node);
-            } else if response.clicked() {
+            if response.clicked() {
                 self.select(node);
             }
             response.context_menu(|ui| {
