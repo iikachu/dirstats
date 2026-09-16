@@ -303,10 +303,25 @@ impl App {
     #[cfg(feature = "trash")]
     pub fn trash_node(&mut self, id: NodeId) -> io::Result<()> {
         let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
-        trash::delete(&path).map_err(io::Error::other)?;
+        trash_context().delete(&path).map_err(io::Error::other)?;
         self.message = Some(format!("moved to trash: {}", path.display()));
         Ok(())
     }
+}
+
+/// How files are trashed. On macOS the direct NSFileManager call is used
+/// rather than scripting Finder, so no Automation permission is requested;
+/// the item still lands in the Trash. Elsewhere the crate default applies.
+#[cfg(feature = "trash")]
+fn trash_context() -> trash::TrashContext {
+    #[allow(unused_mut)]
+    let mut context = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        context.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    context
 }
 
 #[cfg(test)]
@@ -356,6 +371,21 @@ mod tests {
         assert_eq!(rows[1].1, 1, "child of sub is one level deeper");
         assert!(!app.toggle_expanded(sub));
         assert_eq!(app.tree_rows().len(), 2);
+    }
+
+    /// Moves a real temporary file to the system trash; run explicitly with
+    /// `cargo test -p dirstats-app --features trash -- --ignored`.
+    #[cfg(feature = "trash")]
+    #[test]
+    #[ignore]
+    fn trashes_a_file_without_prompting() {
+        let mut app = app_with_scan();
+        let small = app.entries()[1];
+        let path = app.path_of(small).unwrap();
+        assert!(path.exists());
+        app.trash_node(small).unwrap();
+        assert!(!path.exists(), "file should have moved to the trash");
+        assert!(app.message.as_deref().unwrap().starts_with("moved to trash"));
     }
 
     #[test]
