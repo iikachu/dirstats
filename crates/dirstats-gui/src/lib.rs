@@ -433,11 +433,12 @@ impl Gui {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if let Some(scan) = &self.app.scan {
-                ui.spinner();
-                ui.label(format!("scanning {}: {} entries, {} errors", scan.root.display(), scan.entries(), scan.errors()));
-                if ui.button("Cancel").clicked() {
-                    self.app.cancel_scan();
-                }
+                ui.strong(scan.root.display().to_string());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.app.cancel_scan();
+                    }
+                });
                 return;
             }
             let Some(tree) = &self.app.tree else {
@@ -809,12 +810,43 @@ impl Gui {
         }
     }
 
+    /// Centred scan status shown in the treemap area until a tree arrives.
+    fn scan_progress(&mut self, ui: &mut egui::Ui) {
+        let rect = ui.available_rect_before_wrap();
+        let (title, root, detail) = match &self.app.scan {
+            Some(scan) => (
+                "Scanning".to_string(),
+                scan.root.display().to_string(),
+                format!(
+                    "{} entries · {} errors · {:.1}s",
+                    scan.entries(),
+                    scan.errors(),
+                    scan.started.elapsed().as_secs_f64()
+                ),
+            ),
+            None => ("No scan".to_string(), String::new(), self.app.message.clone().unwrap_or_default()),
+        };
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Center)));
+        child.add_space((rect.height() / 2.0 - 40.0).max(0.0));
+        if self.app.scan.is_some() {
+            child.add(egui::Spinner::new().size(28.0));
+            child.add_space(8.0);
+        }
+        child.label(egui::RichText::new(title).heading().strong().size(28.0));
+        if !root.is_empty() {
+            child.add_space(2.0);
+            child.add(egui::Label::new(egui::RichText::new(root).strong().size(18.0)).truncate());
+        }
+        child.add_space(4.0);
+        child.label(egui::RichText::new(detail).strong().size(16.0).color(child.visuals().weak_text_color()));
+    }
+
     fn treemap(&mut self, ui: &mut egui::Ui) {
         let available = ui.available_size();
         let (width, height) = (available.x.max(1.0) as u32, available.y.max(1.0) as u32);
         self.ensure_map(ui.ctx(), width, height);
         let (Some(texture), Some(map)) = (&self.texture, &self.map) else {
-            ui.centered_and_justified(|ui| ui.label("waiting for scan…"));
+            self.scan_progress(ui);
             return;
         };
         let response = ui.add(egui::Image::new((texture.id(), available)).sense(Sense::click()));
