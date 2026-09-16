@@ -40,10 +40,17 @@ enum Selection {
 /// Period of the highlight pulse.
 const PULSE_SECONDS: f64 = 2.4;
 
-/// Chroma multiplier for boxes of the extension hovered in the legend.
-const HIGHLIGHT_CHROMA: f64 = 1.6;
-/// Lightness added to those boxes.
+/// How far toward the sRGB gamut edge a highlighted colour's chroma moves.
+/// Relative to the edge rather than a fixed factor, so every hue gets a
+/// comparable perceived boost.
+const HIGHLIGHT_TOWARD_MAX: f64 = 0.7;
+/// Lightness added to highlighted boxes.
 const HIGHLIGHT_LIGHTNESS: f64 = 0.06;
+
+/// The vivid version of a colour used for hover and the legend swatch.
+fn vivid(color: dirstats_treemap::Oklch) -> dirstats_treemap::Oklch {
+    color.lighten(HIGHLIGHT_LIGHTNESS).toward_max_chroma(HIGHLIGHT_TOWARD_MAX)
+}
 
 /// Material Symbols glyphs inlined as polygons (Apache-2.0, by Google).
 /// Coordinates are the 960-unit viewBox of the SVGs, y flipped to point down.
@@ -224,7 +231,7 @@ impl Gui {
         };
         let vivid = render(tree, dir, width, height, &options, |t, id| {
             let color = colors.color(t, id);
-            if matches(t, id) { color.scale_chroma(HIGHLIGHT_CHROMA).lighten(HIGHLIGHT_LIGHTNESS) } else { color }
+            if matches(t, id) { vivid(color) } else { color }
         });
         let image = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &vivid.pixels);
         match &mut self.highlight {
@@ -529,7 +536,13 @@ impl Gui {
                     let t = ui.input(|i| i.time);
                     let phase = (t * std::f64::consts::TAU / PULSE_SECONDS).sin() * 0.5 + 0.5;
                     let k = 0.35 + 0.65 * phase;
-                    color.scale_chroma(1.0 + (HIGHLIGHT_CHROMA - 1.0) * k).lighten(HIGHLIGHT_LIGHTNESS * k)
+                    let peak = vivid(*color);
+                    // Same straight-line mix the treemap blend produces.
+                    dirstats_treemap::Oklch::new(
+                        color.l + (peak.l - color.l) * k,
+                        color.c + (peak.c - color.c) * k,
+                        color.h,
+                    )
                 } else {
                     *color
                 };

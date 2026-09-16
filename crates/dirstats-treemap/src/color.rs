@@ -51,6 +51,30 @@ impl Oklch {
         Self { c: (self.c * factor).max(0.0), ..self }
     }
 
+    /// Largest chroma that stays inside sRGB at this lightness and hue.
+    #[must_use]
+    pub fn max_chroma(self) -> f64 {
+        let l = self.l.clamp(0.0, 1.0);
+        let (mut lo, mut hi) = (0.0, 0.5);
+        for _ in 0..16 {
+            let mid = (lo + hi) / 2.0;
+            if (Self { l, c: mid, h: self.h }).try_srgb().is_some() {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    }
+
+    /// Move chroma a fraction of the way toward the gamut edge for this hue,
+    /// so every hue gets a comparable perceived boost.
+    #[must_use]
+    pub fn toward_max_chroma(self, fraction: f64) -> Self {
+        let max = self.max_chroma();
+        Self { c: self.c + (max - self.c).max(0.0) * fraction.clamp(0.0, 1.0), ..self }
+    }
+
     #[must_use]
     pub fn from_srgb(rgb: Rgb) -> Self {
         let [r, g, b] = rgb.map(|c| srgb_to_linear(f64::from(c) / 255.0));
@@ -132,6 +156,21 @@ mod tests {
     fn white_and_black_have_extreme_lightness() {
         assert!(Oklch::from_srgb([255, 255, 255]).l > 0.99);
         assert!(Oklch::from_srgb([0, 0, 0]).l < 0.01);
+    }
+
+    #[test]
+    fn max_chroma_is_in_gamut_and_hue_dependent() {
+        let yellow = Oklch::new(0.72, 0.0, 100.0).max_chroma();
+        let blue = Oklch::new(0.72, 0.0, 270.0).max_chroma();
+        assert!(yellow > blue, "yellows reach further at this lightness: {yellow} vs {blue}");
+        for h in [0.0, 100.0, 200.0, 270.0] {
+            let c = Oklch::new(0.72, 0.0, h);
+            let max = c.max_chroma();
+            assert!(Oklch::new(0.72, max, h).try_srgb().is_some());
+            assert!(Oklch::new(0.72, max + 0.01, h).try_srgb().is_none());
+            let boosted = Oklch::new(0.72, 0.1, h).toward_max_chroma(0.7);
+            assert!(boosted.c > 0.1 && boosted.c <= max);
+        }
     }
 
     #[test]
