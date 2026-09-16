@@ -14,6 +14,19 @@ use dirstats_treemap::render::{ExtensionColors, render};
 use dirstats_treemap::{Style, Treemap, TreemapOptions};
 use eframe::egui::{self, Color32, ColorImage, Key, Sense, TextureHandle, TextureOptions};
 
+/// What a cached treemap render depends on: tree version, zoom directory and size.
+type MapKey = (u64, NodeId, u32, u32);
+/// What the highlight layer depends on: the base render plus the hovered extension.
+type HighlightKey = (MapKey, Option<String>);
+
+/// Period of the highlight pulse.
+const PULSE_SECONDS: f64 = 1.2;
+
+/// Chroma multiplier for boxes of the extension hovered in the legend.
+const HIGHLIGHT_CHROMA: f64 = 1.6;
+/// Lightness added to those boxes.
+const HIGHLIGHT_LIGHTNESS: f64 = 0.06;
+
 /// Material Symbols glyphs inlined as polygons (Apache-2.0, by Google).
 /// Coordinates are the 960-unit viewBox of the SVGs, y flipped to point down.
 /// Each chevron is split into two convex arms so it can be filled directly.
@@ -58,8 +71,11 @@ struct Gui {
     /// Bumped whenever a new tree arrives so cached renders are invalidated.
     tree_version: u64,
     map: Option<Treemap>,
-    map_key: Option<(u64, NodeId, u32, u32)>,
+    map_key: Option<MapKey>,
     texture: Option<TextureHandle>,
+    /// The same map with the hovered extension made vivid, blended over the base.
+    highlight: Option<TextureHandle>,
+    highlight_key: Option<HighlightKey>,
     style: Style,
     /// Selected node, anywhere under the zoom directory.
     selected: Option<NodeId>,
@@ -67,6 +83,8 @@ struct Gui {
     columns: Option<Columns>,
     /// Row to bring into view on the next frame, set when selecting from the treemap.
     scroll_to: Option<NodeId>,
+    /// Extension under the pointer in the legend; its boxes are rendered more vivid.
+    hovered_extension: Option<Option<String>>,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -120,10 +138,13 @@ impl Gui {
             map: None,
             map_key: None,
             texture: None,
+            highlight: None,
+            highlight_key: None,
             style: Style::Squarified,
             selected: None,
             columns: None,
             scroll_to: None,
+            hovered_extension: None,
         }
     }
 
@@ -141,18 +162,42 @@ impl Gui {
             return;
         };
         let key = (self.tree_version, dir, width, height);
-        if self.map_key == Some(key) {
+        if self.map_key != Some(key) {
+            let options = TreemapOptions { style: self.style, ..Default::default() };
+            let map = render(tree, dir, width, height, &options, |t, id| colors.color(t, id));
+            let image = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &map.pixels);
+            match &mut self.texture {
+                Some(texture) => texture.set(image, TextureOptions::LINEAR),
+                None => self.texture = Some(ctx.load_texture("treemap", image, TextureOptions::LINEAR)),
+            }
+            self.map = Some(map);
+            self.map_key = Some(key);
+        }
+
+        // Highlight layer: rendered once per hovered extension, pulsed at draw time.
+        let Some(ext) = &self.hovered_extension else {
+            self.highlight_key = None;
+            return;
+        };
+        let highlight_key = (key, ext.clone());
+        if self.highlight_key.as_ref() == Some(&highlight_key) {
             return;
         }
         let options = TreemapOptions { style: self.style, ..Default::default() };
-        let map = render(tree, dir, width, height, &options, |t, id| colors.color(t, id));
-        let image = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &map.pixels);
-        match &mut self.texture {
+        let vivid = render(tree, dir, width, height, &options, |t, id| {
+            let color = colors.color(t, id);
+            if *ext == ExtensionColors::extension(t.node(id)) {
+                color.scale_chroma(HIGHLIGHT_CHROMA).lighten(HIGHLIGHT_LIGHTNESS)
+            } else {
+                color
+            }
+        });
+        let image = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &vivid.pixels);
+        match &mut self.highlight {
             Some(texture) => texture.set(image, TextureOptions::LINEAR),
-            None => self.texture = Some(ctx.load_texture("treemap", image, TextureOptions::LINEAR)),
+            None => self.highlight = Some(ctx.load_texture("treemap-highlight", image, TextureOptions::LINEAR)),
         }
-        self.map = Some(map);
-        self.map_key = Some(key);
+        self.highlight_key = Some(highlight_key);
     }
 }
 
@@ -395,10 +440,13 @@ impl Gui {
         let entries = colors.entries();
         let pad = 6.0;
         let mono = egui::TextStyle::Monospace.resolve(ui.style());
+        let mut hovered_extension = None;
         egui::ScrollArea::vertical().id_salt("legend").auto_shrink([false, false]).show_rows(ui, row_height, entries.len(), |ui, range| {
             for (ext, size, color) in &entries[range] {
                 let (row_rect, row) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::hover());
-                if row.hovered() {
+                let hovered = row.hovered();
+                if hovered {
+                    hovered_extension = Some(ext.clone());
                     ui.painter().rect_filled(row_rect, 0.0, ui.visuals().widgets.hovered.weak_bg_fill);
                 }
                 let text = ui.visuals().text_color();
@@ -406,7 +454,16 @@ impl Gui {
                 let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
 
                 let name_cell = cell(edges[0], edges[1]);
-                let [r, g, b] = color.to_srgb();
+                // The swatch pulses with the boxes it stands for.
+                let swatch_color = if hovered {
+                    let t = ui.input(|i| i.time);
+                    let phase = (t * std::f64::consts::TAU / PULSE_SECONDS).sin() * 0.5 + 0.5;
+                    let k = 0.35 + 0.65 * phase;
+                    color.scale_chroma(1.0 + (HIGHLIGHT_CHROMA - 1.0) * k).lighten(HIGHLIGHT_LIGHTNESS * k)
+                } else {
+                    *color
+                };
+                let [r, g, b] = swatch_color.to_srgb();
                 let swatch = egui::Rect::from_center_size(egui::pos2(name_cell.min.x + pad + 7.0, name_cell.center().y), egui::vec2(14.0, 14.0));
                 ui.painter().with_clip_rect(name_cell).rect_filled(swatch, 3.0, Color32::from_rgb(r, g, b));
                 let full = ext.as_deref().map_or("(none)".to_string(), |e| format!(".{e}"));
@@ -425,6 +482,7 @@ impl Gui {
                 }
             }
         });
+        self.hovered_extension = hovered_extension;
     }
 
     /// Keyboard navigation in the tree. Up and down move through the visible
@@ -666,6 +724,21 @@ impl Gui {
             return;
         };
         let response = ui.add(egui::Image::new((texture.id(), available)).sense(Sense::click()));
+        // Pulse the vivid layer over the base while an extension is hovered.
+        if self.highlight_key.is_some()
+            && let Some(highlight) = &self.highlight
+        {
+            let t = ui.input(|i| i.time);
+            let phase = (t * std::f64::consts::TAU / PULSE_SECONDS).sin() * 0.5 + 0.5;
+            let alpha = (0.35 + 0.65 * phase) as f32;
+            ui.painter().image(
+                highlight.id(),
+                response.rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                Color32::WHITE.gamma_multiply(alpha),
+            );
+            ui.ctx().request_repaint();
+        }
         let origin = response.rect.min;
         let painter = ui.painter_at(response.rect);
 

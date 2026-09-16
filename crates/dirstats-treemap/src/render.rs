@@ -207,6 +207,12 @@ impl ExtensionColors {
         Self { colors, ranked, directory: Oklch::grey(PALETTE_LIGHTNESS) }
     }
 
+    /// Lower-cased extension of a node's name, as used for ranking; `None` for no extension.
+    #[must_use]
+    pub fn extension(node: &dirstats_scan::Node) -> Option<String> {
+        extension_of(node)
+    }
+
     /// Extensions largest first with their total bytes and colour; `None` is "no extension".
     #[must_use]
     pub fn entries(&self) -> &[(Option<String>, u64, Oklch)] {
