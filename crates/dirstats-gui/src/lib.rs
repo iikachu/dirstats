@@ -427,29 +427,69 @@ impl Gui {
         });
     }
 
-    /// Arrow keys in the tree: up and down move through the visible rows,
-    /// right expands a directory or steps into its first child, left
-    /// collapses it or steps to the parent. `rows` is refreshed when the
-    /// expansion changes.
-    fn keyboard_navigation(&mut self, ui: &egui::Ui, rows: &mut Vec<(NodeId, u32)>) {
+    /// Keyboard navigation in the tree. Up and down move through the visible
+    /// rows; Home and End (or Cmd+Up/Down on macOS, Ctrl+Home/End elsewhere)
+    /// jump to the ends; Page Up and Page Down (or Option+Up/Down on macOS)
+    /// move by a screenful; right expands a directory or steps into its first
+    /// child; left collapses it or steps to the parent. `rows` is refreshed
+    /// when the expansion changes.
+    fn keyboard_navigation(&mut self, ui: &egui::Ui, rows: &mut Vec<(NodeId, u32)>, row_step: f32) {
         let Some(tree) = &self.app.tree else { return };
-        let (up, down, left, right) = ui.input(|i| {
-            (
-                i.key_pressed(Key::ArrowUp),
-                i.key_pressed(Key::ArrowDown),
-                i.key_pressed(Key::ArrowLeft),
-                i.key_pressed(Key::ArrowRight),
-            )
+        let page = ((ui.available_height() / row_step).floor() as usize).max(1);
+        let last = rows.len().saturating_sub(1);
+        #[derive(Clone, Copy, PartialEq)]
+        enum Nav {
+            Up,
+            Down,
+            Left,
+            Right,
+            First,
+            Last,
+            PageUp,
+            PageDown,
+        }
+        let nav = ui.input(|i| {
+            let m = i.modifiers;
+            // Ctrl+Home/End on Linux and Windows arrive as plain Home/End here.
+            let cmd = m.mac_cmd;
+            let alt = m.alt;
+            if i.key_pressed(Key::Home) || (cmd && i.key_pressed(Key::ArrowUp)) {
+                Some(Nav::First)
+            } else if i.key_pressed(Key::End) || (cmd && i.key_pressed(Key::ArrowDown)) {
+                Some(Nav::Last)
+            } else if i.key_pressed(Key::PageUp) || (alt && i.key_pressed(Key::ArrowUp)) {
+                Some(Nav::PageUp)
+            } else if i.key_pressed(Key::PageDown) || (alt && i.key_pressed(Key::ArrowDown)) {
+                Some(Nav::PageDown)
+            } else if i.key_pressed(Key::ArrowUp) {
+                Some(Nav::Up)
+            } else if i.key_pressed(Key::ArrowDown) {
+                Some(Nav::Down)
+            } else if i.key_pressed(Key::ArrowLeft) {
+                Some(Nav::Left)
+            } else if i.key_pressed(Key::ArrowRight) {
+                Some(Nav::Right)
+            } else {
+                None
+            }
         });
-        if !(up || down || left || right) || rows.is_empty() {
+        let Some(nav) = nav else { return };
+        if rows.is_empty() {
             return;
         }
         let index = self.selected.and_then(|id| rows.iter().position(|&(r, _)| r == id));
+        let (left, right) = (nav == Nav::Left, nav == Nav::Right);
         let mut target = None;
-        if down {
-            target = Some(index.map_or(0, |i| (i + 1).min(rows.len() - 1)));
-        } else if up {
-            target = Some(index.map_or(0, |i| i.saturating_sub(1)));
+        match nav {
+            Nav::Down => target = Some(index.map_or(0, |i| (i + 1).min(last))),
+            Nav::Up => target = Some(index.map_or(0, |i| i.saturating_sub(1))),
+            Nav::First => target = Some(0),
+            Nav::Last => target = Some(last),
+            Nav::PageDown => target = Some(index.map_or(0, |i| (i + page).min(last))),
+            Nav::PageUp => target = Some(index.map_or(0, |i| i.saturating_sub(page))),
+            Nav::Left | Nav::Right => {}
+        }
+        if target.is_some() {
         } else if let Some(i) = index {
             let (id, _) = rows[i];
             let is_dir = !tree.children(id).is_empty();
@@ -490,7 +530,7 @@ impl Gui {
             return;
         }
         let mut rows = self.app.tree_rows();
-        self.keyboard_navigation(ui, &mut rows);
+        self.keyboard_navigation(ui, &mut rows, row_height + ui.spacing().item_spacing.y);
         let tree = self.app.tree.as_ref().expect("checked above");
         let selected = self.selected;
         let indent = 16.0;
