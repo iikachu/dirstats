@@ -16,7 +16,8 @@ dirstats-gui = { path = "crates/dirstats-gui", version = "0.1.0" }
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 clap = { version = "4.5", features = ["derive"] }
 open = "5"
-trash = { version = "5.2", default-features = false }
+# Windows needs one COM init mode; apartment-threaded matches a GUI main thread.
+trash = { version = "5.2", default-features = false, features = ["coinit_apartmentthreaded"] }
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
 dua-core = "4.1"
 png = "0.17"
