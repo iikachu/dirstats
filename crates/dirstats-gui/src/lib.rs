@@ -64,24 +64,49 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<
         }
     });
     ui.separator();
-    if is_dir && ui.button("Zoom in").clicked() {
+    // Icons only on actions, none on navigation; labels stay aligned either way.
+    if is_dir && menu_item(ui, None, "Zoom in", false).clicked() {
         action = Some(NodeAction::Zoom);
     }
-    if ui.button("Copy path").clicked() {
+    if menu_item(ui, Some(icons::Glyph::Copy), "Copy path", false).clicked() {
         action = Some(NodeAction::CopyPath);
     }
     #[cfg(feature = "open")]
-    if ui.button("Open").clicked() {
+    if menu_item(ui, Some(icons::Glyph::OpenInNew), "Open", false).clicked() {
         action = Some(NodeAction::Open);
     }
     #[cfg(feature = "trash")]
-    if ui.button("Move to trash").clicked() {
-        action = Some(NodeAction::Trash);
+    {
+        ui.separator();
+        if menu_item(ui, Some(icons::Glyph::Delete), "Move to Trash", true).clicked() {
+            action = Some(NodeAction::Trash);
+        }
     }
     if action.is_some() {
         ui.close();
     }
     action
+}
+
+/// A menu row: optional leading icon in a fixed slot so labels line up,
+/// then the label. `destructive` uses the error colour.
+fn menu_item(ui: &mut egui::Ui, glyph: Option<icons::Glyph>, label: &str, destructive: bool) -> egui::Response {
+    const SLOT: f32 = 22.0;
+    let height = ui.spacing().interact_size.y;
+    let width = ui.available_width().max(160.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), Sense::click());
+    let visuals = ui.style().interact(&response);
+    if response.hovered() || response.has_focus() {
+        ui.painter().rect_filled(rect, 3.0, visuals.weak_bg_fill);
+    }
+    let color = if destructive { ui.visuals().error_fg_color } else { visuals.text_color() };
+    let icon_rect = egui::Rect::from_center_size(egui::pos2(rect.min.x + 4.0 + SLOT / 2.0, rect.center().y), egui::vec2(16.0, 16.0));
+    if let Some(glyph) = glyph {
+        icons::stroke(ui.painter(), icon_rect, glyph, color);
+    }
+    let text_pos = egui::pos2(rect.min.x + 4.0 + SLOT + 6.0, rect.center().y);
+    ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, label, egui::TextStyle::Button.resolve(ui.style()), color);
+    response
 }
 
 /// Period of the highlight pulse.
@@ -120,6 +145,54 @@ mod icons {
         [(480.0, 616.0), (240.0, 376.0), (296.0, 320.0), (480.0, 504.0)],
         [(480.0, 504.0), (664.0, 320.0), (720.0, 376.0), (480.0, 616.0)],
     ];
+
+    /// Outline glyphs after Material Symbols `content_copy`, `open_in_new`
+    /// and `delete`, drawn as strokes on the 24-unit grid rather than
+    /// traced, so they match the chevrons in weight.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[allow(dead_code)] // Open and Delete are only reachable with their features.
+    pub enum Glyph {
+        Copy,
+        OpenInNew,
+        Delete,
+    }
+
+    /// Paint an outline glyph scaled to fit `rect`.
+    pub fn stroke(painter: &egui::Painter, rect: Rect, glyph: Glyph, color: Color32) {
+        let side = rect.width().min(rect.height());
+        let s = side / 24.0;
+        let origin = rect.center() - egui::vec2(side, side) / 2.0;
+        let p = |x: f32, y: f32| origin + egui::vec2(x * s, y * s);
+        let stroke = egui::Stroke::new((2.0 * s).max(1.0), color);
+        let r = egui::CornerRadius::same((2.0 * s) as u8);
+        let rect_of = |x0: f32, y0: f32, x1: f32, y1: f32| Rect::from_min_max(p(x0, y0), p(x1, y1));
+        match glyph {
+            Glyph::Copy => {
+                // Back sheet: open L-shape; front sheet: full rounded rectangle.
+                painter.line_segment([p(5.0, 15.0), p(5.0, 4.0)], stroke);
+                painter.line_segment([p(5.0, 4.0), p(15.0, 4.0)], stroke);
+                painter.rect_stroke(rect_of(9.0, 8.0, 20.0, 21.0), r, stroke, egui::StrokeKind::Middle);
+            }
+            Glyph::OpenInNew => {
+                // Box with a gap at the top right, and an arrow leaving through it.
+                painter.line_segment([p(10.0, 5.0), p(5.0, 5.0)], stroke);
+                painter.line_segment([p(5.0, 5.0), p(5.0, 19.0)], stroke);
+                painter.line_segment([p(5.0, 19.0), p(19.0, 19.0)], stroke);
+                painter.line_segment([p(19.0, 19.0), p(19.0, 14.0)], stroke);
+                painter.line_segment([p(14.0, 4.0), p(20.0, 4.0)], stroke);
+                painter.line_segment([p(20.0, 4.0), p(20.0, 10.0)], stroke);
+                painter.line_segment([p(20.0, 4.0), p(11.0, 13.0)], stroke);
+            }
+            Glyph::Delete => {
+                // Lid, handle, and a slightly tapered can.
+                painter.line_segment([p(4.0, 6.5), p(20.0, 6.5)], stroke);
+                painter.line_segment([p(9.0, 6.5), p(9.0, 3.5)], stroke);
+                painter.line_segment([p(9.0, 3.5), p(15.0, 3.5)], stroke);
+                painter.line_segment([p(15.0, 3.5), p(15.0, 6.5)], stroke);
+                painter.add(Shape::closed_line(vec![p(6.0, 6.5), p(18.0, 6.5), p(17.0, 21.0), p(7.0, 21.0)], stroke));
+            }
+        }
+    }
 
     /// Paint a glyph scaled to fit `rect`, keeping its aspect.
     pub fn paint(painter: &egui::Painter, rect: Rect, glyph: &[[(f32, f32); 4]; 2], color: Color32) {
