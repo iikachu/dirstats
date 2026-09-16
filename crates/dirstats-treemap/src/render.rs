@@ -11,23 +11,43 @@
 
 use crate::layout::{self, Rect, Style};
 use dirstats_scan::{Kind, NodeId, Tree};
-use std::hash::{Hash, Hasher};
 
-pub type Rgb = [u8; 3];
+pub use crate::color::{Oklch, Rgb};
 
-/// Brightness the palette colors are normalized to.
-const PALETTE_BRIGHTNESS: f64 = 0.6;
+/// Lightness of palette entries and of leaf faces at the default options.
+pub const PALETTE_LIGHTNESS: f64 = 0.72;
+/// Chroma of palette entries.
+pub const PALETTE_CHROMA: f64 = 0.19;
+
+/// Ridge height relative to WinDirStat's classic setting.
+const GLOW_RIDGE: f64 = 0.4;
+/// Glow shading: lightness range from fully shadowed to fully lit, in OKLCH units.
+const GLOW_RANGE: f64 = 0.16;
+/// Glow shading: extra lightness at the highlight peak.
+const GLOW_HIGHLIGHT: f64 = 0.04;
+
+/// How each rectangle is lit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Shading {
+    /// Cushion geometry (van Wijk and van de Wetering, via WinDirStat) lit
+    /// softly across the whole box, with a broad highlight toward the light.
+    #[default]
+    Glow,
+    /// Plain fills.
+    Flat,
+}
 
 #[derive(Clone, Debug)]
 pub struct TreemapOptions {
     pub style: Style,
+    pub shading: Shading,
     /// Leave a one-pixel grid line between leaves.
     pub grid: bool,
-    pub grid_color: Rgb,
-    pub background: Rgb,
-    /// 0..=1
-    pub brightness: f64,
-    /// 0..=1
+    pub grid_color: Oklch,
+    pub background: Oklch,
+    /// OKLCH lightness of a leaf face before shading, 0..=1.
+    pub lightness: f64,
+    /// Chroma multiplier applied to leaf colours; 0 gives greys.
     pub saturation: f64,
     /// Ridge height "H"; 0 disables cushions.
     pub height: f64,
@@ -46,10 +66,11 @@ impl Default for TreemapOptions {
     fn default() -> Self {
         Self {
             style: Style::Rows,
+            shading: Shading::default(),
             grid: false,
-            grid_color: [0, 0, 0],
-            background: [0, 0, 0],
-            brightness: 0.88,
+            grid_color: Oklch::grey(0.0),
+            background: Oklch::grey(0.0),
+            lightness: PALETTE_LIGHTNESS,
             saturation: 1.0,
             height: 0.38,
             scale_factor: 0.91,
@@ -62,7 +83,10 @@ impl Default for TreemapOptions {
 
 impl TreemapOptions {
     fn cushion_shading(&self) -> bool {
-        self.ambient_light < 1.0 && self.height > 0.0 && self.scale_factor > 0.0
+        self.shading == Shading::Glow
+            && self.ambient_light < 1.0
+            && self.height > 0.0
+            && self.scale_factor > 0.0
     }
 }
 
@@ -96,48 +120,65 @@ impl Treemap {
     }
 }
 
-/// WinDirStat's default cushion palette, normalized to a common brightness.
-#[must_use]
-pub fn default_palette() -> Vec<Rgb> {
-    const COLORS: [Rgb; 18] = [
-        [0, 0, 255],
-        [255, 0, 0],
-        [0, 255, 0],
-        [255, 255, 0],
-        [0, 255, 255],
-        [255, 0, 255],
-        [255, 170, 0],
-        [0, 85, 255],
-        [255, 0, 85],
-        [85, 255, 0],
-        [170, 0, 255],
-        [0, 255, 85],
-        [255, 0, 170],
-        [0, 170, 255],
-        [255, 85, 0],
-        [0, 255, 170],
-        [85, 0, 255],
-        [255, 255, 255],
-    ];
-    COLORS.iter().map(|&c| make_bright_color(c, PALETTE_BRIGHTNESS)).collect()
+/// Colours for leaves keyed by file extension, assigned by rank of total size.
+///
+/// Extensions are ranked by the bytes they account for in the tree, then
+/// hues are handed out in rank order along the golden angle, so the largest
+/// extensions are always far apart on the wheel and every extension gets a
+/// hue of its own. This follows WinDirStat's idea of ranking extensions by
+/// size; the hue assignment is ours.
+#[derive(Clone, Debug)]
+pub struct ExtensionColors {
+    colors: std::collections::HashMap<Option<String>, Oklch>,
+    directory: Oklch,
 }
 
-/// Color leaves by file extension.
-// TODO: WinDirStat ranks extensions by total size so the biggest types get the
-// most distinct colors; hashing is a stand-in.
-pub fn color_by_extension(palette: &[Rgb]) -> impl Fn(&Tree, NodeId) -> Rgb + '_ {
-    move |tree, id| {
+impl ExtensionColors {
+    /// Rank every extension in `tree` and assign hues.
+    #[must_use]
+    pub fn rank(tree: &Tree) -> Self {
+        let mut totals: std::collections::HashMap<Option<String>, u64> = std::collections::HashMap::new();
+        for (id, node) in tree.nodes() {
+            if node.kind != Kind::Directory {
+                *totals.entry(extension_of(node)).or_default() += tree.size(id);
+            }
+        }
+        let mut ranked: Vec<_> = totals.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+        // Golden-angle steps never repeat and keep every prefix well spread.
+        const GOLDEN_ANGLE: f64 = 137.507_764_05;
+        let colors = ranked
+            .into_iter()
+            .enumerate()
+            .map(|(i, (ext, _))| (ext, Oklch::new(PALETTE_LIGHTNESS, PALETTE_CHROMA, (i as f64 * GOLDEN_ANGLE) % 360.0)))
+            .collect();
+        Self { colors, directory: Oklch::grey(PALETTE_LIGHTNESS) }
+    }
+
+    #[must_use]
+    pub fn color(&self, tree: &Tree, id: NodeId) -> Oklch {
         let node = tree.node(id);
         if node.kind == Kind::Directory {
-            return make_bright_color([128, 128, 128], PALETTE_BRIGHTNESS);
+            return self.directory;
         }
-        let extension = std::path::Path::new(&*node.name)
-            .extension()
-            .map(|e| e.to_string_lossy().to_lowercase());
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        extension.hash(&mut hasher);
-        palette[(hasher.finish() % palette.len() as u64) as usize]
+        self.colors.get(&extension_of(node)).copied().unwrap_or(self.directory)
     }
+
+    /// Number of distinct extensions ranked.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.colors.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.colors.is_empty()
+    }
+}
+
+fn extension_of(node: &dirstats_scan::Node) -> Option<String> {
+    std::path::Path::new(&*node.name).extension().map(|e| e.to_string_lossy().to_lowercase())
 }
 
 struct DrawState {
@@ -156,13 +197,13 @@ pub fn render(
     width: u32,
     height: u32,
     options: &TreemapOptions,
-    color: impl Fn(&Tree, NodeId) -> Rgb,
+    color: impl Fn(&Tree, NodeId) -> Oklch,
 ) -> Treemap {
     let mut canvas = Canvas::new(width, height, options);
     let bounds = Rect::new(0, 0, width as i32, height as i32);
     let mut items = Vec::new();
     let background = if options.grid { options.grid_color } else { options.background };
-    canvas.fill(bounds, background, PALETTE_BRIGHTNESS);
+    canvas.fill(bounds, background);
 
     if tree.size(root) == 0 {
         items.push(VisibleItem { node: root, rect: bounds, depth: 0 });
@@ -171,13 +212,14 @@ pub fn render(
 
     let grid_width = i32::from(options.grid);
     let cushions = options.cushion_shading();
+    let ridge_height = options.height * GLOW_RIDGE;
     let mut weights = Vec::new();
     let mut regions = Vec::new();
     let mut stack = vec![DrawState {
         surface: [0.0; 4],
         rect: bounds,
         node: root,
-        ridge_height: options.height,
+        ridge_height,
         as_root: true,
         depth: 0,
     }];
@@ -249,49 +291,39 @@ impl<'a> Canvas<'a> {
         Treemap { width: self.width, height: self.height, pixels: self.pixels, items }
     }
 
-    fn put(&mut self, x: i32, y: i32, rgb: Rgb) {
+    fn put(&mut self, x: i32, y: i32, color: Oklch) {
+        self.put_rgb(x, y, color.to_srgb());
+    }
+
+    fn put_rgb(&mut self, x: i32, y: i32, rgb: Rgb) {
         let i = (y as usize * self.width as usize + x as usize) * 4;
         self.pixels[i..i + 3].copy_from_slice(&rgb);
     }
 
-    fn fill(&mut self, rect: Rect, color: Rgb, brightness: f64) {
-        let factor = brightness / PALETTE_BRIGHTNESS;
-        let rgb = normalize_color(
-            (f64::from(color[0]) * factor) as i32,
-            (f64::from(color[1]) * factor) as i32,
-            (f64::from(color[2]) * factor) as i32,
-        );
+    fn fill(&mut self, rect: Rect, color: Oklch) {
+        let rgb = color.to_srgb();
         for y in rect.top..rect.bottom {
             for x in rect.left..rect.right {
-                self.put(x, y, rgb);
+                self.put_rgb(x, y, rgb);
             }
         }
     }
 
-    fn draw_leaf(&mut self, rect: Rect, surface: &[f64; 4], color: Rgb) {
+    fn draw_leaf(&mut self, rect: Rect, surface: &[f64; 4], color: Oklch) {
         if rect.is_empty() {
             return;
         }
         let options = self.options;
-        let mut color = color;
-        if options.saturation < 1.0 {
-            let saturation = options.saturation.max(0.0);
-            let gray = color.iter().map(|&c| f64::from(c)).sum::<f64>() / 3.0;
-            color = color.map(|c| (gray + (f64::from(c) - gray) * saturation) as u8);
-        }
-        if options.cushion_shading() {
-            self.draw_cushion(rect, surface, color, options.brightness);
-        } else {
-            self.fill(rect, color, options.brightness);
+        // The palette supplies hue and chroma; the options set the face lightness.
+        let color = color.scale_chroma(options.saturation).with_lightness(options.lightness * color.l / PALETTE_LIGHTNESS);
+        match options.shading {
+            Shading::Glow if options.cushion_shading() => self.draw_cushion(rect, surface, color),
+            _ => self.fill(rect, color),
         }
     }
 
-    fn draw_cushion(&mut self, rect: Rect, surface: &[f64; 4], color: Rgb, brightness: f64) {
-        let ambient = self.options.ambient_light;
-        let diffuse = 1.0 - ambient;
-        let factor = brightness / PALETTE_BRIGHTNESS;
+    fn draw_cushion(&mut self, rect: Rect, surface: &[f64; 4], color: Oklch) {
         let [lx, ly, lz] = self.light;
-        let [r, g, b] = color.map(f64::from);
         let nx_step = -2.0 * surface[0];
 
         for y in rect.top..rect.bottom {
@@ -300,10 +332,13 @@ impl<'a> Canvas<'a> {
             let ny2_1 = ny * ny + 1.0;
             let mut nx = -(2.0 * surface[0] * (f64::from(rect.left) + 0.5) + surface[2]);
             for x in rect.left..rect.right {
-                let cosa = ((nx * lx + ny_ly_lz) / (nx * nx + ny2_1).sqrt()).min(1.0);
-                let pixel = ((diffuse * cosa).max(0.0) + ambient) * factor;
-                let rgb = normalize_color((r * pixel) as i32, (g * pixel) as i32, (b * pixel) as i32);
-                self.put(x, y, rgb);
+                let cosa = ((nx * lx + ny_ly_lz) / (nx * nx + ny2_1).sqrt()).clamp(0.0, 1.0);
+                // Lightness moves additively around the face, so hue and chroma
+                // stay put. The diffuse term is eased so light spreads over the
+                // whole box; a broad, weak highlight adds the glow.
+                let lit = cosa * cosa * (3.0 - 2.0 * cosa) - 0.5;
+                let highlight = cosa * cosa * GLOW_HIGHLIGHT;
+                self.put(x, y, color.lighten(GLOW_RANGE * lit + highlight));
                 nx += nx_step;
             }
         }
@@ -320,59 +355,35 @@ fn add_ridge(rect: Rect, surface: &mut [f64; 4], h: f64) {
     surface[1] -= hf;
 }
 
-/// Give a color a defined average brightness (0..=1).
-#[must_use]
-pub fn make_bright_color(color: Rgb, brightness: f64) -> Rgb {
-    let [r, g, b] = color.map(|c| f64::from(c) / 255.0);
-    let sum = r + g + b;
-    if sum == 0.0 {
-        let v = (brightness * 255.0) as u8;
-        return [v, v, v];
-    }
-    let f = 3.0 * brightness / sum;
-    normalize_color((r * f * 255.0) as i32, (g * f * 255.0) as i32, (b * f * 255.0) as i32)
-}
-
-/// Push channel overflow above 255 into the other two channels.
-fn normalize_color(mut red: i32, mut green: i32, mut blue: i32) -> Rgb {
-    fn distribute(first: &mut i32, second: &mut i32, third: &mut i32) {
-        let h = (*first - 255) / 2;
-        *first = 255;
-        *second += h;
-        *third += h;
-        if *second > 255 {
-            *third += *second - 255;
-            *second = 255;
-        } else if *third > 255 {
-            *second += *third - 255;
-            *third = 255;
-        }
-    }
-    if red > 255 {
-        distribute(&mut red, &mut green, &mut blue);
-    } else if green > 255 {
-        distribute(&mut green, &mut red, &mut blue);
-    } else if blue > 255 {
-        distribute(&mut blue, &mut red, &mut green);
-    }
-    [red, green, blue].map(|c| c.clamp(0, 255) as u8)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn normalizes_overflow() {
-        assert_eq!(normalize_color(355, 100, 0), [255, 150, 50]);
-        assert_eq!(normalize_color(10, 20, 30), [10, 20, 30]);
-    }
-
-    #[test]
-    fn bright_colors_share_brightness() {
-        for color in default_palette().into_iter().take(17) {
-            let sum: u32 = color.iter().map(|&c| u32::from(c)).sum();
-            assert!((sum as f64 / 3.0 / 255.0 - PALETTE_BRIGHTNESS).abs() < 0.02, "{color:?}");
+    fn ranked_extensions_get_distinct_hues() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, size) in [("a.rs", 5000), ("b.rs", 4000), ("c.png", 3000), ("d.txt", 100), ("e", 50)] {
+            std::fs::write(dir.path().join(name), vec![0u8; size]).unwrap();
+        }
+        let options = dirstats_scan::ScanOptions {
+            size_metric: dirstats_scan::SizeMetric::Apparent,
+            ..Default::default()
+        };
+        let tree = dirstats_scan::scan(dir.path(), &options).unwrap();
+        let colors = ExtensionColors::rank(&tree);
+        assert_eq!(colors.len(), 4, "rs, png, txt and no extension");
+        let by_name = |n: &str| {
+            let id = tree.children(tree.root()).iter().copied().find(|&c| &*tree.node(c).name == std::ffi::OsStr::new(n)).unwrap();
+            colors.color(&tree, id)
+        };
+        assert_eq!(by_name("a.rs"), by_name("b.rs"));
+        assert_eq!(by_name("a.rs").h, 0.0, "largest extension gets the first hue");
+        let hues = [by_name("a.rs").h, by_name("c.png").h, by_name("d.txt").h];
+        for (i, a) in hues.iter().enumerate() {
+            for b in &hues[i + 1..] {
+                let gap = (a - b).abs();
+                assert!(gap.min(360.0 - gap) > 60.0, "{hues:?}");
+            }
         }
     }
 
@@ -386,7 +397,7 @@ mod tests {
             ..Default::default()
         };
         let tree = dirstats_scan::scan(dir.path(), &options).unwrap();
-        let palette = default_palette();
+        let colors = ExtensionColors::rank(&tree);
         for style in [Style::Rows, Style::Squarified] {
             let map = render(
                 &tree,
@@ -394,7 +405,7 @@ mod tests {
                 64,
                 48,
                 &TreemapOptions { style, ..Default::default() },
-                color_by_extension(&palette),
+                |t, id| colors.color(t, id),
             );
             assert_eq!(map.pixels.len(), 64 * 48 * 4);
             assert_eq!(map.items.len(), 3);

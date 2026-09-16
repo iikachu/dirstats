@@ -9,12 +9,15 @@
 //! Treemap layout and cushion rendering for [`dirstats_scan::Tree`].
 //!
 //! - [`layout`] arranges sibling sizes into rectangles.
-//! - [`render`] draws a cushion-shaded treemap into an RGBA buffer.
+//! - [`color`] does all shading in OKLCH; sRGB only at the pixel.
+//! - [`render`] draws a shaded treemap into an RGBA buffer.
 //!
 //! See `CREDITS.md` in the repository for the projects this crate builds on.
 
+pub mod color;
 pub mod layout;
 pub mod render;
 
 pub use layout::{Rect, Style};
-pub use render::{Treemap, TreemapOptions, render};
+pub use color::{Oklch, Rgb};
+pub use render::{ExtensionColors, Shading, Treemap, TreemapOptions, render};
