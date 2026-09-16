@@ -19,6 +19,15 @@ type MapKey = (u64, NodeId, u32, u32);
 /// What the highlight layer depends on: the base render plus the hovered extension.
 type HighlightKey = (MapKey, Option<String>);
 
+/// What is selected. Selecting one kind clears the other.
+#[derive(Clone, Debug, PartialEq)]
+enum Selection {
+    /// A node anywhere under the zoom directory.
+    Node(NodeId),
+    /// Every file with this extension (`None` is "no extension").
+    Extension(Option<String>),
+}
+
 /// Period of the highlight pulse.
 const PULSE_SECONDS: f64 = 1.2;
 
@@ -77,8 +86,8 @@ struct Gui {
     highlight: Option<TextureHandle>,
     highlight_key: Option<HighlightKey>,
     style: Style,
-    /// Selected node, anywhere under the zoom directory.
-    selected: Option<NodeId>,
+    /// Current selection: a node or an extension, never both.
+    selection: Option<Selection>,
     /// User-adjustable column widths; `None` until the font is known.
     columns: Option<Columns>,
     /// Row to bring into view on the next frame, set when selecting from the treemap.
@@ -141,7 +150,7 @@ impl Gui {
             highlight: None,
             highlight_key: None,
             style: Style::Squarified,
-            selected: None,
+            selection: None,
             columns: None,
             scroll_to: None,
             hovered_extension: None,
@@ -150,7 +159,7 @@ impl Gui {
 
     fn tree_changed(&mut self) {
         self.tree_version += 1;
-        self.selected = None;
+        self.selection = None;
         self.colors = self.app.tree.as_ref().map(ExtensionColors::rank);
         self.map = None;
         self.map_key = None;
@@ -202,10 +211,24 @@ impl Gui {
 }
 
 impl Gui {
+    fn selected_node(&self) -> Option<NodeId> {
+        match &self.selection {
+            Some(Selection::Node(id)) => Some(*id),
+            _ => None,
+        }
+    }
+
+    fn selected_extension(&self) -> Option<&Option<String>> {
+        match &self.selection {
+            Some(Selection::Extension(ext)) => Some(ext),
+            _ => None,
+        }
+    }
+
     /// Select a node, open the tree down to it and scroll it into view,
     /// without changing the zoom.
     fn select(&mut self, id: NodeId) {
-        self.selected = Some(id);
+        self.selection = Some(Selection::Node(id));
         self.app.expand_to(id);
         self.scroll_to = Some(id);
     }
@@ -234,7 +257,7 @@ impl eframe::App for Gui {
             self.map_key = None;
         }
         if ctx.input(|i| i.key_pressed(Key::Enter))
-            && let Some(id) = self.selected
+            && let Some(id) = self.selected_node()
         {
             self.zoom(id);
         }
@@ -441,15 +464,26 @@ impl Gui {
         let pad = 6.0;
         let mono = egui::TextStyle::Monospace.resolve(ui.style());
         let mut hovered_extension = None;
+        let mut clicked_extension = None;
+        let selected_extension = self.selected_extension().cloned();
+        let selected_extension = selected_extension.as_ref();
         egui::ScrollArea::vertical().id_salt("legend").auto_shrink([false, false]).show_rows(ui, row_height, entries.len(), |ui, range| {
             for (ext, size, color) in &entries[range] {
-                let (row_rect, row) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::hover());
+                let (row_rect, row) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::click());
                 let hovered = row.hovered();
+                let is_selected = selected_extension == Some(ext);
                 if hovered {
                     hovered_extension = Some(ext.clone());
+                }
+                if row.clicked() {
+                    clicked_extension = Some(ext.clone());
+                }
+                if is_selected {
+                    ui.painter().rect_filled(row_rect, 0.0, ui.visuals().selection.bg_fill);
+                } else if hovered {
                     ui.painter().rect_filled(row_rect, 0.0, ui.visuals().widgets.hovered.weak_bg_fill);
                 }
-                let text = ui.visuals().text_color();
+                let text = if is_selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
                 let (top, bottom) = (row_rect.min.y, row_rect.max.y);
                 let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
 
@@ -483,6 +517,9 @@ impl Gui {
             }
         });
         self.hovered_extension = hovered_extension;
+        if let Some(ext) = clicked_extension {
+            self.selection = Some(Selection::Extension(ext));
+        }
     }
 
     /// Keyboard navigation in the tree. Up and down move through the visible
@@ -535,7 +572,7 @@ impl Gui {
         if rows.is_empty() {
             return;
         }
-        let index = self.selected.and_then(|id| rows.iter().position(|&(r, _)| r == id));
+        let index = self.selected_node().and_then(|id| rows.iter().position(|&(r, _)| r == id));
         let (left, right) = (nav == Nav::Left, nav == Nav::Right);
         let mut target = None;
         match nav {
@@ -574,7 +611,7 @@ impl Gui {
         if let Some(i) = target
             && let Some(&(id, _)) = rows.get(i)
         {
-            self.selected = Some(id);
+            self.selection = Some(Selection::Node(id));
             self.scroll_to = Some(id);
         }
     }
@@ -590,7 +627,7 @@ impl Gui {
         let mut rows = self.app.tree_rows();
         self.keyboard_navigation(ui, &mut rows, row_height + ui.spacing().item_spacing.y);
         let tree = self.app.tree.as_ref().expect("checked above");
-        let selected = self.selected;
+        let selected = self.selected_node();
         let indent = 16.0;
         let pad = 6.0;
         let mono = egui::TextStyle::Monospace.resolve(ui.style());
@@ -711,7 +748,7 @@ impl Gui {
             self.app.toggle_expanded(id);
         }
         if let Some(id) = select {
-            self.selected = Some(id);
+            self.selection = Some(Selection::Node(id));
         }
     }
 
@@ -759,8 +796,19 @@ impl Gui {
                 painter.rect_stroke(rect, 0.0, egui::Stroke::new(width, color), egui::StrokeKind::Inside);
             }
         };
-        if let Some(selected) = self.selected {
-            outline(selected, Color32::WHITE, 2.0);
+        match &self.selection {
+            Some(Selection::Node(selected)) => outline(*selected, Color32::WHITE, 2.0),
+            Some(Selection::Extension(ext)) => {
+                if let Some(tree) = &self.app.tree {
+                    for item in &map.items {
+                        let node = tree.node(item.node);
+                        if node.kind != dirstats_app::scan::Kind::Directory && ExtensionColors::extension(node) == *ext {
+                            outline(item.node, Color32::WHITE, 2.0);
+                        }
+                    }
+                }
+            }
+            None => {}
         }
         if let Some(node) = hovered {
             outline(node, Color32::from_white_alpha(160), 1.0);
