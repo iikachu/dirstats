@@ -49,10 +49,12 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
 - By Google
 - License: Apache-2.0 (`crates/dirstats-gui/assets/material-symbols/LICENSE`),
   used in `dirstats-gui` under GPL-3.0-or-later.
-- The source SVGs (`chevron_right`, `expand_more`, Material Symbols Outlined)
-  are vendored in `crates/dirstats-gui/assets/material-symbols/`. Their
-  outlines are inlined as polygon coordinates in the `icons` module of
-  `crates/dirstats-gui/src/lib.rs`, whose header carries the attribution.
+- Glyphs used: `chevron_right` (also mirrored for back), `expand_more`,
+  `content_copy`, `open_in_new`, `delete` and `undo`, all from Material
+  Symbols Outlined at 24px. Their SVG path data is inlined in the `icons`
+  module of `crates/dirstats-gui/src/lib.rs` and rasterised at run time;
+  the module header carries the attribution. The first two SVGs are also
+  vendored in `crates/dirstats-gui/assets/material-symbols/`.
 
 ## egui / eframe — GUI toolkit
 

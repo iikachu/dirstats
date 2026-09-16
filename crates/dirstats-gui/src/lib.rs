@@ -78,7 +78,7 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool, trashed: T
     if is_dir && menu_item(ui, None, "Zoom in", false).clicked() {
         action = Some(NodeAction::Zoom);
     }
-    if menu_item(ui, Some(icons::Glyph::Copy), "Copy path", false).clicked() {
+    if menu_item(ui, Some(icons::Glyph::ContentCopy), "Copy path", false).clicked() {
         action = Some(NodeAction::CopyPath);
     }
     #[cfg(feature = "open")]
@@ -95,7 +95,7 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool, trashed: T
                 }
             }
             TrashState::CanPutBack => {
-                if menu_item(ui, Some(icons::Glyph::PutBack), "Put Back", false).clicked() {
+                if menu_item(ui, Some(icons::Glyph::Undo), "Put Back", false).clicked() {
                     action = Some(NodeAction::PutBack);
                 }
             }
@@ -138,7 +138,7 @@ fn menu_item(ui: &mut egui::Ui, glyph: Option<icons::Glyph>, label: &str, destru
     let color = if destructive { ui.visuals().error_fg_color } else { visuals.text_color() };
     let icon_rect = egui::Rect::from_center_size(egui::pos2(rect.min.x + PAD + SLOT / 2.0, rect.center().y), egui::vec2(16.0, 16.0));
     if let Some(glyph) = glyph {
-        icons::stroke(ui.painter(), icon_rect, glyph, color);
+        icons::paint(ui.painter(), icon_rect, glyph, color);
     }
     let text_pos = egui::pos2(rect.min.x + PAD + SLOT + GAP, rect.center().y);
     ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, label, egui::TextStyle::Button.resolve(ui.style()), color);
@@ -168,95 +168,284 @@ fn vivid(color: dirstats_treemap::Oklch) -> dirstats_treemap::Oklch {
     color.lighten(HIGHLIGHT_LIGHTNESS).toward_max_chroma(HIGHLIGHT_TOWARD_MAX)
 }
 
-/// Material Symbols glyphs inlined as polygons (Apache-2.0, by Google).
-/// Coordinates are the 960-unit viewBox of the SVGs, y flipped to point down.
-/// Each chevron is split into two convex arms so it can be filled directly.
 mod icons {
-    use eframe::egui::{self, Color32, Pos2, Rect, Shape};
+    //! Material Symbols Outlined glyphs (Apache-2.0, by Google), each the
+    //! `d` attribute of its 24px SVG in the 960-unit viewBox with y up.
+    //! A glyph is rasterised once with an even-odd scanline fill into a
+    //! cached alpha texture, then drawn tinted, so paths with holes (the
+    //! copy sheets, the can) render exactly as designed.
 
-    /// `chevron_right`: `M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z`
-    pub const CHEVRON_RIGHT: [[(f32, f32); 4]; 2] = [
-        [(504.0, 480.0), (320.0, 296.0), (376.0, 240.0), (616.0, 480.0)],
-        [(616.0, 480.0), (376.0, 720.0), (320.0, 664.0), (504.0, 480.0)],
-    ];
-    /// `chevron_left`: `chevron_right` mirrored horizontally.
-    pub const CHEVRON_LEFT: [[(f32, f32); 4]; 2] = [
-        [(456.0, 480.0), (640.0, 296.0), (584.0, 240.0), (344.0, 480.0)],
-        [(344.0, 480.0), (584.0, 720.0), (640.0, 664.0), (456.0, 480.0)],
-    ];
-    /// `expand_more` (`keyboard_arrow_down`): `M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z`
-    pub const KEYBOARD_ARROW_DOWN: [[(f32, f32); 4]; 2] = [
-        [(480.0, 616.0), (240.0, 376.0), (296.0, 320.0), (480.0, 504.0)],
-        [(480.0, 504.0), (664.0, 320.0), (720.0, 376.0), (480.0, 616.0)],
-    ];
+    use eframe::egui::{self, Color32, Rect, TextureHandle, TextureOptions};
 
-    /// Outline glyphs after Material Symbols `content_copy`, `open_in_new`
-    /// and `delete`, drawn as strokes on the 24-unit grid rather than
-    /// traced, so they match the chevrons in weight.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    #[allow(dead_code)] // Open and Delete are only reachable with their features.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[allow(dead_code)] // Open and the trash glyphs are only reachable with their features.
     pub enum Glyph {
-        Copy,
+        ChevronRight,
+        /// `chevron_right` mirrored; Material's `chevron_left` is the same shape.
+        ChevronLeft,
+        /// `expand_more`, also published as `keyboard_arrow_down`.
+        ExpandMore,
+        ContentCopy,
         OpenInNew,
         Delete,
-        /// After `restore_from_trash`: the can with an upward arrow.
-        PutBack,
+        Undo,
     }
 
-    /// Paint an outline glyph scaled to fit `rect`.
-    pub fn stroke(painter: &egui::Painter, rect: Rect, glyph: Glyph, color: Color32) {
-        let side = rect.width().min(rect.height());
-        let s = side / 24.0;
-        let origin = rect.center() - egui::vec2(side, side) / 2.0;
-        let p = |x: f32, y: f32| origin + egui::vec2(x * s, y * s);
-        let stroke = egui::Stroke::new((2.0 * s).max(1.0), color);
-        let r = egui::CornerRadius::same((2.0 * s) as u8);
-        let rect_of = |x0: f32, y0: f32, x1: f32, y1: f32| Rect::from_min_max(p(x0, y0), p(x1, y1));
-        match glyph {
-            Glyph::Copy => {
-                // Back sheet: open L-shape; front sheet: full rounded rectangle.
-                painter.line_segment([p(5.0, 15.0), p(5.0, 4.0)], stroke);
-                painter.line_segment([p(5.0, 4.0), p(15.0, 4.0)], stroke);
-                painter.rect_stroke(rect_of(9.0, 8.0, 20.0, 21.0), r, stroke, egui::StrokeKind::Middle);
+    impl Glyph {
+        fn path(self) -> &'static str {
+            match self {
+                Glyph::ChevronRight | Glyph::ChevronLeft => "M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z",
+                Glyph::ExpandMore => "M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z",
+                Glyph::ContentCopy => "M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z",
+                Glyph::OpenInNew => "M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z",
+                Glyph::Delete => "M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z",
+                Glyph::Undo => "M280-200v-80h284q63 0 109.5-40T720-420q0-60-46.5-100T564-560H312l104 104-56 56-200-200 200-200 56 56-104 104h252q97 0 166.5 63T800-420q0 94-69.5 157T564-200H280Z",
             }
-            Glyph::OpenInNew => {
-                // Box with a gap at the top right, and an arrow leaving through it.
-                painter.line_segment([p(10.0, 5.0), p(5.0, 5.0)], stroke);
-                painter.line_segment([p(5.0, 5.0), p(5.0, 19.0)], stroke);
-                painter.line_segment([p(5.0, 19.0), p(19.0, 19.0)], stroke);
-                painter.line_segment([p(19.0, 19.0), p(19.0, 14.0)], stroke);
-                painter.line_segment([p(14.0, 4.0), p(20.0, 4.0)], stroke);
-                painter.line_segment([p(20.0, 4.0), p(20.0, 10.0)], stroke);
-                painter.line_segment([p(20.0, 4.0), p(11.0, 13.0)], stroke);
-            }
-            Glyph::Delete => {
-                // Lid, handle, and a slightly tapered can.
-                painter.line_segment([p(4.0, 6.5), p(20.0, 6.5)], stroke);
-                painter.line_segment([p(9.0, 6.5), p(9.0, 3.5)], stroke);
-                painter.line_segment([p(9.0, 3.5), p(15.0, 3.5)], stroke);
-                painter.line_segment([p(15.0, 3.5), p(15.0, 6.5)], stroke);
-                painter.add(Shape::closed_line(vec![p(6.0, 6.5), p(18.0, 6.5), p(17.0, 21.0), p(7.0, 21.0)], stroke));
-            }
-            Glyph::PutBack => {
-                // The can, open at the top, with an arrow rising out of it.
-                painter.line_segment([p(4.0, 6.5), p(8.0, 6.5)], stroke);
-                painter.line_segment([p(16.0, 6.5), p(20.0, 6.5)], stroke);
-                painter.add(Shape::line(vec![p(6.0, 6.5), p(7.0, 21.0), p(17.0, 21.0), p(18.0, 6.5)], stroke));
-                painter.line_segment([p(12.0, 17.0), p(12.0, 4.0)], stroke);
-                painter.line_segment([p(8.5, 7.5), p(12.0, 4.0)], stroke);
-                painter.line_segment([p(15.5, 7.5), p(12.0, 4.0)], stroke);
-            }
+        }
+
+        fn mirrored(self) -> bool {
+            self == Glyph::ChevronLeft
         }
     }
 
-    /// Paint a glyph scaled to fit `rect`, keeping its aspect.
-    pub fn paint(painter: &egui::Painter, rect: Rect, glyph: &[[(f32, f32); 4]; 2], color: Color32) {
+    /// Texture side in pixels; glyphs are drawn at 14–18px so this is plenty.
+    const TEXTURE_SIDE: usize = 48;
+    /// Sub-samples per pixel per axis.
+    const SUPERSAMPLE: usize = 4;
+
+    /// Paint `glyph` tinted with `color`, scaled to fit `rect`.
+    pub fn paint(painter: &egui::Painter, rect: Rect, glyph: Glyph, color: Color32) {
+        let texture = texture_for(painter.ctx(), glyph);
         let side = rect.width().min(rect.height());
-        let scale = side / 960.0;
-        let origin = rect.center() - egui::vec2(side, side) / 2.0;
-        for arm in glyph {
-            let points: Vec<Pos2> = arm.iter().map(|&(x, y)| origin + egui::vec2(x * scale, y * scale)).collect();
-            painter.add(Shape::convex_polygon(points, color, egui::Stroke::NONE));
+        let square = Rect::from_center_size(rect.center(), egui::vec2(side, side));
+        painter.image(texture.id(), square, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), color);
+    }
+
+    /// The glyph's cached alpha texture, rasterised on first use.
+    fn texture_for(ctx: &egui::Context, glyph: Glyph) -> TextureHandle {
+        let key = egui::Id::new(("dirstats-icon", glyph));
+        if let Some(texture) = ctx.data(|d| d.get_temp::<TextureHandle>(key)) {
+            return texture;
+        }
+        let alpha = rasterise(glyph.path(), glyph.mirrored());
+        let pixels: Vec<Color32> = alpha.into_iter().map(Color32::from_white_alpha).collect();
+        let image = egui::ColorImage { size: [TEXTURE_SIDE, TEXTURE_SIDE], source_size: egui::vec2(TEXTURE_SIDE as f32, TEXTURE_SIDE as f32), pixels };
+        let texture = ctx.load_texture(format!("icon-{glyph:?}"), image, TextureOptions::LINEAR);
+        ctx.data_mut(|d| d.insert_temp(key, texture.clone()));
+        texture
+    }
+
+    /// Even-odd scanline coverage of the path at `TEXTURE_SIDE` square.
+    fn rasterise(d: &str, mirrored: bool) -> Vec<u8> {
+        let rings = flatten_svg_path(d);
+        // Edges in texture sub-sample space.
+        let scale = (TEXTURE_SIDE * SUPERSAMPLE) as f32 / 960.0;
+        let mut edges: Vec<((f32, f32), (f32, f32))> = Vec::new();
+        for ring in &rings {
+            for i in 0..ring.len() {
+                let (ax, ay) = ring[i];
+                let (bx, by) = ring[(i + 1) % ring.len()];
+                let fx = |x: f32| if mirrored { 960.0 - x } else { x } * scale;
+                let fy = |y: f32| (y + 960.0) * scale;
+                edges.push(((fx(ax), fy(ay)), (fx(bx), fy(by))));
+            }
+        }
+        let samples = TEXTURE_SIDE * SUPERSAMPLE;
+        let mut coverage = vec![0u32; TEXTURE_SIDE * TEXTURE_SIDE];
+        let mut crossings: Vec<f32> = Vec::new();
+        for sy in 0..samples {
+            let y = sy as f32 + 0.5;
+            crossings.clear();
+            for &((ax, ay), (bx, by)) in &edges {
+                if (ay <= y) != (by <= y) {
+                    crossings.push(ax + (y - ay) / (by - ay) * (bx - ax));
+                }
+            }
+            crossings.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            for pair in crossings.chunks(2) {
+                if pair.len() < 2 {
+                    break;
+                }
+                let (x0, x1) = (pair[0].max(0.0), pair[1].min(samples as f32));
+                let mut sx = x0.floor() as usize;
+                while (sx as f32 + 0.5) < x1 && sx < samples {
+                    if sx as f32 + 0.5 >= x0 {
+                        coverage[(sy / SUPERSAMPLE) * TEXTURE_SIDE + sx / SUPERSAMPLE] += 1;
+                    }
+                    sx += 1;
+                }
+            }
+        }
+        let full = (SUPERSAMPLE * SUPERSAMPLE) as u32;
+        coverage.into_iter().map(|c| (c.min(full) * 255 / full) as u8).collect()
+    }
+
+    /// Parse and flatten SVG path syntax (M, L, H, V, Q, T, Z, absolute or
+    /// relative) into closed rings in path units.
+    fn flatten_svg_path(d: &str) -> Vec<Vec<(f32, f32)>> {
+        struct State {
+            rings: Vec<Vec<(f32, f32)>>,
+            ring: Vec<(f32, f32)>,
+            x: f32,
+            y: f32,
+            sx: f32,
+            sy: f32,
+            last_ctrl: Option<(f32, f32)>,
+        }
+        impl State {
+            fn close(&mut self) {
+                // A path that draws back to its start would repeat the first point.
+                if self.ring.len() > 1 && self.ring.first() == self.ring.last() {
+                    self.ring.pop();
+                }
+                if self.ring.len() > 2 {
+                    self.rings.push(std::mem::take(&mut self.ring));
+                }
+                self.ring.clear();
+            }
+            fn quad(&mut self, cx: f32, cy: f32, ex: f32, ey: f32) {
+                let (x0, y0) = (self.x, self.y);
+                for i in 1..=8 {
+                    let t = i as f32 / 8.0;
+                    let u = 1.0 - t;
+                    self.ring.push((u * u * x0 + 2.0 * u * t * cx + t * t * ex, u * u * y0 + 2.0 * u * t * cy + t * t * ey));
+                }
+                self.x = ex;
+                self.y = ey;
+                self.last_ctrl = Some((cx, cy));
+            }
+            fn apply(&mut self, cmd: char, nums: &[f32]) {
+                let rel = cmd.is_ascii_lowercase();
+                let abs = |s: &State, dx: f32, dy: f32| if rel { (s.x + dx, s.y + dy) } else { (dx, dy) };
+                match cmd.to_ascii_uppercase() {
+                    'M' => {
+                        for (i, pair) in nums.chunks(2).enumerate() {
+                            let (nx, ny) = abs(self, pair[0], pair[1]);
+                            if i == 0 {
+                                self.close();
+                                self.sx = nx;
+                                self.sy = ny;
+                            }
+                            self.x = nx;
+                            self.y = ny;
+                            self.ring.push((nx, ny));
+                        }
+                        self.last_ctrl = None;
+                    }
+                    'L' => {
+                        for pair in nums.chunks(2) {
+                            let (nx, ny) = abs(self, pair[0], pair[1]);
+                            self.x = nx;
+                            self.y = ny;
+                            self.ring.push((nx, ny));
+                        }
+                        self.last_ctrl = None;
+                    }
+                    'H' => {
+                        for &v in nums {
+                            self.x = if rel { self.x + v } else { v };
+                            self.ring.push((self.x, self.y));
+                        }
+                        self.last_ctrl = None;
+                    }
+                    'V' => {
+                        for &v in nums {
+                            self.y = if rel { self.y + v } else { v };
+                            self.ring.push((self.x, self.y));
+                        }
+                        self.last_ctrl = None;
+                    }
+                    'Q' => {
+                        for q in nums.chunks(4) {
+                            let (cx, cy) = abs(self, q[0], q[1]);
+                            let (ex, ey) = abs(self, q[2], q[3]);
+                            self.quad(cx, cy, ex, ey);
+                        }
+                    }
+                    'T' => {
+                        for pair in nums.chunks(2) {
+                            let (ex, ey) = abs(self, pair[0], pair[1]);
+                            // Reflect the previous control point through the current point.
+                            let (cx, cy) = self.last_ctrl.map_or((self.x, self.y), |(px, py)| (2.0 * self.x - px, 2.0 * self.y - py));
+                            self.quad(cx, cy, ex, ey);
+                        }
+                    }
+                    'Z' => {
+                        self.x = self.sx;
+                        self.y = self.sy;
+                        self.close();
+                        self.last_ctrl = None;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut state = State { rings: Vec::new(), ring: Vec::new(), x: 0.0, y: 0.0, sx: 0.0, sy: 0.0, last_ctrl: None };
+        let mut cmd = 'M';
+        let mut nums: Vec<f32> = Vec::new();
+        let mut token = String::new();
+        let flush = |token: &mut String, nums: &mut Vec<f32>| {
+            if !token.is_empty() {
+                nums.push(token.parse().unwrap_or(0.0));
+                token.clear();
+            }
+        };
+        for c in d.chars() {
+            if c.is_ascii_alphabetic() {
+                flush(&mut token, &mut nums);
+                state.apply(cmd, &nums);
+                nums.clear();
+                cmd = c;
+                if cmd.eq_ignore_ascii_case(&'z') {
+                    state.apply(cmd, &[]);
+                    cmd = 'M';
+                }
+            } else if c == ',' || c.is_whitespace() || (c == '-' && !token.is_empty()) || (c == '.' && token.contains('.')) {
+                // Separator, or the start of a new number packed against the last.
+                flush(&mut token, &mut nums);
+                if c == '-' || c == '.' {
+                    token.push(c);
+                }
+            } else {
+                token.push(c);
+            }
+        }
+        flush(&mut token, &mut nums);
+        state.apply(cmd, &nums);
+        state.close();
+        state.rings
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn chevron_flattens_to_one_ring_of_six_points() {
+            let rings = flatten_svg_path(Glyph::ChevronRight.path());
+            assert_eq!(rings.len(), 1);
+            assert_eq!(rings[0].len(), 6);
+        }
+
+        #[test]
+        fn packed_numbers_parse() {
+            // "-56-56" is two numbers; "23.5-56.5" too.
+            let rings = flatten_svg_path("M0 0l-56-56 23.5-56.5Z");
+            assert_eq!(rings[0], vec![(0.0, 0.0), (-56.0, -56.0), (-32.5, -112.5)]);
+        }
+
+        #[test]
+        fn holes_stay_clear_and_solids_fill() {
+            // Copy glyph: the front sheet is a ring with a rectangular hole.
+            let alpha = rasterise(Glyph::ContentCopy.path(), false);
+            let at = |x: usize, y: usize| alpha[y * TEXTURE_SIDE + x];
+            // Centre of the front sheet is inside its hole.
+            assert_eq!(at(27, 30), 0);
+            // On the sheet's left border stroke.
+            assert!(at(15, 30) > 200, "{}", at(15, 30));
+            // Outside everything.
+            assert_eq!(at(1, 1), 0);
         }
     }
 }
@@ -737,7 +926,7 @@ impl Gui {
     /// Toolbar: back, breadcrumbs, totals; layout toggle and rescan on the right.
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing.x = 6.0;
-        let icon_button = |ui: &mut egui::Ui, glyph: &[[(f32, f32); 4]; 2], enabled: bool, tip: &str| -> egui::Response {
+        let icon_button = |ui: &mut egui::Ui, glyph: icons::Glyph, enabled: bool, tip: &str| -> egui::Response {
             let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), if enabled { Sense::click() } else { Sense::hover() });
             let visuals = ui.style().interact(&response);
             if enabled && (response.hovered() || response.is_pointer_button_down_on()) {
@@ -798,14 +987,14 @@ impl Gui {
                 // Left cluster: back button and breadcrumbs, truncating from the right.
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     let can_back = self.app.can_back();
-                    if icon_button(ui, &icons::CHEVRON_LEFT, can_back, "Back (Backspace)").clicked() {
+                    if icon_button(ui, icons::Glyph::ChevronLeft, can_back, "Back (Backspace)").clicked() {
                         zoom_target = Some(None);
                     }
                     let crumbs = self.app.breadcrumbs();
                     for (i, &id) in crumbs.iter().enumerate() {
                         if i > 0 {
                             let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
-                            icons::paint(ui.painter(), rect, &icons::CHEVRON_RIGHT, ui.visuals().weak_text_color());
+                            icons::paint(ui.painter(), rect, icons::Glyph::ChevronRight, ui.visuals().weak_text_color());
                         }
                         let name = tree.node(id).name.to_string_lossy().into_owned();
                         if i + 1 == crumbs.len() {
@@ -1130,7 +1319,7 @@ impl Gui {
                     egui::vec2(18.0, row_height),
                 );
                 if is_dir {
-                    let glyph = if self.app.expanded.contains(&id) { &icons::KEYBOARD_ARROW_DOWN } else { &icons::CHEVRON_RIGHT };
+                    let glyph = if self.app.expanded.contains(&id) { icons::Glyph::ExpandMore } else { icons::Glyph::ChevronRight };
                     let response = ui.interact(expander_rect, ui.id().with(("expander", id)), Sense::click());
                     let color = if response.hovered() { ui.visuals().strong_text_color() } else { text };
                     icons::paint(&ui.painter().with_clip_rect(name_cell), expander_rect.shrink(1.0), glyph, color);
