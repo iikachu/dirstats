@@ -43,6 +43,17 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
   - `crates/dirstats-tui`: keyboard model and feature-flag layout follow
     dua-cli's interactive mode.
 
+## Material Symbols — icons
+
+- Project: https://github.com/google/material-design-icons
+- By Google
+- License: Apache-2.0 (`crates/dirstats-gui/assets/material-symbols/LICENSE`),
+  used in `dirstats-gui` under GPL-3.0-or-later.
+- The source SVGs (`chevron_right`, `expand_more`, Material Symbols Outlined)
+  are vendored in `crates/dirstats-gui/assets/material-symbols/`. Their
+  outlines are inlined as polygon coordinates in the `icons` module of
+  `crates/dirstats-gui/src/lib.rs`, whose header carries the attribution.
+
 ## egui / eframe — GUI toolkit
 
 - By Emil Ernerfeldt and contributors, MIT OR Apache-2.0. Used as a

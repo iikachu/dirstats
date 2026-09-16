@@ -14,6 +14,35 @@ use dirstats_treemap::render::{ExtensionColors, render};
 use dirstats_treemap::{Style, Treemap, TreemapOptions};
 use eframe::egui::{self, Color32, ColorImage, Key, Sense, TextureHandle, TextureOptions};
 
+/// Material Symbols glyphs inlined as polygons (Apache-2.0, by Google).
+/// Coordinates are the 960-unit viewBox of the SVGs, y flipped to point down.
+/// Each chevron is split into two convex arms so it can be filled directly.
+mod icons {
+    use eframe::egui::{self, Color32, Pos2, Rect, Shape};
+
+    /// `chevron_right`: `M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z`
+    pub const CHEVRON_RIGHT: [[(f32, f32); 4]; 2] = [
+        [(504.0, 480.0), (320.0, 296.0), (376.0, 240.0), (616.0, 480.0)],
+        [(616.0, 480.0), (376.0, 720.0), (320.0, 664.0), (504.0, 480.0)],
+    ];
+    /// `expand_more` (`keyboard_arrow_down`): `M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z`
+    pub const KEYBOARD_ARROW_DOWN: [[(f32, f32); 4]; 2] = [
+        [(480.0, 616.0), (240.0, 376.0), (296.0, 320.0), (480.0, 504.0)],
+        [(480.0, 504.0), (664.0, 320.0), (720.0, 376.0), (480.0, 616.0)],
+    ];
+
+    /// Paint a glyph scaled to fit `rect`, keeping its aspect.
+    pub fn paint(painter: &egui::Painter, rect: Rect, glyph: &[[(f32, f32); 4]; 2], color: Color32) {
+        let side = rect.width().min(rect.height());
+        let scale = side / 960.0;
+        let origin = rect.center() - egui::vec2(side, side) / 2.0;
+        for arm in glyph {
+            let points: Vec<Pos2> = arm.iter().map(|&(x, y)| origin + egui::vec2(x * scale, y * scale)).collect();
+            painter.add(Shape::convex_polygon(points, color, egui::Stroke::NONE));
+        }
+    }
+}
+
 /// Open the window and run until it is closed.
 pub fn run(app: App) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -447,12 +476,13 @@ impl Gui {
                 let name_cell = cell(edges[0], edges[1]);
                 let expander_rect = egui::Rect::from_min_size(
                     egui::pos2(edges[0] + pad + indent * depth as f32, top),
-                    egui::vec2(14.0, row_height),
+                    egui::vec2(18.0, row_height),
                 );
                 if is_dir {
-                    let arrow = if self.app.expanded.contains(&id) { "▾" } else { "▸" };
+                    let glyph = if self.app.expanded.contains(&id) { &icons::KEYBOARD_ARROW_DOWN } else { &icons::CHEVRON_RIGHT };
                     let response = ui.interact(expander_rect, ui.id().with(("expander", id)), Sense::click());
-                    ui.painter().with_clip_rect(name_cell).text(expander_rect.center(), egui::Align2::CENTER_CENTER, arrow, egui::TextStyle::Body.resolve(ui.style()), text);
+                    let color = if response.hovered() { ui.visuals().strong_text_color() } else { text };
+                    icons::paint(&ui.painter().with_clip_rect(name_cell), expander_rect.shrink(1.0), glyph, color);
                     if response.clicked() {
                         toggle = Some(id);
                     }
