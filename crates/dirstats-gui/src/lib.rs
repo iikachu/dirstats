@@ -105,6 +105,9 @@ struct Gui {
     hovered_highlight: Option<Highlight>,
     /// Hover collected during this frame, applied at the end of `body`.
     next_highlight: Option<Highlight>,
+    /// Hover pulses only while the mouse is driving; keyboard navigation
+    /// switches it off until the pointer moves again.
+    hover_active: bool,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -166,6 +169,7 @@ impl Gui {
             scroll_to: None,
             hovered_highlight: None,
             next_highlight: None,
+            hover_active: true,
         }
     }
 
@@ -295,6 +299,9 @@ impl Gui {
     /// One flat header across the window, then the tree, treemap and
     /// extensions laid out under their columns.
     fn body(&mut self, ui: &mut egui::Ui) {
+        if ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO || i.pointer.any_pressed()) {
+            self.hover_active = true;
+        }
         // Resolve the font before taking the fonts lock: touching the style
         // inside that closure deadlocks the context.
         let mono_font = egui::TextStyle::Monospace.resolve(ui.style());
@@ -545,7 +552,9 @@ impl Gui {
                 }
             }
         });
-        if let Some(ext) = hovered_extension {
+        if let Some(ext) = hovered_extension
+            && self.hover_active
+        {
             self.next_highlight = Some(Highlight::Extension(ext));
         }
         if let Some(ext) = clicked_extension {
@@ -600,6 +609,7 @@ impl Gui {
             }
         });
         let Some(nav) = nav else { return };
+        self.hover_active = false;
         if rows.is_empty() {
             return;
         }
@@ -768,7 +778,9 @@ impl Gui {
                 }
                 if row.hovered() {
                     self.app.hovered = Some(id);
-                    self.next_highlight = Some(Highlight::Subtree(id));
+                    if self.hover_active {
+                        self.next_highlight = Some(Highlight::Subtree(id));
+                    }
                 }
                 if is_selected && is_dir && ui.input(|i| i.key_pressed(Key::Space)) {
                     toggle = Some(id);
@@ -817,7 +829,9 @@ impl Gui {
         });
         if response.hovered() {
             self.app.hovered = hovered;
-            if let Some(node) = hovered {
+            if let Some(node) = hovered
+                && self.hover_active
+            {
                 self.next_highlight = Some(Highlight::Subtree(node));
             }
         }
