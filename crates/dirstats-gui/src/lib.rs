@@ -1015,6 +1015,8 @@ impl Gui {
         let pad = 6.0;
         let mono = egui::TextStyle::Monospace.resolve(ui.style());
 
+        // Computed before the row closure, which cannot borrow the app mutably.
+        let trashed_rows: Vec<bool> = rows.iter().map(|&(id, _)| self.app.is_trashed(id)).collect();
         let mut select = None;
         let mut toggle = None;
         let mut menu_action: Option<(NodeId, NodeAction)> = None;
@@ -1041,7 +1043,7 @@ impl Gui {
         }
         let scroll_id = ui.id().with("tree-scroll");
         let output = scroll.show_rows(ui, row_height, rows.len(), |ui, range| {
-            for &(id, depth) in &rows[range] {
+            for (row_index, &(id, depth)) in rows.iter().enumerate().take(range.end).skip(range.start) {
                 let node = tree.node(id);
                 let size = tree.size(id);
                 let parent_size = node.parent.map_or(size, |p| tree.size(p));
@@ -1056,7 +1058,14 @@ impl Gui {
                 } else if row.hovered() {
                     ui.painter().rect_filled(row_rect, 0.0, hover_fill(ui.visuals()));
                 }
-                let text = if is_selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+                let trashed = trashed_rows[row_index];
+                let text = if is_selected {
+                    ui.visuals().selection.stroke.color
+                } else if trashed {
+                    ui.visuals().weak_text_color()
+                } else {
+                    ui.visuals().text_color()
+                };
                 let (top, bottom) = (row_rect.min.y, row_rect.max.y);
                 let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
 
@@ -1086,7 +1095,11 @@ impl Gui {
                 if label_rect.width() > 4.0 {
                     let mut name_ui = ui.new_child(egui::UiBuilder::new().max_rect(label_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
                     name_ui.set_clip_rect(label_rect.intersect(ui.clip_rect()));
-                    name_ui.add(egui::Label::new(egui::RichText::new(name).color(text)).truncate().selectable(false));
+                    let mut rich = egui::RichText::new(name).color(text);
+                    if trashed {
+                        rich = rich.strikethrough();
+                    }
+                    name_ui.add(egui::Label::new(rich).truncate().selectable(false));
                 }
 
                 // Bar column.
@@ -1101,13 +1114,16 @@ impl Gui {
                 // Share and size: right-aligned monospace, clipped to their cells.
                 for (from, to, value) in [(edges[2], edges[3], format!("{share:.1}")), (edges[3], edges[4], format::size(size))] {
                     let c = cell(from, to);
-                    ui.painter().with_clip_rect(c).text(
+                    let galley = ui.painter().with_clip_rect(c).text(
                         egui::pos2(c.max.x - pad, c.center().y),
                         egui::Align2::RIGHT_CENTER,
                         value,
                         mono.clone(),
                         text,
                     );
+                    if trashed {
+                        ui.painter().with_clip_rect(c).hline(galley.x_range(), galley.center().y, egui::Stroke::new(1.0_f32, text));
+                    }
                 }
 
                 if row.clicked() || row.secondary_clicked() {
@@ -1222,6 +1238,19 @@ impl Gui {
                 && self.hover_active
             {
                 self.next_highlight = Some(Highlight::Subtree(node));
+            }
+        }
+        // Trashed boxes are hollowed out: panel fill with a faint outline, so the
+        // space they took is visible but empty until the next rescan.
+        if !self.app.trashed.is_empty() {
+            let fill = ui.visuals().panel_fill;
+            let edge = egui::Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
+            for item in map.items.iter().filter(|item| item.leaf) {
+                if self.app.is_trashed(item.node) {
+                    let r = to_screen(item.rect);
+                    painter.rect_filled(r, 0.0, fill);
+                    painter.rect_stroke(r, 0.0, edge, egui::StrokeKind::Inside);
+                }
             }
         }
         let outline = |item: &dirstats_treemap::render::VisibleItem, color: Color32, width: f32| {

@@ -45,6 +45,8 @@ pub struct App {
     pub hovered: Option<NodeId>,
     /// Directories opened in a tree view.
     pub expanded: foldhash::HashSet<NodeId>,
+    /// Nodes moved to the trash since the last scan; their descendants count too.
+    pub trashed: foldhash::HashSet<NodeId>,
     /// Root of the last scan, for [`App::rescan`].
     last_root: Option<PathBuf>,
 }
@@ -101,7 +103,25 @@ impl App {
         self.cursor = Some(Cursor { dir: tree.root(), selected: 0, history: Vec::new() });
         self.hovered = None;
         self.expanded.clear();
+        self.trashed.clear();
         self.tree = Some(tree);
+    }
+
+    /// Whether `id` or any ancestor was moved to the trash since the scan.
+    #[must_use]
+    pub fn is_trashed(&self, id: NodeId) -> bool {
+        if self.trashed.is_empty() {
+            return false;
+        }
+        let Some(tree) = &self.tree else { return false };
+        let mut current = Some(id);
+        while let Some(n) = current {
+            if self.trashed.contains(&n) {
+                return true;
+            }
+            current = tree.node(n).parent;
+        }
+        false
     }
 
     /// Open or close a directory in a tree view. Returns the new state.
@@ -304,6 +324,7 @@ impl App {
     pub fn trash_node(&mut self, id: NodeId) -> io::Result<()> {
         let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
         trash_context().delete(&path).map_err(io::Error::other)?;
+        self.trashed.insert(id);
         self.message = Some(format!("moved to trash: {}", path.display()));
         Ok(())
     }
@@ -385,7 +406,21 @@ mod tests {
         assert!(path.exists());
         app.trash_node(small).unwrap();
         assert!(!path.exists(), "file should have moved to the trash");
+        assert!(app.is_trashed(small));
         assert!(app.message.as_deref().unwrap().starts_with("moved to trash"));
+    }
+
+    #[test]
+    fn trashed_state_covers_descendants_and_clears_on_rescan() {
+        let mut app = app_with_scan();
+        let sub = app.entries()[0];
+        let big = app.tree.as_ref().unwrap().children(sub)[0];
+        app.trashed.insert(sub);
+        assert!(app.is_trashed(sub) && app.is_trashed(big));
+        assert!(!app.is_trashed(app.entries()[1]));
+        let tree = app.tree.clone().unwrap();
+        app.set_tree(tree);
+        assert!(!app.is_trashed(sub));
     }
 
     #[test]
