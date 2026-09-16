@@ -194,7 +194,11 @@ mod platform {
         let rounded_len = metadata.len().next_multiple_of(io_block);
         let plausible_max =
             rounded_len.saturating_add(io_block.saturating_mul(PLAUSIBLE_EXTRA_BLOCKS));
-        if reported <= plausible_max { reported } else { rounded_len }
+        if reported <= plausible_max {
+            reported
+        } else {
+            rounded_len
+        }
     }
 
     pub fn link_identity(metadata: &Metadata) -> Option<(u64, u64)> {
@@ -305,7 +309,122 @@ mod tests {
     fn cancelled_scan_errors() {
         let dir = tempfile::tempdir().unwrap();
         let cancel = AtomicBool::new(true);
-        let result = scan_with(dir.path(), &ScanOptions::default(), &cancel, &Progress::default());
+        let result = scan_with(
+            dir.path(),
+            &ScanOptions::default(),
+            &cancel,
+            &Progress::default(),
+        );
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+    }
+
+    // The following cases mirror dust's symlink and size tests
+    // (Apache-2.0, by bootandy and contributors), rewritten against this API.
+
+    fn find(tree: &Tree, name: &str) -> Option<NodeId> {
+        tree.nodes()
+            .find(|(_, n)| &*n.name == OsStr::new(name))
+            .map(|(id, _)| id)
+    }
+
+    #[test]
+    fn reports_exact_apparent_sizes() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a_file"), b"").unwrap();
+        fs::write(dir.path().join("hello_file"), b"hello\n").unwrap();
+
+        let options = ScanOptions {
+            size_metric: SizeMetric::Apparent,
+            ..ScanOptions::default()
+        };
+        let tree = scan(dir.path(), &options).unwrap();
+        assert_eq!(tree.size(find(&tree, "a_file").unwrap()), 0);
+        assert_eq!(tree.size(find(&tree, "hello_file").unwrap()), 6);
+        // Directory entries carry their own on-disk size, so only a lower bound holds.
+        assert!(tree.size(tree.root()) >= 6);
+    }
+
+    #[test]
+    fn preserves_unicode_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let names = ["ラウトは難しいです！.japan", "👩.unicode"];
+        for name in names {
+            fs::write(dir.path().join(name), b"").unwrap();
+        }
+
+        let tree = scan(dir.path(), &ScanOptions::default()).unwrap();
+        for name in names {
+            let id = find(&tree, name).expect(name);
+            assert_eq!(tree.path(id), dir.path().join(name));
+        }
+        assert_eq!(tree.node(tree.root()).file_count, 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_file_is_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("notes.txt"), vec![0u8; 10_000]).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("notes.txt"), dir.path().join("the_link"))
+            .unwrap();
+
+        let options = ScanOptions {
+            size_metric: SizeMetric::Apparent,
+            ..ScanOptions::default()
+        };
+        let tree = scan(dir.path(), &options).unwrap();
+        let link = find(&tree, "the_link").unwrap();
+        assert_eq!(tree.node(link).kind, Kind::Symlink);
+        assert!(tree.size(link) < 10_000, "link counted its target's size");
+        assert_eq!(tree.node(tree.root()).file_count, 2);
+        assert!(tree.size(tree.root()) < 20_000);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recursive_symlink_terminates() {
+        let dir = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("the_link")).unwrap();
+
+        let tree = scan(dir.path(), &ScanOptions::default()).unwrap();
+        let link = find(&tree, "the_link").unwrap();
+        assert_eq!(tree.node(link).kind, Kind::Symlink);
+        assert!(tree.children(link).is_empty());
+        assert_eq!(tree.len(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hard_link_counted_once_across_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        fs::write(dir.path().join("a/notes.txt"), vec![1u8; 50_000]).unwrap();
+        fs::hard_link(
+            dir.path().join("a/notes.txt"),
+            dir.path().join("a/b/the_link"),
+        )
+        .unwrap();
+
+        let options = ScanOptions {
+            size_metric: SizeMetric::Apparent,
+            ..ScanOptions::default()
+        };
+        let tree = scan(dir.path(), &options).unwrap();
+        let duplicates = tree.nodes().filter(|(_, n)| n.duplicate_link).count();
+        assert_eq!(duplicates, 1);
+
+        let counted_twice = scan(
+            dir.path(),
+            &ScanOptions {
+                count_hard_links_once: false,
+                ..options
+            },
+        )
+        .unwrap();
+        // Directory sizes vary by filesystem; the link must add exactly one more copy.
+        assert_eq!(
+            counted_twice.size(counted_twice.root()) - tree.size(tree.root()),
+            50_000
+        );
     }
 }
