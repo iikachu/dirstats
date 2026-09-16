@@ -53,17 +53,25 @@ enum NodeAction {
 fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<NodeAction> {
     let mut action = None;
     ui.set_max_width(320.0);
-    // Header: file name in bold, its folder underneath in small weak text,
-    // both on one line each and cut with an ellipsis rather than wrapped.
+    ui.set_min_width(200.0);
+    // Rows touch each other; spacing is added explicitly where wanted.
+    ui.spacing_mut().item_spacing.y = 0.0;
+    // Header: file name in bold, its folder underneath in weak text, both on
+    // one line each and cut with an ellipsis rather than wrapped.
     let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
     let parent = path.parent().map(|p| p.display().to_string()).unwrap_or_default();
-    ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-        ui.add(egui::Label::new(egui::RichText::new(name).strong()).truncate().selectable(false));
-        if !parent.is_empty() {
-            ui.add(egui::Label::new(egui::RichText::new(parent).weak()).truncate().selectable(false));
-        }
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.add_space(10.0);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.add(egui::Label::new(egui::RichText::new(name).strong()).truncate().selectable(false));
+            if !parent.is_empty() {
+                ui.add(egui::Label::new(egui::RichText::new(parent).weak().small()).truncate().selectable(false));
+            }
+        });
     });
-    ui.separator();
+    menu_separator(ui);
     // Icons only on actions, none on navigation; labels stay aligned either way.
     if is_dir && menu_item(ui, None, "Zoom in", false).clicked() {
         action = Some(NodeAction::Zoom);
@@ -77,7 +85,7 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<
     }
     #[cfg(feature = "trash")]
     {
-        ui.separator();
+        menu_separator(ui);
         if menu_item(ui, Some(icons::Glyph::Delete), "Move to Trash", true).clicked() {
             action = Some(NodeAction::Trash);
         }
@@ -91,22 +99,32 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<
 /// A menu row: optional leading icon in a fixed slot so labels line up,
 /// then the label. `destructive` uses the error colour.
 fn menu_item(ui: &mut egui::Ui, glyph: Option<icons::Glyph>, label: &str, destructive: bool) -> egui::Response {
-    const SLOT: f32 = 22.0;
-    let height = ui.spacing().interact_size.y;
-    let width = ui.available_width().max(160.0);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), Sense::click());
+    const HEIGHT: f32 = 28.0;
+    const PAD: f32 = 10.0;
+    const SLOT: f32 = 20.0;
+    const GAP: f32 = 10.0;
+    let width = ui.available_width().max(180.0);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, HEIGHT), Sense::click());
     let visuals = ui.style().interact(&response);
     if response.hovered() || response.has_focus() {
-        ui.painter().rect_filled(rect, 3.0, visuals.weak_bg_fill);
+        ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
     }
     let color = if destructive { ui.visuals().error_fg_color } else { visuals.text_color() };
-    let icon_rect = egui::Rect::from_center_size(egui::pos2(rect.min.x + 4.0 + SLOT / 2.0, rect.center().y), egui::vec2(16.0, 16.0));
+    let icon_rect = egui::Rect::from_center_size(egui::pos2(rect.min.x + PAD + SLOT / 2.0, rect.center().y), egui::vec2(16.0, 16.0));
     if let Some(glyph) = glyph {
         icons::stroke(ui.painter(), icon_rect, glyph, color);
     }
-    let text_pos = egui::pos2(rect.min.x + 4.0 + SLOT + 6.0, rect.center().y);
+    let text_pos = egui::pos2(rect.min.x + PAD + SLOT + GAP, rect.center().y);
     ui.painter().text(text_pos, egui::Align2::LEFT_CENTER, label, egui::TextStyle::Button.resolve(ui.style()), color);
     response
+}
+
+/// Thin rule with even breathing room, for use between menu groups.
+fn menu_separator(ui: &mut egui::Ui) {
+    ui.add_space(4.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().hline(rect.x_range(), rect.center().y, ui.visuals().widgets.noninteractive.bg_stroke);
+    ui.add_space(4.0);
 }
 
 /// Period of the highlight pulse.
