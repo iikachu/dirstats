@@ -36,6 +36,8 @@ struct Gui {
     selected: Option<NodeId>,
     /// User-adjustable column widths; `None` until the font is known.
     columns: Option<Columns>,
+    /// Row to bring into view on the next frame, set when selecting from the treemap.
+    scroll_to: Option<NodeId>,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -92,6 +94,7 @@ impl Gui {
             style: Style::Squarified,
             selected: None,
             columns: None,
+            scroll_to: None,
         }
     }
 
@@ -125,10 +128,12 @@ impl Gui {
 }
 
 impl Gui {
-    /// Select a node and open the tree down to it, without changing the zoom.
+    /// Select a node, open the tree down to it and scroll it into view,
+    /// without changing the zoom.
     fn select(&mut self, id: NodeId) {
         self.selected = Some(id);
         self.app.expand_to(id);
+        self.scroll_to = Some(id);
     }
 
     /// Zoom into `id`, or its parent when it is a file.
@@ -409,7 +414,16 @@ impl Gui {
 
         let mut select = None;
         let mut toggle = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_height, rows.len(), |ui, range| {
+        let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
+        if let Some(target) = self.scroll_to.take()
+            && let Some(index) = rows.iter().position(|&(id, _)| id == target)
+        {
+            // Centre the row: show_rows spaces rows by height plus item spacing.
+            let step = row_height + ui.spacing().item_spacing.y;
+            let offset = index as f32 * step - (ui.available_height() - row_height) / 2.0;
+            scroll = scroll.vertical_scroll_offset(offset.max(0.0));
+        }
+        scroll.show_rows(ui, row_height, rows.len(), |ui, range| {
             for &(id, depth) in &rows[range] {
                 let node = tree.node(id);
                 let size = tree.size(id);
