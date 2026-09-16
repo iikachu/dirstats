@@ -95,6 +95,10 @@ pub struct VisibleItem {
     pub node: NodeId,
     pub rect: Rect,
     pub depth: u32,
+    /// No visible descendants: the box is drawn as a single face.
+    pub leaf: bool,
+    /// Cushion surface the face was shaded with; see [`Treemap::shade_leaves`].
+    pub surface: [f64; 4],
 }
 
 /// A rendered treemap: RGBA8 pixels plus the rectangle of every visible node.
@@ -108,6 +112,8 @@ pub struct Treemap {
     /// Leaf item indices per `GRID_CELL`-pixel cell, row-major.
     grid: Vec<Vec<u32>>,
     grid_columns: usize,
+    /// Node to its index in `items` (WinDirStat keeps the same map beside its item list).
+    index: foldhash::HashMap<NodeId, u32>,
 }
 
 /// Size of a hit-test grid cell in pixels (WinDirStat uses the same).
@@ -120,17 +126,17 @@ impl Treemap {
         let mut grid = vec![Vec::new(); columns * rows];
         // Only leaves are needed: the deepest item at a point is always a leaf
         // of the visible tree, and items are recorded parent-first.
-        let mut is_leaf = vec![true; self.items.len()];
         let mut last_at_depth: Vec<usize> = Vec::new();
-        for (i, item) in self.items.iter().enumerate() {
-            last_at_depth.truncate(item.depth as usize);
+        for i in 0..self.items.len() {
+            last_at_depth.truncate(self.items[i].depth as usize);
             if let Some(&parent) = last_at_depth.last() {
-                is_leaf[parent] = false;
+                self.items[parent].leaf = false;
             }
             last_at_depth.push(i);
         }
+        self.index = self.items.iter().enumerate().map(|(i, item)| (item.node, i as u32)).collect();
         for (i, item) in self.items.iter().enumerate() {
-            if !is_leaf[i] || item.rect.is_empty() {
+            if !item.leaf || item.rect.is_empty() {
                 continue;
             }
             let (c0, c1) = (item.rect.left / GRID_CELL, (item.rect.right - 1) / GRID_CELL);
@@ -162,7 +168,51 @@ impl Treemap {
     /// The visible item for `node`, if it is on screen.
     #[must_use]
     pub fn item(&self, node: NodeId) -> Option<&VisibleItem> {
-        self.items.iter().find(|item| item.node == node)
+        self.item_index(node).map(|i| &self.items[i])
+    }
+
+    /// Index into [`Treemap::items`] for `node`, if it is on screen.
+    #[must_use]
+    pub fn item_index(&self, node: NodeId) -> Option<usize> {
+        self.index.get(&node).map(|&i| i as usize)
+    }
+
+    /// Shade the leaves `leaves` (item index and colour) into an RGBA buffer
+    /// covering `bounds`, transparent elsewhere, using the same cushion
+    /// geometry as the base render so an overlay keeps the glow. Cost is
+    /// proportional to the area of the leaves, not the map.
+    #[must_use]
+    pub fn shade_leaves(
+        &self,
+        options: &TreemapOptions,
+        bounds: Rect,
+        leaves: impl IntoIterator<Item = (usize, Oklch)>,
+    ) -> Vec<u8> {
+        let (width, height) = (bounds.width().max(0), bounds.height().max(0));
+        let mut pixels = vec![0; width as usize * height as usize * 4];
+        if bounds.is_empty() {
+            return pixels;
+        }
+        let light = light_of(options);
+        for (index, color) in leaves {
+            let item = &self.items[index];
+            let job = leaf_job(leaf_face(item.rect, options), &item.surface, color, options);
+            shade_job(&job, light, bounds.left, width, bounds.top, bounds.bottom, &mut pixels);
+        }
+        pixels
+    }
+
+    /// Items under `node` on screen, `node` first, in drawing order.
+    /// Items are stored parent-first, so a subtree is one contiguous run.
+    #[must_use]
+    pub fn subtree(&self, node: NodeId) -> &[VisibleItem] {
+        let Some(start) = self.item_index(node) else { return &[] };
+        let depth = self.items[start].depth;
+        let end = self.items[start + 1..]
+            .iter()
+            .position(|item| item.depth <= depth)
+            .map_or(self.items.len(), |n| start + 1 + n);
+        &self.items[start..end]
     }
 }
 
@@ -269,7 +319,7 @@ pub fn render(
     canvas.fill(bounds, background);
 
     if tree.size(root) == 0 {
-        items.push(VisibleItem { node: root, rect: bounds, depth: 0 });
+        items.push(VisibleItem { node: root, rect: bounds, depth: 0, leaf: true, surface: [0.0; 4] });
         return canvas.finish(items);
     }
 
@@ -288,7 +338,7 @@ pub fn render(
     }];
 
     while let Some(mut state) = stack.pop() {
-        items.push(VisibleItem { node: state.node, rect: state.rect, depth: state.depth });
+        items.push(VisibleItem { node: state.node, rect: state.rect, depth: state.depth, leaf: true, surface: [0.0; 4] });
         if state.rect.width() <= grid_width || state.rect.height() <= grid_width {
             continue;
         }
@@ -298,12 +348,8 @@ pub fn render(
 
         let children = tree.children(state.node);
         if children.is_empty() {
-            let mut rect = state.rect;
-            if options.grid {
-                rect.top += 1;
-                rect.left += 1;
-            }
-            canvas.draw_leaf(rect, &state.surface, color(tree, state.node));
+            items.last_mut().expect("pushed above").surface = state.surface;
+            canvas.draw_leaf(leaf_face(state.rect, options), &state.surface, color(tree, state.node));
             continue;
         }
 
@@ -350,16 +396,37 @@ struct Canvas<'a> {
 /// Rows per rasterisation band; each band is drawn independently.
 const BAND_ROWS: i32 = 32;
 
+/// Unit light direction for `options`.
+fn light_of(options: &TreemapOptions) -> [f64; 3] {
+    let (lx, ly, lz) = (options.light_x, options.light_y, 10.0);
+    let len = (lx * lx + ly * ly + lz * lz).sqrt();
+    [lx / len, ly / len, lz / len]
+}
+
+/// The part of a leaf's box that is painted: inset by the grid line if any.
+fn leaf_face(mut rect: Rect, options: &TreemapOptions) -> Rect {
+    if options.grid {
+        rect.top += 1;
+        rect.left += 1;
+    }
+    rect
+}
+
+/// A leaf's shading job. The palette supplies hue and chroma; the options set the face lightness.
+fn leaf_job(rect: Rect, surface: &[f64; 4], color: Oklch, options: &TreemapOptions) -> Job {
+    let color = color.scale_chroma(options.saturation).with_lightness(options.lightness * color.l / PALETTE_LIGHTNESS);
+    let glow = options.shading == Shading::Glow && options.cushion_shading();
+    Job { rect, surface: *surface, color, glow }
+}
+
 impl<'a> Canvas<'a> {
     fn new(width: u32, height: u32, options: &'a TreemapOptions) -> Self {
-        let (lx, ly, lz) = (options.light_x, options.light_y, 10.0);
-        let len = (lx * lx + ly * ly + lz * lz).sqrt();
         Self {
             width,
             height,
             pixels: vec![255; width as usize * height as usize * 4],
             options,
-            light: [lx / len, ly / len, lz / len],
+            light: light_of(options),
             jobs: Vec::new(),
         }
     }
@@ -373,6 +440,7 @@ impl<'a> Canvas<'a> {
             items,
             grid: Vec::new(),
             grid_columns: 1,
+            index: foldhash::HashMap::default(),
         };
         map.build_grid();
         map
@@ -411,7 +479,7 @@ impl<'a> Canvas<'a> {
             let top = band as i32 * BAND_ROWS;
             let bottom = (top + BAND_ROWS).min(height);
             for &i in &by_band[band] {
-                shade_job(&jobs[i], light, width, top, bottom, pixels);
+                shade_job(&jobs[i], light, 0, width, top, bottom, pixels);
             }
         };
         #[cfg(feature = "parallel")]
@@ -427,29 +495,27 @@ impl<'a> Canvas<'a> {
         if rect.is_empty() {
             return;
         }
-        let options = self.options;
-        // The palette supplies hue and chroma; the options set the face lightness.
-        let color = color.scale_chroma(options.saturation).with_lightness(options.lightness * color.l / PALETTE_LIGHTNESS);
-        let glow = options.shading == Shading::Glow && options.cushion_shading();
-        self.jobs.push(Job { rect, surface: *surface, color, glow });
+        self.jobs.push(leaf_job(rect, surface, color, self.options));
     }
 }
 
-/// Shade one job's pixels within the band `top..bottom`; `pixels` is that band.
-fn shade_job(job: &Job, light: [f64; 3], width: i32, top: i32, bottom: i32, pixels: &mut [u8]) {
+/// Shade one job's pixels within the window `left..left + width` by
+/// `top..bottom`; `pixels` is that window's RGBA buffer. Written pixels are opaque.
+fn shade_job(job: &Job, light: [f64; 3], left: i32, width: i32, top: i32, bottom: i32, pixels: &mut [u8]) {
     let rect = job.rect;
     let (y0, y1) = (rect.top.max(top), rect.bottom.min(bottom));
-    if y0 >= y1 {
+    let (x0, x1) = (rect.left.max(left), rect.right.min(left + width));
+    if y0 >= y1 || x0 >= x1 {
         return;
     }
     let put = |pixels: &mut [u8], x: i32, y: i32, rgb: Rgb| {
-        let i = ((y - top) as usize * width as usize + x as usize) * 4;
-        pixels[i..i + 3].copy_from_slice(&rgb);
+        let i = ((y - top) as usize * width as usize + (x - left) as usize) * 4;
+        pixels[i..i + 4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
     };
     if !job.glow {
         let rgb = job.color.to_srgb();
         for y in y0..y1 {
-            for x in rect.left..rect.right {
+            for x in x0..x1 {
                 put(pixels, x, y, rgb);
             }
         }
@@ -462,8 +528,8 @@ fn shade_job(job: &Job, light: [f64; 3], width: i32, top: i32, bottom: i32, pixe
         let ny = -(2.0 * surface[1] * (f64::from(y) + 0.5) + surface[3]);
         let ny_ly_lz = ny * ly + lz;
         let ny2_1 = ny * ny + 1.0;
-        let mut nx = -(2.0 * surface[0] * (f64::from(rect.left) + 0.5) + surface[2]);
-        for x in rect.left..rect.right {
+        let mut nx = -(2.0 * surface[0] * (f64::from(x0) + 0.5) + surface[2]);
+        for x in x0..x1 {
             let cosa = ((nx * lx + ny_ly_lz) / (nx * nx + ny2_1).sqrt()).clamp(0.0, 1.0);
             // Lightness moves additively around the face, so hue and chroma
             // stay put. The diffuse term is eased so light spreads over the
@@ -542,6 +608,24 @@ mod tests {
             assert_eq!(map.items.len(), 3);
             let hit = map.hit_test(1, 1).unwrap();
             assert_ne!(hit, tree.root());
+            assert_eq!(map.item_index(tree.root()), Some(0));
+            assert_eq!(map.item(hit).map(|i| i.node), Some(hit));
+            assert!(map.item(hit).unwrap().leaf && !map.items[0].leaf);
+            assert_eq!(map.subtree(tree.root()).len(), 3, "root's run covers every item");
+            assert_eq!(map.subtree(hit).len(), 1, "a leaf's run is itself");
+
+            // An overlay re-shades only the given leaf, opaque there and clear elsewhere.
+            let index = map.item_index(hit).unwrap();
+            let leaf = map.items[index].rect;
+            let bounds = layout::Rect::new(0, 0, 64, 48);
+            let overlay = map.shade_leaves(&TreemapOptions { style, ..Default::default() }, bounds, [(index, Oklch::new(0.7, 0.2, 90.0))]);
+            let alpha = |x: i32, y: i32| overlay[((y * 64 + x) * 4 + 3) as usize];
+            assert_eq!(alpha(leaf.left, leaf.top), 255);
+            assert_eq!(alpha(leaf.right - 1, leaf.bottom - 1), 255);
+            let other = map.items.iter().find(|i| i.leaf && i.node != hit).unwrap().rect;
+            assert_eq!(alpha(other.left, other.top), 0);
+            let base = &map.pixels[((leaf.top * 64 + leaf.left) * 4) as usize..][..3];
+            assert_ne!(&overlay[((leaf.top * 64 + leaf.left) * 4) as usize..][..3], base, "overlay uses the given colour");
         }
     }
 }

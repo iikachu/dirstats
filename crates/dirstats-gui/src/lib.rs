@@ -188,8 +188,12 @@ struct Gui {
     map: Option<Treemap>,
     map_key: Option<MapKey>,
     texture: Option<TextureHandle>,
-    /// The same map with the hovered extension made vivid, blended over the base.
+    /// Transparent overlay the size of the map; the hovered target's leaves
+    /// are re-shaded vivid into it (cushions intact) and it is blended over
+    /// the base with a pulsing alpha.
     highlight: Option<TextureHandle>,
+    /// Region of `highlight` currently holding pixels, cleared on the next change.
+    highlight_bounds: Option<dirstats_treemap::Rect>,
     highlight_key: Option<HighlightKey>,
     style: Style,
     /// Current selection: a node or an extension, never both.
@@ -264,6 +268,7 @@ impl Gui {
             map_key: None,
             texture: None,
             highlight: None,
+            highlight_bounds: None,
             highlight_key: None,
             style: Style::Squarified,
             selection: None,
@@ -301,41 +306,64 @@ impl Gui {
             }
             self.map = Some(map);
             self.map_key = Some(key);
+            // Fresh, fully transparent overlay at the new size.
+            let clear = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &vec![0; width as usize * height as usize * 4]);
+            match &mut self.highlight {
+                Some(texture) => texture.set(clear, TextureOptions::LINEAR),
+                None => self.highlight = Some(ctx.load_texture("treemap-highlight", clear, TextureOptions::LINEAR)),
+            }
+            self.highlight_bounds = None;
+            self.highlight_key = None;
         }
 
-        // Highlight layer: rendered once per hovered target, pulsed at draw time.
-        let Some(target) = &self.hovered_highlight else {
-            self.highlight_key = None;
-            return;
-        };
-        let highlight_key = (key, target.clone());
-        if self.highlight_key.as_ref() == Some(&highlight_key) {
+        // Highlight overlay: updated once per hovered target, pulsed at draw
+        // time. Only the hovered leaves are re-shaded, with the same cushion
+        // surfaces as the base render, and only the region that changed is
+        // uploaded, so the cost follows the highlighted area, not the map.
+        let target = self.hovered_highlight.clone();
+        let highlight_key = target.as_ref().map(|t| (key, t.clone()));
+        if self.highlight_key == highlight_key && (highlight_key.is_some() || self.highlight_bounds.is_none()) {
             return;
         }
-        let options = TreemapOptions { style: self.style, ..Default::default() };
-        let matches = |t: &dirstats_app::Tree, id: NodeId| match target {
-            Highlight::Extension(ext) => *ext == ExtensionColors::extension(t.node(id)),
-            Highlight::Subtree(root) => {
-                let mut current = Some(id);
-                while let Some(n) = current {
-                    if n == *root {
-                        return true;
-                    }
-                    current = t.node(n).parent;
-                }
-                false
+        let (Some(map), Some(texture)) = (&self.map, &mut self.highlight) else { return };
+        let leaves: Vec<(usize, dirstats_treemap::Oklch)> = match &target {
+            None => Vec::new(),
+            Some(Highlight::Subtree(root)) => {
+                let start = map.item_index(*root).unwrap_or(map.items.len());
+                let run = map.subtree(*root);
+                (start..start + run.len())
+                    .filter(|&i| map.items[i].leaf)
+                    .map(|i| (i, vivid(colors.color(tree, map.items[i].node))))
+                    .collect()
             }
+            Some(Highlight::Extension(ext)) => map
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(_, item)| item.leaf && *ext == ExtensionColors::extension(tree.node(item.node)))
+                .map(|(i, item)| (i, vivid(colors.color(tree, item.node))))
+                .collect(),
         };
-        let vivid = render(tree, dir, width, height, &options, |t, id| {
-            let color = colors.color(t, id);
-            if matches(t, id) { vivid(color) } else { color }
-        });
-        let image = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &vivid.pixels);
-        match &mut self.highlight {
-            Some(texture) => texture.set(image, TextureOptions::LINEAR),
-            None => self.highlight = Some(ctx.load_texture("treemap-highlight", image, TextureOptions::LINEAR)),
+        // Upload one region covering both what was lit and what will be.
+        let union = |a: dirstats_treemap::Rect, b: dirstats_treemap::Rect| {
+            dirstats_treemap::Rect::new(a.left.min(b.left), a.top.min(b.top), a.right.max(b.right), a.bottom.max(b.bottom))
+        };
+        let mut bounds = self.highlight_bounds;
+        for &(i, _) in &leaves {
+            let r = map.items[i].rect;
+            if !r.is_empty() {
+                bounds = Some(bounds.map_or(r, |b| union(b, r)));
+            }
         }
-        self.highlight_key = Some(highlight_key);
+        if let Some(region) = bounds {
+            let options = TreemapOptions { style: self.style, ..Default::default() };
+            let pixels = map.shade_leaves(&options, region, leaves.iter().copied());
+            let image = ColorImage::from_rgba_unmultiplied([region.width() as usize, region.height() as usize], &pixels);
+            texture.set_partial([region.left as usize, region.top as usize], image, TextureOptions::LINEAR);
+        }
+        // Remember only the region that now holds pixels.
+        self.highlight_bounds = leaves.iter().map(|&(i, _)| map.items[i].rect).filter(|r| !r.is_empty()).reduce(union);
+        self.highlight_key = highlight_key;
     }
 }
 
@@ -1043,8 +1071,16 @@ impl Gui {
             return;
         };
         let response = ui.add(egui::Image::new((texture.id(), available)).sense(Sense::click()));
-        // Pulse the vivid layer over the base while an extension is hovered.
-        if self.highlight_key.is_some()
+        let origin = response.rect.min;
+        let painter = ui.painter_at(response.rect);
+        let to_screen = |r: dirstats_treemap::Rect| {
+            egui::Rect::from_min_max(
+                origin + egui::vec2(r.left as f32, r.top as f32),
+                origin + egui::vec2(r.right as f32, r.bottom as f32),
+            )
+        };
+        // Pulse the vivid overlay over the base while something is hovered.
+        if self.highlight_bounds.is_some()
             && let Some(highlight) = &self.highlight
         {
             let t = ui.input(|i| i.time);
@@ -1058,8 +1094,6 @@ impl Gui {
             );
             ui.ctx().request_repaint();
         }
-        let origin = response.rect.min;
-        let painter = ui.painter_at(response.rect);
 
         let hovered = response.hover_pos().and_then(|pos| {
             let (x, y) = ((pos.x - origin.x) as i32, (pos.y - origin.y) as i32);
@@ -1073,24 +1107,21 @@ impl Gui {
                 self.next_highlight = Some(Highlight::Subtree(node));
             }
         }
-        let outline = |node: NodeId, color: Color32, width: f32| {
-            if let Some(item) = map.item(node) {
-                let r = item.rect;
-                let rect = egui::Rect::from_min_max(
-                    origin + egui::vec2(r.left as f32, r.top as f32),
-                    origin + egui::vec2(r.right as f32, r.bottom as f32),
-                );
-                painter.rect_stroke(rect, 0.0, egui::Stroke::new(width, color), egui::StrokeKind::Inside);
-            }
+        let outline = |item: &dirstats_treemap::render::VisibleItem, color: Color32, width: f32| {
+            painter.rect_stroke(to_screen(item.rect), 0.0, egui::Stroke::new(width, color), egui::StrokeKind::Inside);
         };
         match &self.selection {
-            Some(Selection::Node(selected)) => outline(*selected, Color32::WHITE, 2.0),
+            Some(Selection::Node(selected)) => {
+                if let Some(item) = map.item(*selected) {
+                    outline(item, Color32::WHITE, 2.0);
+                }
+            }
             Some(Selection::Extension(ext)) => {
                 if let Some(tree) = &self.app.tree {
-                    for item in &map.items {
+                    for item in map.items.iter().filter(|item| item.leaf) {
                         let node = tree.node(item.node);
                         if node.kind != dirstats_app::scan::Kind::Directory && ExtensionColors::extension(node) == *ext {
-                            outline(item.node, Color32::WHITE, 2.0);
+                            outline(item, Color32::WHITE, 2.0);
                         }
                     }
                 }

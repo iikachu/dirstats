@@ -13,7 +13,7 @@
 
 use crate::tree::{Kind, Node, NodeId, SizeMetric, Tree};
 use dua_core::{Entry, Order};
-use foldhash::HashSet;
+use foldhash::HashMap;
 use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
@@ -81,7 +81,11 @@ pub fn scan_with(
     let mut tree = Tree::new();
     // Maps dua-core's dense directory ids to tree nodes.
     let mut directory_nodes: Vec<Option<NodeId>> = Vec::new();
-    let mut seen_links = HashSet::default();
+    // Hard-linked data seen so far, with the links not yet encountered. An
+    // entry is dropped once every link has been seen, so the map only holds
+    // links still outstanding (as dua-cli's inode filter does). Unknown link
+    // counts (Windows enumeration) are kept for the whole scan.
+    let mut pending_links: HashMap<(u64, u64), u64> = HashMap::default();
 
     while let Some(item) = walk.next_cancellable(cancel) {
         let entry = match item {
@@ -131,9 +135,24 @@ pub fn scan_with(
                 node.allocated_size = platform::allocated_size(metadata);
                 if options.count_hard_links_once
                     && kind == Kind::File
-                    && let Some(identity) = platform::link_identity(metadata)
+                    && let Some((identity, links)) = platform::link_identity(metadata)
                 {
-                    node.duplicate_link = !seen_links.insert(identity);
+                    node.duplicate_link = match pending_links.entry(identity) {
+                        std::collections::hash_map::Entry::Vacant(slot) => {
+                            slot.insert(links.map_or(u64::MAX, |n| n.saturating_sub(1)));
+                            false
+                        }
+                        std::collections::hash_map::Entry::Occupied(mut slot) => {
+                            if links.is_some() {
+                                let remaining = slot.get_mut();
+                                *remaining -= 1;
+                                if *remaining == 0 {
+                                    slot.remove();
+                                }
+                            }
+                            true
+                        }
+                    };
                 }
             }
             Some(Err(_)) => {
@@ -201,8 +220,9 @@ mod platform {
         }
     }
 
-    pub fn link_identity(metadata: &Metadata) -> Option<(u64, u64)> {
-        (metadata.nlink() > 1).then(|| (metadata.dev(), metadata.ino()))
+    /// Identity of multiply-linked data and its total link count.
+    pub fn link_identity(metadata: &Metadata) -> Option<((u64, u64), Option<u64>)> {
+        (metadata.nlink() > 1).then(|| ((metadata.dev(), metadata.ino()), Some(metadata.nlink())))
     }
 }
 
@@ -228,8 +248,9 @@ mod platform {
         metadata.allocated_size()
     }
 
-    pub fn link_identity(metadata: &Metadata) -> Option<(u64, u64)> {
-        (metadata.nlink() > 1).then(|| (metadata.dev(), metadata.ino()))
+    /// Identity of multiply-linked data and its total link count.
+    pub fn link_identity(metadata: &Metadata) -> Option<((u64, u64), Option<u64>)> {
+        (metadata.nlink() > 1).then(|| ((metadata.dev(), metadata.ino()), Some(metadata.nlink())))
     }
 }
 
@@ -256,9 +277,10 @@ mod platform {
         metadata.allocated_size()
     }
 
-    /// Link counts are not part of directory enumeration, so every file id is tracked.
-    pub fn link_identity(metadata: &Metadata) -> Option<(u64, u64)> {
-        metadata.hard_link_id()
+    /// Link counts are not part of directory enumeration, so every file id
+    /// is tracked for the whole scan.
+    pub fn link_identity(metadata: &Metadata) -> Option<((u64, u64), Option<u64>)> {
+        metadata.hard_link_id().map(|id| (id, None))
     }
 }
 
