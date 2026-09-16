@@ -16,8 +16,17 @@ use eframe::egui::{self, Color32, ColorImage, Key, Sense, TextureHandle, Texture
 
 /// What a cached treemap render depends on: tree version, zoom directory and size.
 type MapKey = (u64, NodeId, u32, u32);
-/// What the highlight layer depends on: the base render plus the hovered extension.
-type HighlightKey = (MapKey, Option<String>);
+/// What the highlight layer depends on: the base render plus what is hovered.
+type HighlightKey = (MapKey, Highlight);
+
+/// What the pulsing layer makes vivid.
+#[derive(Clone, Debug, PartialEq)]
+enum Highlight {
+    /// Every file with this extension.
+    Extension(Option<String>),
+    /// A node and, for a directory, everything under it.
+    Subtree(NodeId),
+}
 
 /// What is selected. Selecting one kind clears the other.
 #[derive(Clone, Debug, PartialEq)]
@@ -92,8 +101,10 @@ struct Gui {
     columns: Option<Columns>,
     /// Row to bring into view on the next frame, set when selecting from the treemap.
     scroll_to: Option<NodeId>,
-    /// Extension under the pointer in the legend; its boxes are rendered more vivid.
-    hovered_extension: Option<Option<String>>,
+    /// What the pointer is over in the legend or the tree; its boxes pulse vivid.
+    hovered_highlight: Option<Highlight>,
+    /// Hover collected during this frame, applied at the end of `body`.
+    next_highlight: Option<Highlight>,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -153,7 +164,8 @@ impl Gui {
             selection: None,
             columns: None,
             scroll_to: None,
-            hovered_extension: None,
+            hovered_highlight: None,
+            next_highlight: None,
         }
     }
 
@@ -183,23 +195,32 @@ impl Gui {
             self.map_key = Some(key);
         }
 
-        // Highlight layer: rendered once per hovered extension, pulsed at draw time.
-        let Some(ext) = &self.hovered_extension else {
+        // Highlight layer: rendered once per hovered target, pulsed at draw time.
+        let Some(target) = &self.hovered_highlight else {
             self.highlight_key = None;
             return;
         };
-        let highlight_key = (key, ext.clone());
+        let highlight_key = (key, target.clone());
         if self.highlight_key.as_ref() == Some(&highlight_key) {
             return;
         }
         let options = TreemapOptions { style: self.style, ..Default::default() };
+        let matches = |t: &dirstats_app::Tree, id: NodeId| match target {
+            Highlight::Extension(ext) => *ext == ExtensionColors::extension(t.node(id)),
+            Highlight::Subtree(root) => {
+                let mut current = Some(id);
+                while let Some(n) = current {
+                    if n == *root {
+                        return true;
+                    }
+                    current = t.node(n).parent;
+                }
+                false
+            }
+        };
         let vivid = render(tree, dir, width, height, &options, |t, id| {
             let color = colors.color(t, id);
-            if *ext == ExtensionColors::extension(t.node(id)) {
-                color.scale_chroma(HIGHLIGHT_CHROMA).lighten(HIGHLIGHT_LIGHTNESS)
-            } else {
-                color
-            }
+            if matches(t, id) { color.scale_chroma(HIGHLIGHT_CHROMA).lighten(HIGHLIGHT_LIGHTNESS) } else { color }
         });
         let image = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &vivid.pixels);
         match &mut self.highlight {
@@ -383,6 +404,14 @@ impl Gui {
         ext_ui.set_clip_rect(ext_rect);
         let ext_edges = [starts[5], starts[6], starts[7], full.max.x];
         self.legend(&mut ext_ui, ext_edges, row_height);
+
+        // The treemap is drawn before the legend, so hover takes effect next frame.
+        if self.hovered_highlight != self.next_highlight {
+            self.hovered_highlight = self.next_highlight.take();
+            ui.ctx().request_repaint();
+        } else {
+            self.next_highlight = None;
+        }
     }
 }
 
@@ -516,7 +545,9 @@ impl Gui {
                 }
             }
         });
-        self.hovered_extension = hovered_extension;
+        if let Some(ext) = hovered_extension {
+            self.next_highlight = Some(Highlight::Extension(ext));
+        }
         if let Some(ext) = clicked_extension {
             self.selection = Some(Selection::Extension(ext));
         }
@@ -737,6 +768,7 @@ impl Gui {
                 }
                 if row.hovered() {
                     self.app.hovered = Some(id);
+                    self.next_highlight = Some(Highlight::Subtree(id));
                 }
                 if is_selected && is_dir && ui.input(|i| i.key_pressed(Key::Space)) {
                     toggle = Some(id);
