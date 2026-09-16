@@ -60,7 +60,7 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<
     ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
         ui.add(egui::Label::new(egui::RichText::new(name).strong()).truncate().selectable(false));
         if !parent.is_empty() {
-            ui.add(egui::Label::new(egui::RichText::new(parent).weak().small()).truncate().selectable(false));
+            ui.add(egui::Label::new(egui::RichText::new(parent).weak()).truncate().selectable(false));
         }
     });
     ui.separator();
@@ -139,7 +139,45 @@ pub fn run(app: App) -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_title("dirstats"),
         ..Default::default()
     };
-    eframe::run_native("dirstats", options, Box::new(|_| Ok(Box::new(Gui::new(app)))))
+    eframe::run_native(
+        "dirstats",
+        options,
+        Box::new(|cc| {
+            apply_theme(&cc.egui_ctx);
+            Ok(Box::new(Gui::new(app)))
+        }),
+    )
+}
+
+/// Row fill under the pointer: the panel colour nudged toward the text
+/// colour, so it reads as a hover on either theme and keeps text and weak
+/// text at or above 4.5:1.
+fn hover_fill(visuals: &egui::Visuals) -> Color32 {
+    visuals.panel_fill.lerp_to_gamma(visuals.text_color(), 0.12)
+}
+
+/// Colour of a disabled icon button: about 3:1 or better against the panel on either theme.
+fn disabled_icon(visuals: &egui::Visuals) -> Color32 {
+    visuals.panel_fill.lerp_to_gamma(visuals.text_color(), 0.55)
+}
+
+/// Both themes with text contrast at WCAG 2.1 AA or better. egui's dark
+/// defaults give 5.1:1 for text and about 2.7:1 for weak text; the light
+/// defaults are fine for text but weak text is around 3:1.
+fn apply_theme(ctx: &egui::Context) {
+    let mut dark = egui::Visuals::dark();
+    dark.widgets.noninteractive.fg_stroke.color = Color32::from_gray(210); // 11:1 on gray 27
+    dark.widgets.inactive.fg_stroke.color = Color32::from_gray(210);
+    dark.weak_text_color = Some(Color32::from_gray(156)); // 6.3:1 on the panel, 4.8:1 on a hovered row
+    dark.selection.stroke.color = Color32::WHITE; // 7.4:1 on the selection blue
+    ctx.set_visuals_of(egui::Theme::Dark, dark);
+
+    let mut light = egui::Visuals::light();
+    light.widgets.noninteractive.fg_stroke.color = Color32::from_gray(50); // 12:1 on gray 248
+    light.widgets.inactive.fg_stroke.color = Color32::from_gray(50);
+    light.weak_text_color = Some(Color32::from_gray(95)); // 6.1:1 on the panel, 4.9:1 on a hovered row
+    light.selection.stroke.color = Color32::from_gray(20); // 11:1 on the light selection blue
+    ctx.set_visuals_of(egui::Theme::Light, light);
 }
 
 struct Gui {
@@ -529,7 +567,7 @@ impl Gui {
             if enabled && (response.hovered() || response.is_pointer_button_down_on()) {
                 ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
             }
-            let color = if enabled { visuals.text_color() } else { ui.visuals().weak_text_color().gamma_multiply(0.5) };
+            let color = if enabled { visuals.text_color() } else { disabled_icon(ui.visuals()) };
             icons::paint(ui.painter(), rect.shrink(4.0), glyph, color);
             if enabled { response.on_hover_text(tip) } else { response }
         };
@@ -670,7 +708,7 @@ impl Gui {
                 if is_selected {
                     ui.painter().rect_filled(row_rect, 0.0, ui.visuals().selection.bg_fill);
                 } else if hovered {
-                    ui.painter().rect_filled(row_rect, 0.0, ui.visuals().widgets.hovered.weak_bg_fill);
+                    ui.painter().rect_filled(row_rect, 0.0, hover_fill(ui.visuals()));
                 }
                 let text = if is_selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
                 let (top, bottom) = (row_rect.min.y, row_rect.max.y);
@@ -871,7 +909,7 @@ impl Gui {
                 if is_selected {
                     ui.painter().rect_filled(row_rect, 0.0, ui.visuals().selection.bg_fill);
                 } else if row.hovered() {
-                    ui.painter().rect_filled(row_rect, 0.0, ui.visuals().widgets.hovered.weak_bg_fill);
+                    ui.painter().rect_filled(row_rect, 0.0, hover_fill(ui.visuals()));
                 }
                 let text = if is_selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
                 let (top, bottom) = (row_rect.min.y, row_rect.max.y);
