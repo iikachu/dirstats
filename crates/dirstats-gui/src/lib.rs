@@ -41,6 +41,7 @@ enum Selection {
 #[derive(Clone, Copy, Debug)]
 enum NodeAction {
     Zoom,
+    CopyPath,
     #[cfg(feature = "open")]
     Open,
     #[cfg(feature = "trash")]
@@ -65,6 +66,9 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool) -> Option<
     ui.separator();
     if is_dir && ui.button("Zoom in").clicked() {
         action = Some(NodeAction::Zoom);
+    }
+    if ui.button("Copy path").clicked() {
+        action = Some(NodeAction::CopyPath);
     }
     #[cfg(feature = "open")]
     if ui.button("Open").clicked() {
@@ -166,6 +170,8 @@ struct Gui {
     /// Box under the pointer when the treemap was right-clicked; the menu is
     /// built from this so it survives the pointer moving onto the menu.
     menu_node: Option<NodeId>,
+    /// Text to put on the clipboard at the end of the frame.
+    pending_copy: Option<String>,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -229,6 +235,7 @@ impl Gui {
             next_highlight: None,
             hover_active: true,
             menu_node: None,
+            pending_copy: None,
         }
     }
 
@@ -322,6 +329,13 @@ impl Gui {
         self.select(node);
         match action {
             NodeAction::Zoom => self.zoom(node),
+            NodeAction::CopyPath => {
+                if let Some(path) = self.app.path_of(node) {
+                    let text = path.display().to_string();
+                    self.app.message = Some(format!("copied {text}"));
+                    self.pending_copy = Some(text);
+                }
+            }
             #[cfg(feature = "open")]
             NodeAction::Open => {
                 if let Err(err) = self.app.open_node(node) {
@@ -372,6 +386,9 @@ impl eframe::App for Gui {
         // Keep the panel's background fill but no margin, so the columns run edge to edge.
         let frame = egui::Frame::central_panel(&ctx.style()).inner_margin(0.0);
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| self.body(ui));
+        if let Some(text) = self.pending_copy.take() {
+            ctx.copy_text(text);
+        }
     }
 }
 
