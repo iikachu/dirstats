@@ -153,6 +153,9 @@ struct Gui {
     /// Hover pulses only while the mouse is driving; keyboard navigation
     /// switches it off until the pointer moves again.
     hover_active: bool,
+    /// Box under the pointer when the treemap was right-clicked; the menu is
+    /// built from this so it survives the pointer moving onto the menu.
+    menu_node: Option<NodeId>,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -215,6 +218,7 @@ impl Gui {
             hovered_highlight: None,
             next_highlight: None,
             hover_active: true,
+            menu_node: None,
         }
     }
 
@@ -1033,13 +1037,24 @@ impl Gui {
             if response.clicked() {
                 self.select(node);
             }
+            if response.secondary_clicked() {
+                self.menu_node = Some(node);
+                self.select(node);
+            }
+        }
+        // The menu is drawn every frame from the pinned node, not from hover.
+        if let Some(node) = self.menu_node {
             let (path, is_dir) = match &self.app.tree {
                 Some(tree) => (tree.path(node), !tree.children(node).is_empty()),
                 None => (std::path::PathBuf::new(), false),
             };
             let mut action = None;
-            response.context_menu(|ui| action = node_menu(ui, &path, is_dir));
+            let menu = response.context_menu(|ui| action = node_menu(ui, &path, is_dir));
+            if menu.is_none() {
+                self.menu_node = None;
+            }
             if let Some(action) = action {
+                self.menu_node = None;
                 self.apply(node, action);
             }
         }
