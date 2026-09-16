@@ -1,0 +1,22 @@
+[package]
+name = "dirstats-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "Front-end-agnostic application state for dirstats"
+
+[features]
+default = []
+# Move-to-trash action.
+trash = ["dep:trash"]
+# Open and reveal actions via the desktop.
+open = ["dep:open"]
+
+[dependencies]
+dirstats-scan.workspace = true
+trash = { workspace = true, optional = true }
+open = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

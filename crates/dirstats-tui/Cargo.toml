@@ -1,0 +1,20 @@
+[package]
+name = "dirstats-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "Terminal front end for dirstats"
+
+[features]
+default = []
+trash = ["dirstats-app/trash"]
+open = ["dirstats-app/open"]
+
+[dependencies]
+dirstats-app.workspace = true
+dirstats-treemap.workspace = true
+ratatui.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

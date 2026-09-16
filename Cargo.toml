@@ -9,6 +9,13 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 dirstats-scan = { path = "crates/dirstats-scan", version = "0.1.0" }
+dirstats-treemap = { path = "crates/dirstats-treemap", version = "0.1.0" }
+dirstats-app = { path = "crates/dirstats-app", version = "0.1.0" }
+dirstats-tui = { path = "crates/dirstats-tui", version = "0.1.0" }
+clap = { version = "4.5", features = ["derive"] }
+open = "5"
+trash = { version = "5.2", default-features = false }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache"] }
 dua-core = "4.1"
 png = "0.17"
 tempfile = "3"

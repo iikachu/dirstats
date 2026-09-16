@@ -6,6 +6,7 @@ dirstats is a workspace of two crates with different licenses:
 |---|---|---|
 | `crates/dirstats-scan` | Apache-2.0 (`LICENSE-APACHE`) | `tree.rs`, `scan.rs` |
 | `crates/dirstats-treemap` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | `layout.rs`, `render.rs`, examples |
+| `crates/dirstats-app`, `crates/dirstats-tui`, `crates/dirstats` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | app state, terminal UI, binary |
 
 `dirstats-scan` contains no GPL-derived code and must stay that way: code
 ported from WinDirStat or Disk Inventory X belongs in `dirstats-treemap` (or
@@ -39,6 +40,15 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
     dua-cli's `Tree`.
   - `crates/dirstats-scan/src/scan.rs`: hard-link accounting approach
     follows `inodefilter.rs`.
+  - `crates/dirstats-tui`: keyboard model and feature-flag layout follow
+    dua-cli's interactive mode.
+
+## ratatui, crossterm, clap, open, trash — runtime dependencies
+
+- ratatui (MIT, by the ratatui developers), crossterm (MIT, by Timon and
+  contributors), clap (MIT OR Apache-2.0, by the clap developers), open
+  (MIT, by Sebastian Thiel), trash (MIT OR Apache-2.0, by Artur Kovacs).
+  Used as ordinary crate dependencies.
 
 ## dust — Unix size accounting idea
 
@@ -57,6 +67,12 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
 - Used as a behavioural reference for macOS scanning (firmlinks, volume
   boundaries, allocated size via `NSURLTotalFileAllocatedSizeKey`). No code
   has been ported yet.
+
+## OKLab — perceptual colour
+
+- By Björn Ottosson, https://bottosson.github.io/posts/oklab/ (public domain / MIT).
+- Used in `crates/dirstats-treemap/src/color.rs`: sRGB ⇄ OKLab/OKLCH
+  conversion matrices. All palette generation and shading is done in OKLCH.
 
 ## Research
 

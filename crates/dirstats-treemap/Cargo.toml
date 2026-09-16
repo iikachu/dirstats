@@ -11,6 +11,6 @@ categories = ["visualization"]
 [dependencies]
 dirstats-scan.workspace = true
 
+
 [dev-dependencies]
-png.workspace = true
 tempfile.workspace = true

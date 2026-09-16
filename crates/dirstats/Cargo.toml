@@ -1,0 +1,36 @@
+[package]
+name = "dirstats"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "Disk usage scanner with treemaps, in the terminal and (later) a GUI"
+default-run = "dirstats"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "dirstats"
+path = "src/main.rs"
+
+[features]
+default = ["tui", "open", "trash"]
+# Terminal front end (ratatui + crossterm).
+tui = ["dep:dirstats-tui"]
+# Graphical front end; reserved, not implemented yet.
+gui = []
+# Open the selected entry with the desktop.
+open = ["dirstats-app/open", "dirstats-tui?/open"]
+# Move-to-trash action.
+trash = ["dirstats-app/trash", "dirstats-tui?/trash"]
+# Write a cushion treemap PNG with `--png`.
+png = ["dep:png"]
+
+[dependencies]
+dirstats-app.workspace = true
+dirstats-scan.workspace = true
+dirstats-treemap.workspace = true
+dirstats-tui = { workspace = true, optional = true }
+clap.workspace = true
+png = { workspace = true, optional = true }

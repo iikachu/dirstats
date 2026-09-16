@@ -1,41 +1,52 @@
 # dirstats
 
-Cross-platform (Linux, macOS, Windows) disk usage scanning and cushion
-treemap rendering, in Rust. It combines WinDirStat's treemap algorithms with
-dua-cli's parallel native traversal.
+Cross-platform (Linux, macOS, Windows) disk usage scanning and treemaps, in
+Rust. It collects the best parts of WinDirStat, dua-cli, dust and Disk
+Inventory X behind one layered workspace; see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 | Crate | What it does | License |
 |---|---|---|
 | [`dirstats-scan`](crates/dirstats-scan) | Parallel scan into a compact, size-sorted tree | Apache-2.0 |
-| [`dirstats-treemap`](crates/dirstats-treemap) | Rows/squarified layouts, cushion rendering, hit testing | GPL-3.0-or-later |
+| [`dirstats-treemap`](crates/dirstats-treemap) | Rows/squarified layouts, OKLCH glow rendering, hit testing | GPL-3.0-or-later |
+| [`dirstats-app`](crates/dirstats-app) | Front-end-agnostic state: background scan, navigation, actions | GPL-3.0-or-later |
+| [`dirstats-tui`](crates/dirstats-tui) | Terminal interface (ratatui): entry list and cell treemap | GPL-3.0-or-later |
+| [`dirstats`](crates/dirstats) | Library + binary; picks a front end by feature flag | GPL-3.0-or-later |
+
+```sh
+cargo install --path crates/dirstats     # TUI with open and trash actions
+dirstats ~/Downloads                     # interactive
+dirstats --summary ~/Downloads           # print the largest entries
+cargo run -p dirstats --features png -- --png map.png ~/Downloads   # --shading glow|flat
+```
+
+Features of the `dirstats` crate: `tui` (default), `open` (default), `trash`
+(default), `png`, and `gui` (reserved). `--no-default-features` builds the
+library only.
+
+## Library use
 
 ```rust
 use dirstats_scan::{scan, ScanOptions};
 use dirstats_treemap::{render, Style, TreemapOptions};
-use dirstats_treemap::render::{color_by_extension, default_palette};
+use dirstats_treemap::ExtensionColors;
 
 let tree = scan("/some/dir", &ScanOptions::default())?;
 for &child in tree.children(tree.root()) {
     println!("{:>12} {}", tree.size(child), tree.path(child).display());
 }
-let palette = default_palette();
+let colors = ExtensionColors::rank(&tree); // hues by extension size rank
 let options = TreemapOptions { style: Style::Squarified, ..Default::default() };
-let map = render(&tree, tree.root(), 1600, 1000, &options, color_by_extension(&palette));
-// map.pixels is RGBA8; map.hit_test(x, y) finds the node under a pixel.
+let map = render(&tree, tree.root(), 1600, 1000, &options, |t, id| colors.color(t, id));
+// colours are OKLCH throughout; map.pixels is RGBA8; map.hit_test(x, y) finds the node under a pixel.
 ```
 
-Try it:
-
-```sh
-cargo run --release -p dirstats-treemap --example treemap -- ~/Downloads treemap.png squarified
-```
-
-## Status (first draft)
+## Status
 
 Done:
 - Parallel scan via `dua-core`, compact arena tree, sorted children
 - Allocated or apparent size, hard links counted once, same-filesystem limit (Unix)
-- Rows and squarified layouts, cushion shading, hit testing
+- Rows and squarified layouts; glow shading in OKLCH; hit testing
+- Terminal front end with background scanning, keyboard navigation, open and trash
 
 Planned:
 - Hilbert/Moore layouts (from the MIT-licensed HPI prototype)
@@ -44,6 +55,7 @@ Planned:
 - APFS clone accounting (`dua-core` `apfs_clone_metadata`)
 - Volume boundaries on Windows, parallel cushion rendering, grid hit-test
   index, extension colors ranked by size, saving and loading scans
+- GUI front end (feature `gui`), CI across all three platforms
 
 ## License
 
