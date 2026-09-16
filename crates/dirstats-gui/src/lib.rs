@@ -427,15 +427,71 @@ impl Gui {
         });
     }
 
+    /// Arrow keys in the tree: up and down move through the visible rows,
+    /// right expands a directory or steps into its first child, left
+    /// collapses it or steps to the parent. `rows` is refreshed when the
+    /// expansion changes.
+    fn keyboard_navigation(&mut self, ui: &egui::Ui, rows: &mut Vec<(NodeId, u32)>) {
+        let Some(tree) = &self.app.tree else { return };
+        let (up, down, left, right) = ui.input(|i| {
+            (
+                i.key_pressed(Key::ArrowUp),
+                i.key_pressed(Key::ArrowDown),
+                i.key_pressed(Key::ArrowLeft),
+                i.key_pressed(Key::ArrowRight),
+            )
+        });
+        if !(up || down || left || right) || rows.is_empty() {
+            return;
+        }
+        let index = self.selected.and_then(|id| rows.iter().position(|&(r, _)| r == id));
+        let mut target = None;
+        if down {
+            target = Some(index.map_or(0, |i| (i + 1).min(rows.len() - 1)));
+        } else if up {
+            target = Some(index.map_or(0, |i| i.saturating_sub(1)));
+        } else if let Some(i) = index {
+            let (id, _) = rows[i];
+            let is_dir = !tree.children(id).is_empty();
+            if right && is_dir {
+                if self.app.expanded.contains(&id) {
+                    target = Some(i + 1); // first child follows its parent
+                } else {
+                    self.app.toggle_expanded(id);
+                    *rows = self.app.tree_rows();
+                    target = Some(i);
+                }
+            } else if left {
+                if is_dir && self.app.expanded.contains(&id) {
+                    self.app.toggle_expanded(id);
+                    *rows = self.app.tree_rows();
+                    target = Some(i);
+                } else if let Some(parent) = tree.node(id).parent {
+                    target = rows.iter().position(|&(r, _)| r == parent);
+                }
+            }
+        } else if right || left {
+            target = Some(0);
+        }
+        if let Some(i) = target
+            && let Some(&(id, _)) = rows.get(i)
+        {
+            self.selected = Some(id);
+            self.scroll_to = Some(id);
+        }
+    }
+
     /// Rows of the tree. `edges` are the absolute x positions of the name,
     /// bar, share and size columns and the right edge of size, straight from
     /// the header, so cells always line up with it.
     fn entry_list(&mut self, ui: &mut egui::Ui, edges: [f32; 5], row_height: f32) {
-        let Some(tree) = &self.app.tree else {
+        if self.app.tree.is_none() {
             ui.label("waiting for scan…");
             return;
-        };
-        let rows = self.app.tree_rows();
+        }
+        let mut rows = self.app.tree_rows();
+        self.keyboard_navigation(ui, &mut rows);
+        let tree = self.app.tree.as_ref().expect("checked above");
         let selected = self.selected;
         let indent = 16.0;
         let pad = 6.0;
@@ -447,12 +503,25 @@ impl Gui {
         if let Some(target) = self.scroll_to.take()
             && let Some(index) = rows.iter().position(|&(id, _)| id == target)
         {
-            // Centre the row: show_rows spaces rows by height plus item spacing.
+            // show_rows spaces rows by height plus item spacing. Scroll only
+            // when the row is outside the view, and then just far enough.
             let step = row_height + ui.spacing().item_spacing.y;
-            let offset = index as f32 * step - (ui.available_height() - row_height) / 2.0;
-            scroll = scroll.vertical_scroll_offset(offset.max(0.0));
+            let view = ui.available_height();
+            let row_top = index as f32 * step;
+            let current = ui.ctx().memory(|m| m.data.get_temp::<f32>(ui.id().with("tree-scroll"))).unwrap_or(0.0);
+            let offset = if row_top < current {
+                Some(row_top)
+            } else if row_top + row_height > current + view {
+                Some(row_top + row_height - view)
+            } else {
+                None
+            };
+            if let Some(offset) = offset {
+                scroll = scroll.vertical_scroll_offset(offset.max(0.0));
+            }
         }
-        scroll.show_rows(ui, row_height, rows.len(), |ui, range| {
+        let scroll_id = ui.id().with("tree-scroll");
+        let output = scroll.show_rows(ui, row_height, rows.len(), |ui, range| {
             for &(id, depth) in &rows[range] {
                 let node = tree.node(id);
                 let size = tree.size(id);
@@ -539,6 +608,7 @@ impl Gui {
                 }
             }
         });
+        ui.ctx().memory_mut(|m| m.data.insert_temp(scroll_id, output.state.offset.y));
         if let Some(id) = toggle {
             self.app.toggle_expanded(id);
         }
