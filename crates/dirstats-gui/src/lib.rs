@@ -817,6 +817,9 @@ impl Gui {
         });
         if response.hovered() {
             self.app.hovered = hovered;
+            if let Some(node) = hovered {
+                self.next_highlight = Some(Highlight::Subtree(node));
+            }
         }
         let outline = |node: NodeId, color: Color32, width: f32| {
             if let Some(item) = map.item(node) {
@@ -841,9 +844,6 @@ impl Gui {
                 }
             }
             None => {}
-        }
-        if let Some(node) = hovered {
-            outline(node, Color32::from_white_alpha(160), 1.0);
         }
 
         let mut zoom = None;
