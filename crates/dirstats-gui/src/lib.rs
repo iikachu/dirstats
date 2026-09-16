@@ -63,6 +63,11 @@ mod icons {
         [(504.0, 480.0), (320.0, 296.0), (376.0, 240.0), (616.0, 480.0)],
         [(616.0, 480.0), (376.0, 720.0), (320.0, 664.0), (504.0, 480.0)],
     ];
+    /// `chevron_left`: `chevron_right` mirrored horizontally.
+    pub const CHEVRON_LEFT: [[(f32, f32); 4]; 2] = [
+        [(456.0, 480.0), (640.0, 296.0), (584.0, 240.0), (344.0, 480.0)],
+        [(344.0, 480.0), (584.0, 720.0), (640.0, 664.0), (456.0, 480.0)],
+    ];
     /// `expand_more` (`keyboard_arrow_down`): `M480-344 240-584l56-56 184 184 184-184 56 56-240 240Z`
     pub const KEYBOARD_ARROW_DOWN: [[(f32, f32); 4]; 2] = [
         [(480.0, 616.0), (240.0, 376.0), (296.0, 320.0), (480.0, 504.0)],
@@ -294,7 +299,8 @@ impl eframe::App for Gui {
             self.zoom(id);
         }
 
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| self.header(ui));
+        let toolbar_frame = egui::Frame::side_top_panel(&ctx.style()).inner_margin(egui::Margin::symmetric(10, 6));
+        egui::TopBottomPanel::top("toolbar").frame(toolbar_frame).show(ctx, |ui| self.header(ui));
         egui::TopBottomPanel::bottom("footer").show(ctx, |ui| self.footer(ui));
         // Keep the panel's background fill but no margin, so the columns run edge to edge.
         let frame = egui::Frame::central_panel(&ctx.style()).inner_margin(0.0);
@@ -430,10 +436,24 @@ impl Gui {
 }
 
 impl Gui {
+    /// Toolbar: back, breadcrumbs, totals; layout toggle and rescan on the right.
     fn header(&mut self, ui: &mut egui::Ui) {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let icon_button = |ui: &mut egui::Ui, glyph: &[[(f32, f32); 4]; 2], enabled: bool, tip: &str| -> egui::Response {
+            let (rect, response) = ui.allocate_exact_size(egui::vec2(26.0, 26.0), if enabled { Sense::click() } else { Sense::hover() });
+            let visuals = ui.style().interact(&response);
+            if enabled && (response.hovered() || response.is_pointer_button_down_on()) {
+                ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
+            }
+            let color = if enabled { visuals.text_color() } else { ui.visuals().weak_text_color().gamma_multiply(0.5) };
+            icons::paint(ui.painter(), rect.shrink(4.0), glyph, color);
+            if enabled { response.on_hover_text(tip) } else { response }
+        };
+
         ui.horizontal(|ui| {
+            ui.set_height(26.0);
             if let Some(scan) = &self.app.scan {
-                ui.strong(scan.root.display().to_string());
+                ui.add(egui::Label::new(egui::RichText::new(scan.root.display().to_string()).strong().size(15.0)).truncate());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Cancel").clicked() {
                         self.app.cancel_scan();
@@ -442,41 +462,82 @@ impl Gui {
                 return;
             }
             let Some(tree) = &self.app.tree else {
-                ui.label("no scan");
+                ui.label(egui::RichText::new("No scan").strong().size(15.0));
                 return;
             };
-            let crumbs = self.app.breadcrumbs();
-            let mut target = None;
-            for (i, &id) in crumbs.iter().enumerate() {
-                if i > 0 {
-                    ui.label("›");
-                }
-                let name = tree.node(id).name.to_string_lossy().into_owned();
-                if i + 1 == crumbs.len() {
-                    ui.strong(name);
-                } else if ui.link(name).clicked() {
-                    target = Some(id);
-                }
-            }
-            if let Some(dir) = crumbs.last() {
-                ui.separator();
-                ui.label(format!("{}  ·  {} files", format::size(tree.size(*dir)), tree.node(*dir).file_count));
-            }
+
+            // Right cluster first so the crumbs can take the rest of the width.
+            let mut zoom_target = None;
+            let mut rescan = false;
+            let mut style = self.style;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Rescan").clicked() {
-                    self.app.rescan();
+                rescan = ui.button("Rescan").clicked();
+                ui.add_space(6.0);
+                // Segmented layout toggle.
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for (i, (value, label)) in [(Style::Rows, "Rows"), (Style::Squarified, "Squarified")].iter().enumerate() {
+                    let selected = style == *value;
+                    let button = egui::Button::new(egui::RichText::new(*label).strong()).selected(selected).corner_radius(if i == 0 {
+                        egui::CornerRadius { nw: 0, sw: 0, ne: 4, se: 4 }
+                    } else {
+                        egui::CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }
+                    });
+                    if ui.add(button).clicked() {
+                        style = *value;
+                    }
                 }
-                egui::ComboBox::from_id_salt("layout").selected_text(format!("{:?}", self.style)).show_ui(ui, |ui| {
-                    for style in [Style::Squarified, Style::Rows] {
-                        if ui.selectable_value(&mut self.style, style, format!("{style:?}")).changed() {
-                            self.map_key = None;
+                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.add_space(10.0);
+                if let Some(dir) = self.app.dir() {
+                    ui.label(
+                        egui::RichText::new(format!("{}   {} files", format::size(tree.size(dir)), tree.node(dir).file_count))
+                            .monospace()
+                            .color(ui.visuals().weak_text_color()),
+                    );
+                }
+                ui.add_space(6.0);
+
+                // Left cluster: back button and breadcrumbs, truncating from the right.
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let can_back = self.app.can_back();
+                    if icon_button(ui, &icons::CHEVRON_LEFT, can_back, "Back (Backspace)").clicked() {
+                        zoom_target = Some(None);
+                    }
+                    let crumbs = self.app.breadcrumbs();
+                    for (i, &id) in crumbs.iter().enumerate() {
+                        if i > 0 {
+                            let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
+                            icons::paint(ui.painter(), rect, &icons::CHEVRON_RIGHT, ui.visuals().weak_text_color());
+                        }
+                        let name = tree.node(id).name.to_string_lossy().into_owned();
+                        if i + 1 == crumbs.len() {
+                            ui.add(egui::Label::new(egui::RichText::new(name).strong().size(15.0)).truncate());
+                        } else {
+                            let link = ui.add(egui::Label::new(egui::RichText::new(name).size(15.0)).sense(Sense::click()).truncate());
+                            if link.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                            }
+                            if link.clicked() {
+                                zoom_target = Some(Some(id));
+                            }
                         }
                     }
                 });
             });
-            if let Some(id) = target
-                && self.app.zoom_to(id)
-            {
+
+            if style != self.style {
+                self.style = style;
+                self.map_key = None;
+            }
+            if rescan {
+                self.app.rescan();
+            }
+            let moved = match zoom_target {
+                Some(None) => self.app.back(),
+                Some(Some(id)) => self.app.zoom_to(id),
+                None => false,
+            };
+            if moved {
                 self.map_key = None;
             }
         });

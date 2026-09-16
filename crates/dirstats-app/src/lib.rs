@@ -256,6 +256,12 @@ impl App {
         true
     }
 
+    /// Whether [`App::back`] has somewhere to go.
+    #[must_use]
+    pub fn can_back(&self) -> bool {
+        self.cursor.as_ref().is_some_and(|c| !c.history.is_empty())
+    }
+
     /// Return to the parent directory, reselecting the directory just left.
     pub fn back(&mut self) -> bool {
         let Some(cursor) = &mut self.cursor else { return false };
