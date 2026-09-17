@@ -894,7 +894,7 @@ impl Gui {
             on(show.ext_share, columns.ext_share),
             on(show.ext_size, columns.ext_size),
         ];
-        let titles = ["Name", "", "%", "Size", "Items", "Files", "Dirs", "Modified", "Treemap", "Extension", "%", "Size"];
+        let titles = ["Name", "", "%", "Size", "Items", "Files", "Folders", "Modified", "Treemap", "Extension", "%", "Size"];
         let right_aligned = [false, false, true, true, true, true, true, true, false, false, true, true];
         const MAP: usize = 8;
         let mut x = full.min.x;
@@ -1020,19 +1020,20 @@ impl Gui {
         icons::paint(ui.painter(), button.shrink(5.0), icons::Glyph::ViewColumn, visuals.text_color());
         let mut show = self.show;
         egui::Popup::menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-            ui.set_min_width(150.0);
+            ui.set_min_width(190.0);
+            // Menu labels are descriptive; the header keeps the short forms.
             ui.label(egui::RichText::new("Tree").weak().small());
-            ui.checkbox(&mut show.bar, "Bar");
-            ui.checkbox(&mut show.share, "%");
+            ui.checkbox(&mut show.bar, "Share bar");
+            ui.checkbox(&mut show.share, "Share of parent (%)");
             ui.checkbox(&mut show.size, "Size");
-            ui.checkbox(&mut show.items, "Items");
-            ui.checkbox(&mut show.files, "Files");
-            ui.checkbox(&mut show.dirs, "Dirs");
-            ui.checkbox(&mut show.modified, "Modified");
+            ui.checkbox(&mut show.items, "Item count");
+            ui.checkbox(&mut show.files, "File count");
+            ui.checkbox(&mut show.dirs, "Subfolder count");
+            ui.checkbox(&mut show.modified, "Last modified");
             ui.separator();
             ui.label(egui::RichText::new("Extensions").weak().small());
-            ui.checkbox(&mut show.ext_share, "%");
-            ui.checkbox(&mut show.ext_size, "Size");
+            ui.checkbox(&mut show.ext_share, "Share of total (%)");
+            ui.checkbox(&mut show.ext_size, "Total size");
         });
         self.show = show;
         egui::Rect::from_min_max(egui::pos2(button.max.x, cell.min.y), cell.max)
