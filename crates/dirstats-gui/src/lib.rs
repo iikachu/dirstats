@@ -458,6 +458,9 @@ mod icons {
     }
 }
 
+/// How far the monospace size sits below body text, in points.
+const MONO_STEP: f32 = 1.5;
+
 /// Open the window and run until it is closed.
 pub fn run(app: App) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -468,10 +471,90 @@ pub fn run(app: App) -> eframe::Result<()> {
         "dirstats",
         options,
         Box::new(|cc| {
+            // The egui-fonts feature keeps egui's bundled fonts and sizes for comparison.
+            if !cfg!(feature = "egui-fonts") {
+                let (fonts, system) = system_fonts();
+                cc.egui_ctx.set_fonts(fonts);
+                if system {
+                    cc.egui_ctx.all_styles_mut(|style| style.text_styles = system_text_sizes());
+                }
+            }
+            // Monospace faces (Hack, SF Mono, Cascadia) all carry a taller
+            // x-height than their proportional partners, so the numeric
+            // columns sit a step below body text whichever fonts are in use.
+            cc.egui_ctx.all_styles_mut(|style| {
+                let body = style.text_styles[&egui::TextStyle::Body].size;
+                style.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(body - MONO_STEP));
+            });
             apply_theme(&cc.egui_ctx);
             Ok(Box::new(Gui::new(app)))
         }),
     )
+}
+
+/// egui's bundled fonts with the platform's own UI and monospace faces put
+/// in front of them: SF Pro and SF Mono (or Menlo) on macOS, Segoe UI and
+/// Cascadia Mono (or Consolas) on Windows. The bundled fonts stay as
+/// fallbacks for glyphs the system faces lack, and are used alone on other
+/// platforms or when no candidate file can be read. The flag says whether
+/// any system face was loaded.
+fn system_fonts() -> (egui::FontDefinitions, bool) {
+    use egui::FontFamily::{Monospace, Proportional};
+    let mut fonts = egui::FontDefinitions::default();
+    let mut loaded = false;
+    let (proportional, monospace): (&[&str], &[&str]) = if cfg!(target_os = "macos") {
+        (
+            &["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/HelveticaNeue.ttc"],
+            &[
+                "/System/Applications/Utilities/Terminal.app/Contents/Resources/Fonts/SF-Mono-Regular.otf",
+                "/System/Library/Fonts/SFNSMono.ttf",
+                "/System/Library/Fonts/Menlo.ttc",
+            ],
+        )
+    } else if cfg!(target_os = "windows") {
+        (
+            &["C:\\Windows\\Fonts\\segoeui.ttf"],
+            &["C:\\Windows\\Fonts\\CascadiaMono.ttf", "C:\\Windows\\Fonts\\consola.ttf"],
+        )
+    } else {
+        (&[], &[])
+    };
+    for (family, candidates, name) in [(Proportional, proportional, "system-ui"), (Monospace, monospace, "system-mono")] {
+        // First candidate that reads as a non-empty file wins.
+        let Some(bytes) = candidates.iter().filter_map(|path| std::fs::read(path).ok()).find(|b| !b.is_empty()) else {
+            continue;
+        };
+        fonts.font_data.insert(name.to_owned(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
+        fonts.families.entry(family).or_default().insert(0, name.to_owned());
+        loaded = true;
+    }
+    (fonts, loaded)
+}
+
+/// Text sizes matching the platform's own UI when its fonts are in use:
+/// macOS sets body text at 13pt and pairs it with 12pt SF Mono; Windows
+/// sets Segoe UI at 9pt (12px) with 11px captions. egui's defaults suit
+/// its bundled Ubuntu Light, which sits smaller on the line than either.
+/// Only called when a system face loaded, which today means macOS or Windows.
+fn system_text_sizes() -> std::collections::BTreeMap<egui::TextStyle, egui::FontId> {
+    use egui::FontFamily::{Monospace, Proportional};
+    use egui::{FontId, TextStyle};
+    let (small, body, heading) = match std::env::consts::OS {
+        "macos" => (11.0, 13.0, 17.0),
+        "windows" => (11.0, 12.0, 18.0),
+        // Unreachable today: no system faces are looked up elsewhere.
+        _ => return egui::Style::default().text_styles,
+    };
+    // Monospace is derived from body once the fonts are settled; see `run`.
+    let mono = body;
+    [
+        (TextStyle::Small, FontId::new(small, Proportional)),
+        (TextStyle::Body, FontId::new(body, Proportional)),
+        (TextStyle::Button, FontId::new(body, Proportional)),
+        (TextStyle::Heading, FontId::new(heading, Proportional)),
+        (TextStyle::Monospace, FontId::new(mono, Monospace)),
+    ]
+    .into()
 }
 
 /// Row fill under the pointer: the panel colour nudged toward the text

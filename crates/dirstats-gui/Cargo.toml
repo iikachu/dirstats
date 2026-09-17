@@ -10,6 +10,8 @@ description = "Graphical front end for dirstats (egui)"
 default = []
 trash = ["dirstats-app/trash"]
 open = ["dirstats-app/open"]
+# Keep egui's bundled fonts and text sizes instead of the platform's own.
+egui-fonts = []
 
 [dependencies]
 dirstats-app.workspace = true
