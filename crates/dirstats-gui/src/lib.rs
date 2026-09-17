@@ -153,6 +153,11 @@ fn menu_separator(ui: &mut egui::Ui) {
     ui.add_space(4.0);
 }
 
+/// Local date and time, minute precision.
+fn format_time(time: std::time::SystemTime) -> String {
+    chrono::DateTime::<chrono::Local>::from(time).format("%Y-%m-%d %H:%M").to_string()
+}
+
 /// Period of the highlight pulse.
 const PULSE_SECONDS: f64 = 2.4;
 
@@ -544,14 +549,29 @@ struct Columns {
     bar: f32,
     share: f32,
     size: f32,
+    items: f32,
+    files: f32,
+    dirs: f32,
+    modified: f32,
     ext_name: f32,
     ext_share: f32,
     ext_size: f32,
 }
 
 impl Columns {
-    const MIN: Columns =
-        Columns { name: 80.0, bar: 24.0, share: 40.0, size: 56.0, ext_name: 60.0, ext_share: 40.0, ext_size: 56.0 };
+    const MIN: Columns = Columns {
+        name: 80.0,
+        bar: 24.0,
+        share: 40.0,
+        size: 56.0,
+        items: 40.0,
+        files: 40.0,
+        dirs: 40.0,
+        modified: 60.0,
+        ext_name: 60.0,
+        ext_share: 40.0,
+        ext_size: 56.0,
+    };
     /// Least width the treemap keeps when other columns grow.
     const MIN_MAP: f32 = 120.0;
     /// Width of the draggable divider between columns.
@@ -563,6 +583,10 @@ impl Columns {
             bar: 60.0,
             share: mono_char * 6.0,
             size: mono_char * 10.0,
+            items: mono_char * 8.0,
+            files: mono_char * 8.0,
+            dirs: mono_char * 7.0,
+            modified: mono_char * 17.0,
             ext_name: 140.0,
             ext_share: mono_char * 6.0,
             ext_size: mono_char * 10.0,
@@ -570,7 +594,7 @@ impl Columns {
     }
 
     fn tree_width(&self) -> f32 {
-        self.name + self.bar + self.share + self.size
+        self.name + self.bar + self.share + self.size + self.items + self.files + self.dirs + self.modified
     }
 
     fn extensions_width(&self) -> f32 {
@@ -820,15 +844,20 @@ impl Gui {
             columns.bar,
             columns.share,
             columns.size,
+            columns.items,
+            columns.files,
+            columns.dirs,
+            columns.modified,
             map_width,
             columns.ext_name,
             columns.ext_share,
             columns.ext_size,
         ];
-        let titles = ["Name", "", "%", "Size", "Treemap", "Extension", "%", "Size"];
-        let right_aligned = [false, false, true, true, false, false, true, true];
+        let titles = ["Name", "", "%", "Size", "Items", "Files", "Dirs", "Modified", "Treemap", "Extension", "%", "Size"];
+        let right_aligned = [false, false, true, true, true, true, true, true, false, false, true, true];
+        const MAP: usize = 8;
         let mut x = full.min.x;
-        let mut starts = [0.0; 8];
+        let mut starts = [0.0; 12];
         for (i, &w) in widths.iter().enumerate() {
             starts[i] = x;
             let cell = egui::Rect::from_min_size(egui::pos2(x, header.min.y), egui::vec2(w, header.height()));
@@ -851,7 +880,7 @@ impl Gui {
                 let stroke = if response.dragged() { ui.visuals().selection.stroke } else { ui.visuals().widgets.noninteractive.bg_stroke };
                 // Guide lines run the full height only between regions; inside
                 // the file list the header tick is enough.
-                let range = if i == 3 || i == 4 { full.y_range() } else { header.y_range() };
+                let range = if i == MAP - 1 || i == MAP { full.y_range() } else { header.y_range() };
                 ui.painter().vline(x, range, stroke);
                 let delta = response.drag_delta().x;
                 if delta != 0.0 {
@@ -864,8 +893,12 @@ impl Gui {
                         1 => (&mut columns.bar, min.bar, 1.0),
                         2 => (&mut columns.share, min.share, 1.0),
                         3 => (&mut columns.size, min.size, 1.0),
-                        4 => (&mut columns.ext_name, min.ext_name, -1.0),
-                        5 => (&mut columns.ext_name, min.ext_name, 1.0),
+                        4 => (&mut columns.items, min.items, 1.0),
+                        5 => (&mut columns.files, min.files, 1.0),
+                        6 => (&mut columns.dirs, min.dirs, 1.0),
+                        7 => (&mut columns.modified, min.modified, 1.0),
+                        8 => (&mut columns.ext_name, min.ext_name, -1.0),
+                        9 => (&mut columns.ext_name, min.ext_name, 1.0),
                         _ => (&mut columns.ext_share, min.ext_share, 1.0),
                     };
                     *col = (*col + sign * delta).max(min_w);
@@ -877,7 +910,11 @@ impl Gui {
                             1 => &mut columns.bar,
                             2 => &mut columns.share,
                             3 => &mut columns.size,
-                            4 | 5 => &mut columns.ext_name,
+                            4 => &mut columns.items,
+                            5 => &mut columns.files,
+                            6 => &mut columns.dirs,
+                            7 => &mut columns.modified,
+                            8 | 9 => &mut columns.ext_name,
                             _ => &mut columns.ext_share,
                         };
                         *col -= overflow;
@@ -894,13 +931,14 @@ impl Gui {
             let x1 = if to + 1 < starts.len() { starts[to + 1] } else { full.max.x };
             egui::Rect::from_min_max(egui::pos2(x0, body.min.y), egui::pos2(x1, body.max.y))
         };
-        let tree_rect = region(0, 3);
-        let map_rect = region(4, 4);
-        let ext_rect = region(5, 7);
+        let tree_rect = region(0, MAP - 1);
+        let map_rect = region(MAP, MAP);
+        let ext_rect = region(MAP + 1, 11);
 
         let mut tree_ui = ui.new_child(egui::UiBuilder::new().max_rect(tree_rect).id_salt("tree"));
         tree_ui.set_clip_rect(tree_rect);
-        let tree_columns = [starts[0], starts[1], starts[2], starts[3], starts[4]];
+        let mut tree_columns = [0.0; 9];
+        tree_columns.copy_from_slice(&starts[..=MAP]);
         self.entry_list(&mut tree_ui, tree_columns, row_height);
 
         let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(map_rect).id_salt("map"));
@@ -909,7 +947,7 @@ impl Gui {
 
         let mut ext_ui = ui.new_child(egui::UiBuilder::new().max_rect(ext_rect).id_salt("extensions"));
         ext_ui.set_clip_rect(ext_rect);
-        let ext_edges = [starts[5], starts[6], starts[7], full.max.x];
+        let ext_edges = [starts[9], starts[10], starts[11], full.max.x];
         self.legend(&mut ext_ui, ext_edges, row_height);
 
         // The treemap is drawn before the legend, so hover takes effect next frame.
@@ -1242,9 +1280,10 @@ impl Gui {
     }
 
     /// Rows of the tree. `edges` are the absolute x positions of the name,
-    /// bar, share and size columns and the right edge of size, straight from
-    /// the header, so cells always line up with it.
-    fn entry_list(&mut self, ui: &mut egui::Ui, edges: [f32; 5], row_height: f32) {
+    /// bar, share, size, items, files, dirs and modified columns and the
+    /// right edge of modified, straight from the header, so cells always
+    /// line up with it.
+    fn entry_list(&mut self, ui: &mut egui::Ui, edges: [f32; 9], row_height: f32) {
         if self.app.tree.is_none() {
             ui.label("waiting for scan…");
             return;
@@ -1355,7 +1394,18 @@ impl Gui {
                 }
 
                 // Share and size: right-aligned monospace, clipped to their cells.
-                for (from, to, value) in [(edges[2], edges[3], format!("{share:.1}")), (edges[3], edges[4], format::size(size))] {
+                // Counts and dates are shown for directories; files get blanks
+                // there, as WinDirStat does.
+                let count = |n: u64| if is_dir { n.to_string() } else { String::new() };
+                let figures = [
+                    (edges[2], edges[3], format!("{share:.1}")),
+                    (edges[3], edges[4], format::size(size)),
+                    (edges[4], edges[5], count(node.file_count + node.dir_count)),
+                    (edges[5], edges[6], count(node.file_count)),
+                    (edges[6], edges[7], count(node.dir_count)),
+                    (edges[7], edges[8], node.modified.map(format_time).unwrap_or_default()),
+                ];
+                for (from, to, value) in figures {
                     let c = cell(from, to);
                     let galley = ui.painter().with_clip_rect(c).text(
                         egui::pos2(c.max.x - pad, c.center().y),

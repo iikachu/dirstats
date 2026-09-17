@@ -15,3 +15,4 @@ open = ["dirstats-app/open"]
 dirstats-app.workspace = true
 dirstats-treemap.workspace = true
 eframe.workspace = true
+chrono.workspace = true

@@ -126,6 +126,8 @@ pub fn scan_with(
             apparent_size: 0,
             allocated_size: 0,
             file_count: u64::from(kind != Kind::Directory),
+            dir_count: 0,
+            modified: None,
             duplicate_link: false,
             error: false,
         };
@@ -133,6 +135,7 @@ pub fn scan_with(
             Some(Ok(metadata)) => {
                 node.apparent_size = platform::len(metadata);
                 node.allocated_size = platform::allocated_size(metadata);
+                node.modified = metadata.modified().ok();
                 if options.count_hard_links_once
                     && kind == Kind::File
                     && let Some((identity, links)) = platform::link_identity(metadata)
@@ -303,6 +306,9 @@ mod tests {
         let tree = scan(dir.path(), &options).unwrap();
         let root = tree.root();
         assert_eq!(tree.node(root).file_count, 2);
+        assert_eq!(tree.node(root).dir_count, 1, "one subdirectory below the root");
+        let newest = tree.nodes().filter_map(|(_, n)| n.modified).max();
+        assert_eq!(tree.node(root).modified, newest, "root carries the newest change below it");
         let children = tree.children(root);
         assert_eq!(children.len(), 2);
         assert_eq!(&*tree.node(children[0]).name, OsStr::new("sub"));

@@ -52,6 +52,11 @@ pub struct Node {
     pub allocated_size: u64,
     /// Files at or below this node.
     pub file_count: u64,
+    /// Directories at or below this node, not counting itself.
+    pub dir_count: u64,
+    /// Last modification. For directories, the newest anywhere below once
+    /// the tree is finished; `None` when unknown.
+    pub modified: Option<std::time::SystemTime>,
     /// An additional hard link to data already counted elsewhere; contributes no size.
     pub duplicate_link: bool,
     /// Reading this entry's metadata failed.
@@ -100,10 +105,17 @@ impl Tree {
                 (node.apparent_size, node.allocated_size)
             };
             let files = node.file_count;
+            let dirs = node.dir_count + u64::from(node.kind == Kind::Directory);
+            let modified = node.modified;
             let parent = &mut self.nodes[parent.index()];
             parent.apparent_size += apparent;
             parent.allocated_size += allocated;
             parent.file_count += files;
+            parent.dir_count += dirs;
+            parent.modified = match (parent.modified, modified) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (a, b) => a.or(b),
+            };
         }
 
         let mut offsets = vec![0u32; self.nodes.len() + 1];
