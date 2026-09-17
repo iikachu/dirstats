@@ -194,6 +194,8 @@ mod icons {
         OpenInNew,
         Delete,
         Undo,
+        /// Column picker.
+        ViewColumn,
     }
 
     impl Glyph {
@@ -204,6 +206,7 @@ mod icons {
                 Glyph::ContentCopy => "M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z",
                 Glyph::OpenInNew => "M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z",
                 Glyph::Delete => "M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z",
+                Glyph::ViewColumn => "M121-280v-400q0-33 23.5-56.5T201-760h559q33 0 56.5 23.5T840-680v400q0 33-23.5 56.5T760-200H201q-33 0-56.5-23.5T121-280Zm79 0h133v-400H200v400Zm213 0h133v-400H413v400Zm213 0h133v-400H626v400Z",
                 Glyph::Undo => "M280-200v-80h284q63 0 109.5-40T720-420q0-60-46.5-100T564-560H312l104 104-56 56-200-200 200-200 56 56-104 104h252q97 0 166.5 63T800-420q0 94-69.5 157T564-200H280Z",
             }
         }
@@ -522,6 +525,8 @@ struct Gui {
     selection: Option<Selection>,
     /// User-adjustable column widths; `None` until the font is known.
     columns: Option<Columns>,
+    /// Optional tree columns the user has switched on.
+    show: ShownColumns,
     /// Row to bring into view on the next frame, set when selecting from the treemap.
     scroll_to: Option<NodeId>,
     /// What the pointer is over in the legend or the tree; its boxes pulse vivid.
@@ -539,6 +544,16 @@ struct Gui {
     /// When the current footer message appeared, so it outranks the hover
     /// path for a while; failures stay until the next action.
     message_since: Option<(std::time::Instant, String)>,
+}
+
+/// Which optional tree columns are shown. Off by default so the plain
+/// Name, bar, share and size layout is what opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ShownColumns {
+    items: bool,
+    files: bool,
+    dirs: bool,
+    modified: bool,
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -593,8 +608,10 @@ impl Columns {
         }
     }
 
-    fn tree_width(&self) -> f32 {
-        self.name + self.bar + self.share + self.size + self.items + self.files + self.dirs + self.modified
+    /// Width of the tree columns that are shown.
+    fn tree_width(&self, show: ShownColumns) -> f32 {
+        let optional = [(show.items, self.items), (show.files, self.files), (show.dirs, self.dirs), (show.modified, self.modified)];
+        self.name + self.bar + self.share + self.size + optional.iter().filter(|(on, _)| *on).map(|(_, w)| w).sum::<f32>()
     }
 
     fn extensions_width(&self) -> f32 {
@@ -617,6 +634,7 @@ impl Gui {
             style: Style::Squarified,
             selection: None,
             columns: None,
+            show: ShownColumns::default(),
             scroll_to: None,
             hovered_highlight: None,
             next_highlight: None,
@@ -837,17 +855,19 @@ impl Gui {
         // Header strip with titles and draggable dividers.
         let header = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), row_height + 4.0));
         ui.painter().rect_filled(header, 0.0, ui.visuals().faint_bg_color);
-        let total_fixed = columns.tree_width() + columns.extensions_width();
+        let show = self.show;
+        let total_fixed = columns.tree_width(show) + columns.extensions_width();
         let map_width = (full.width() - total_fixed).max(Columns::MIN_MAP);
+        // Hidden columns take zero width and draw no title or divider.
         let widths = [
             columns.name,
             columns.bar,
             columns.share,
             columns.size,
-            columns.items,
-            columns.files,
-            columns.dirs,
-            columns.modified,
+            if show.items { columns.items } else { 0.0 },
+            if show.files { columns.files } else { 0.0 },
+            if show.dirs { columns.dirs } else { 0.0 },
+            if show.modified { columns.modified } else { 0.0 },
             map_width,
             columns.ext_name,
             columns.ext_share,
@@ -860,7 +880,12 @@ impl Gui {
         let mut starts = [0.0; 12];
         for (i, &w) in widths.iter().enumerate() {
             starts[i] = x;
+            if w <= 0.0 {
+                continue;
+            }
             let cell = egui::Rect::from_min_size(egui::pos2(x, header.min.y), egui::vec2(w, header.height()));
+            // Column picker at the left edge of the treemap header, eating into its space.
+            let cell = if i == MAP { self.column_picker(ui, cell) } else { cell };
             let layout = if right_aligned[i] {
                 egui::Layout::right_to_left(egui::Align::Center)
             } else {
@@ -903,7 +928,7 @@ impl Gui {
                     };
                     *col = (*col + sign * delta).max(min_w);
                     // Keep the treemap from being squeezed out.
-                    let overflow = columns.tree_width() + columns.extensions_width() + Columns::MIN_MAP - full.width();
+                    let overflow = columns.tree_width(show) + columns.extensions_width() + Columns::MIN_MAP - full.width();
                     if overflow > 0.0 {
                         let col = match i {
                             0 => &mut columns.name,
@@ -961,6 +986,29 @@ impl Gui {
 }
 
 impl Gui {
+    /// Icon button at the left of `cell` opening a checklist of optional
+    /// columns; returns the part of `cell` left for the title.
+    fn column_picker(&mut self, ui: &mut egui::Ui, cell: egui::Rect) -> egui::Rect {
+        let size = cell.height();
+        let button = egui::Rect::from_min_size(cell.min, egui::vec2(size, size));
+        let response = ui.interact(button, ui.id().with("column-picker"), Sense::click()).on_hover_text("Columns");
+        let visuals = ui.style().interact(&response);
+        if response.hovered() || response.is_pointer_button_down_on() {
+            ui.painter().rect_filled(button.shrink(2.0), 4.0, visuals.weak_bg_fill);
+        }
+        icons::paint(ui.painter(), button.shrink(5.0), icons::Glyph::ViewColumn, visuals.text_color());
+        let mut show = self.show;
+        egui::Popup::menu(&response).show(|ui| {
+            ui.set_min_width(140.0);
+            ui.checkbox(&mut show.items, "Items");
+            ui.checkbox(&mut show.files, "Files");
+            ui.checkbox(&mut show.dirs, "Dirs");
+            ui.checkbox(&mut show.modified, "Modified");
+        });
+        self.show = show;
+        egui::Rect::from_min_max(egui::pos2(button.max.x, cell.min.y), cell.max)
+    }
+
     /// Toolbar: back, breadcrumbs, totals; layout toggle and rescan on the right.
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing.x = 6.0;
@@ -1407,6 +1455,9 @@ impl Gui {
                 ];
                 for (from, to, value) in figures {
                     let c = cell(from, to);
+                    if c.width() <= 0.0 {
+                        continue;
+                    }
                     let galley = ui.painter().with_clip_rect(c).text(
                         egui::pos2(c.max.x - pad, c.center().y),
                         egui::Align2::RIGHT_CENTER,
