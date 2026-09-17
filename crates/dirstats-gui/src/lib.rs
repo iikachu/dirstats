@@ -1019,7 +1019,7 @@ impl Gui {
         }
         icons::paint(ui.painter(), button.shrink(5.0), icons::Glyph::ViewColumn, visuals.text_color());
         let mut show = self.show;
-        egui::Popup::menu(&response).show(|ui| {
+        egui::Popup::menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             ui.set_min_width(150.0);
             ui.label(egui::RichText::new("Tree").weak().small());
             ui.checkbox(&mut show.bar, "Bar");
