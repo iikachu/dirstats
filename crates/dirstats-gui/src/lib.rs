@@ -546,14 +546,25 @@ struct Gui {
     message_since: Option<(std::time::Instant, String)>,
 }
 
-/// Which optional tree columns are shown. Off by default so the plain
-/// Name, bar, share and size layout is what opens.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// Which optional columns are shown. Name and Extension are always there.
+/// The counts and date start off so the plain layout is what opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ShownColumns {
+    bar: bool,
+    share: bool,
+    size: bool,
     items: bool,
     files: bool,
     dirs: bool,
     modified: bool,
+    ext_share: bool,
+    ext_size: bool,
+}
+
+impl Default for ShownColumns {
+    fn default() -> Self {
+        Self { bar: true, share: true, size: true, items: false, files: false, dirs: false, modified: false, ext_share: true, ext_size: true }
+    }
 }
 
 /// Widths of every column in the flat header. The treemap takes whatever is
@@ -610,12 +621,21 @@ impl Columns {
 
     /// Width of the tree columns that are shown.
     fn tree_width(&self, show: ShownColumns) -> f32 {
-        let optional = [(show.items, self.items), (show.files, self.files), (show.dirs, self.dirs), (show.modified, self.modified)];
-        self.name + self.bar + self.share + self.size + optional.iter().filter(|(on, _)| *on).map(|(_, w)| w).sum::<f32>()
+        let optional = [
+            (show.bar, self.bar),
+            (show.share, self.share),
+            (show.size, self.size),
+            (show.items, self.items),
+            (show.files, self.files),
+            (show.dirs, self.dirs),
+            (show.modified, self.modified),
+        ];
+        self.name + optional.iter().filter(|(on, _)| *on).map(|(_, w)| w).sum::<f32>()
     }
 
-    fn extensions_width(&self) -> f32 {
-        self.ext_name + self.ext_share + self.ext_size
+    /// Width of the extension columns that are shown.
+    fn extensions_width(&self, show: ShownColumns) -> f32 {
+        self.ext_name + if show.ext_share { self.ext_share } else { 0.0 } + if show.ext_size { self.ext_size } else { 0.0 }
     }
 }
 
@@ -856,22 +876,23 @@ impl Gui {
         let header = egui::Rect::from_min_size(full.min, egui::vec2(full.width(), row_height + 4.0));
         ui.painter().rect_filled(header, 0.0, ui.visuals().faint_bg_color);
         let show = self.show;
-        let total_fixed = columns.tree_width(show) + columns.extensions_width();
+        let total_fixed = columns.tree_width(show) + columns.extensions_width(show);
         let map_width = (full.width() - total_fixed).max(Columns::MIN_MAP);
         // Hidden columns take zero width and draw no title or divider.
+        let on = |shown: bool, w: f32| if shown { w } else { 0.0 };
         let widths = [
             columns.name,
-            columns.bar,
-            columns.share,
-            columns.size,
-            if show.items { columns.items } else { 0.0 },
-            if show.files { columns.files } else { 0.0 },
-            if show.dirs { columns.dirs } else { 0.0 },
-            if show.modified { columns.modified } else { 0.0 },
+            on(show.bar, columns.bar),
+            on(show.share, columns.share),
+            on(show.size, columns.size),
+            on(show.items, columns.items),
+            on(show.files, columns.files),
+            on(show.dirs, columns.dirs),
+            on(show.modified, columns.modified),
             map_width,
             columns.ext_name,
-            columns.ext_share,
-            columns.ext_size,
+            on(show.ext_share, columns.ext_share),
+            on(show.ext_size, columns.ext_size),
         ];
         let titles = ["Name", "", "%", "Size", "Items", "Files", "Dirs", "Modified", "Treemap", "Extension", "%", "Size"];
         let right_aligned = [false, false, true, true, true, true, true, true, false, false, true, true];
@@ -928,7 +949,7 @@ impl Gui {
                     };
                     *col = (*col + sign * delta).max(min_w);
                     // Keep the treemap from being squeezed out.
-                    let overflow = columns.tree_width(show) + columns.extensions_width() + Columns::MIN_MAP - full.width();
+                    let overflow = columns.tree_width(show) + columns.extensions_width(show) + Columns::MIN_MAP - full.width();
                     if overflow > 0.0 {
                         let col = match i {
                             0 => &mut columns.name,
@@ -999,11 +1020,19 @@ impl Gui {
         icons::paint(ui.painter(), button.shrink(5.0), icons::Glyph::ViewColumn, visuals.text_color());
         let mut show = self.show;
         egui::Popup::menu(&response).show(|ui| {
-            ui.set_min_width(140.0);
+            ui.set_min_width(150.0);
+            ui.label(egui::RichText::new("Tree").weak().small());
+            ui.checkbox(&mut show.bar, "Bar");
+            ui.checkbox(&mut show.share, "%");
+            ui.checkbox(&mut show.size, "Size");
             ui.checkbox(&mut show.items, "Items");
             ui.checkbox(&mut show.files, "Files");
             ui.checkbox(&mut show.dirs, "Dirs");
             ui.checkbox(&mut show.modified, "Modified");
+            ui.separator();
+            ui.label(egui::RichText::new("Extensions").weak().small());
+            ui.checkbox(&mut show.ext_share, "%");
+            ui.checkbox(&mut show.ext_size, "Size");
         });
         self.show = show;
         egui::Rect::from_min_max(egui::pos2(button.max.x, cell.min.y), cell.max)
@@ -1218,6 +1247,9 @@ impl Gui {
                     (edges[2], edges[3], format::size(*size)),
                 ] {
                     let c = cell(from, to);
+                    if c.width() <= 0.0 {
+                        continue;
+                    }
                     ui.painter().with_clip_rect(c).text(egui::pos2(c.max.x - pad, c.center().y), egui::Align2::RIGHT_CENTER, value, mono.clone(), text);
                 }
             }
@@ -1434,7 +1466,7 @@ impl Gui {
 
                 // Bar column.
                 let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
-                if bar.width() > 0.0 {
+                if edges[2] - edges[1] > 0.0 && bar.width() > 0.0 {
                     ui.painter().rect_filled(bar, 2.0, ui.visuals().faint_bg_color);
                     let mut filled = bar;
                     filled.set_width(bar.width() * (share / 100.0) as f32);
