@@ -63,14 +63,17 @@ fn format_time(time: std::time::SystemTime) -> String {
 /// Extensions drawn as coloured segments in a share bar; the rest is the plain bar.
 const BAR_SEGMENTS: usize = 6;
 
+/// The name the app goes by: the window title, and the toolbar before a scan.
+const APP_NAME: &str = "dirstats";
+
 /// Open the window and run until it is closed.
 pub fn run(app: App) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_title("dirstats"),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_title(APP_NAME),
         ..Default::default()
     };
     eframe::run_native(
-        "dirstats",
+        APP_NAME,
         options,
         Box::new(|cc| {
             // The egui-fonts feature keeps egui's bundled fonts and sizes for comparison.

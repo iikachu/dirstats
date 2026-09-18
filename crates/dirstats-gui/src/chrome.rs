@@ -43,7 +43,7 @@ impl Gui {
                 return;
             }
             let Some(tree) = &self.app.tree else {
-                ui.label(egui::RichText::new("No scan").strong().size(15.0));
+                ui.label(egui::RichText::new(crate::APP_NAME).strong().size(15.0));
                 return;
             };
 
