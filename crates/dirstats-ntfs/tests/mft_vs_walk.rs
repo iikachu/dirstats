@@ -42,7 +42,7 @@ fn assert_fixture_agrees(mft: &Tree, walk: &Tree) {
         let (mn, wn) = (mft.node(m), walk.node(w));
         let summary = |n: &dirstats_scan::Node| (n.kind, n.file_count, n.dir_count, n.apparent_size, n.allocated_size);
         assert_eq!(summary(mn), summary(wn), "{}: (kind, files, dirs, apparent, allocated)", path.display());
-        let mut names = |t: &Tree, id| {
+        let names = |t: &Tree, id| {
             let mut v: Vec<_> = t.children(id).iter().map(|&c| (t.node(c).name.clone(), c)).collect();
             v.sort();
             v

@@ -509,7 +509,7 @@ impl App {
 /// iCloud item, while the scanner keeps the process from ever doing so
 /// (see the scan crate). A thread-scoped policy overrides the process
 /// one, so the acting thread turns fetching on just for the operation.
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "trash", target_os = "macos"))]
 mod dataless {
     use std::ffi::c_int;
     // From <sys/resource.h>; not in the libc crate this project pins.
@@ -532,7 +532,7 @@ mod dataless {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(feature = "trash", not(target_os = "macos")))]
 mod dataless {
     pub fn materialising<T>(f: impl FnOnce() -> T) -> T {
         f()

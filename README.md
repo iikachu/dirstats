@@ -30,10 +30,10 @@ You need [Rust](https://rustup.rs). Then, from this folder:
 cargo install --path crates/dirstats
 ```
 
-To also get the terminal interface and PNG export:
+To also get PNG export:
 
 ```bash
-cargo install --path crates/dirstats --features tui,png
+cargo install --path crates/dirstats --features png
 ```
 
 ## Use
@@ -58,6 +58,10 @@ same folder. Click a block to select it, and right-click for zoom, open and tras
 ```bash
 dirstats --tui ~/Downloads
 ```
+
+dirstats uses the terminal on its own when there is no desktop to open a
+window on: a Linux console, or an SSH session without X forwarding. Use
+`--gui` to open a window anyway.
 
 | Key | Action |
 |---|---|

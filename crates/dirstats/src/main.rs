@@ -24,19 +24,48 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     if cli.summary {
         return dirstats::print_summary(cli);
     }
-    // With both front ends built, --tui picks the terminal; a TUI-only
-    // build always uses it.
-    #[cfg(feature = "tui")]
-    if cli.tui || cfg!(not(feature = "gui")) {
-        dirstats::run_tui(cli)?;
-        return Ok(());
+    front_end(cli)
+}
+
+/// Picks the interface. --tui and --gui decide outright. Otherwise the
+/// window is used when the session looks graphical, the terminal when it
+/// does not, and the terminal again if the window then fails to open.
+#[cfg(all(feature = "gui", feature = "tui"))]
+fn front_end(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    use dirstats::session;
+    if cli.tui {
+        return Ok(dirstats::run_tui(cli)?);
     }
-    #[cfg(feature = "gui")]
-    {
-        dirstats::run_gui(cli)
+    let terminal = session::is_terminal();
+    if !cli.gui && !session::gui_available() {
+        if terminal {
+            return Ok(dirstats::run_tui(cli)?);
+        }
+        eprintln!("dirstats: no graphical session or terminal; printing a summary (--gui forces a window)");
+        return dirstats::print_summary(cli);
     }
-    #[cfg(not(feature = "gui"))]
-    {
-        dirstats::print_summary(cli)
+    match dirstats::run_gui(cli) {
+        // Windows always has a desktop, so a failure there is a real error
+        // to report, not a sign the session is text-only.
+        Err(err) if !cli.gui && terminal && !cfg!(windows) => {
+            eprintln!("dirstats: could not open a window ({err}); using the terminal interface");
+            Ok(dirstats::run_tui(cli)?)
+        }
+        result => result,
     }
+}
+
+#[cfg(all(feature = "gui", not(feature = "tui")))]
+fn front_end(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    dirstats::run_gui(cli)
+}
+
+#[cfg(all(feature = "tui", not(feature = "gui")))]
+fn front_end(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(dirstats::run_tui(cli)?)
+}
+
+#[cfg(not(any(feature = "gui", feature = "tui")))]
+fn front_end(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    dirstats::print_summary(cli)
 }

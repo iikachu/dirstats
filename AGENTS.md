@@ -34,7 +34,7 @@ cargo run -- PATH
 ```
 
 ```bash
-cargo run --features tui -- --tui PATH
+cargo run -- --tui PATH
 ```
 
 ```bash

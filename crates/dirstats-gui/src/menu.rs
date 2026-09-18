@@ -37,6 +37,7 @@ pub(super) enum NodeAction {
 }
 
 /// What the platform calls its trash in menu labels.
+#[cfg(any(feature = "trash", test))]
 pub(super) const TRASH_NAME: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
 
 /// Whether the permanent-delete item is offered and how it reads.
