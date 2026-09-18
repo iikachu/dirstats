@@ -5,12 +5,12 @@ name: Nightly
 # wrong results, not just slow ones. Timings go to the job summary or a
 # criterion report artifact.
 #
-# - ntfs: the elevated tests that the NTFS MFT reader agrees with the
+# - ntfs bench: the elevated tests that the NTFS MFT reader agrees with the
 #   walker, then the MFT bench against the walker, warm and cold.
-# - windows listing: dua-core's listing against std::fs::read_dir and a
-#   direct FileIdBothDirectoryInfo walk, on NTFS, FAT32, exFAT and ReFS.
-# - linux walker: the shelved getdents64 + statx walker's variants against
-#   dirstats-scan, on ext4, XFS and NFS.
+# - windows listing bench: dua-core's listing against std::fs::read_dir and
+#   a direct FileIdBothDirectoryInfo walk, on NTFS, FAT32, exFAT and ReFS.
+# - linux walker bench: the shelved getdents64 + statx walker's variants
+#   against dirstats-scan, on ext4, XFS and NFS.
 #
 # The baseline in every bench is dirstats-scan, so a nightly run on an
 # unchanged bench still says whether main's scan got faster or slower.
@@ -38,7 +38,7 @@ env:
 
 jobs:
   ntfs-bench:
-    name: ntfs tests + bench (windows, elevated)
+    name: ntfs bench (windows, elevated)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -74,8 +74,8 @@ jobs:
           path: target/criterion
           if-no-files-found: warn
 
-  windows-listing:
-    name: windows listing (ntfs folder, fat32, exfat, refs)
+  windows-listing-bench:
+    name: windows listing bench (ntfs folder, fat32, exfat, refs)
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -120,8 +120,8 @@ jobs:
           path: bench/windows-listing/target/criterion
           if-no-files-found: warn
 
-  linux-walker:
-    name: linux walker (${{ matrix.fs }})
+  linux-walker-bench:
+    name: linux walker bench (${{ matrix.fs }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
