@@ -12,6 +12,14 @@ categories = ["filesystem"]
 dirstats-scan.workspace = true
 foldhash.workspace = true
 
+[dev-dependencies]
+# Benchmark harness (Apache-2.0 OR MIT, by Brook Heisler and Jorge Aparicio).
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+[[bench]]
+name = "mft"
+harness = false
+
 [target.'cfg(windows)'.dependencies]
 # Volume handles and the FSCTLs that locate the master file table.
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl"] }

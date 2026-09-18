@@ -51,3 +51,14 @@ pub fn scan_with(
     }
     dirstats_scan::scan_with(root, options, cancel, progress)
 }
+
+/// Scan the volume at `root` (a drive root such as `C:\`) from its master
+/// file table, failing instead of falling back to a walk. For benchmarks.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn scan_mft(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<Tree> {
+    let root = root.as_ref();
+    let device = volume::device_path(root)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "not a drive root"))?;
+    volume::scan(root, &device, options, &AtomicBool::new(false), &Progress::default())
+}
