@@ -137,12 +137,13 @@ impl Gui {
     }
 
     /// The current directory as a fixed row above the list: its figures in
-    /// the usual columns, and the name cell holding its full path as plain
-    /// text, styled like any other row. It takes no selection, hover,
-    /// keyboard or menu; moving up the tree is the toolbar crumbs' job.
-    pub(super) fn current_dir_row(&self, ui: &mut egui::Ui, edges: [f32; 9], row_height: f32) {
-        let Some(tree) = self.app.tree.as_ref() else { return };
-        let Some(dir) = self.app.dir() else { return };
+    /// the usual columns, and the name cell holding the path as crumbs,
+    /// styled like any other row. Ancestors are clickable and return the
+    /// directory to zoom to, as the toolbar's do; the row itself takes no
+    /// selection, keyboard or menu.
+    pub(super) fn current_dir_row(&self, ui: &mut egui::Ui, edges: [f32; 9], row_height: f32) -> Option<NodeId> {
+        let tree = self.app.tree.as_ref()?;
+        let dir = self.app.dir()?;
         let node = tree.node(dir);
         let size = tree.size(dir);
         let parent_size = node.parent.map_or(size, |p| tree.size(p));
@@ -153,30 +154,121 @@ impl Gui {
         let row_width = ui.available_width();
         let text = ui.visuals().text_color();
 
-        // The path, wrapping onto more lines when it is longer than the name
-        // column. The first line is centred in a normal row; the margin
-        // above it is repeated below the last.
-        // It has no expander, so it starts at the column's left edge rather
-        // than where the names below do.
+        // Crumbs from the left, wrapping onto more lines when the path is
+        // longer than the name column. Laid out by hand on a fixed line
+        // pitch: every piece of text gets a rect exactly its own size, so
+        // hover pills are the same height on every line and never overlap.
+        // Room on either side of a separating slash: wide enough that it
+        // reads as a divider between crumbs, not a character of a name.
+        const GAP: f32 = 6.0;
         let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
-        let mut path_height = 0.0;
+        let mut target = None;
+        let mut crumbs_height = 0.0;
         if name_cell.width() > 4.0 {
             let font = egui::TextStyle::Body.resolve(ui.style());
-            let mut path = tree.path(dir).display().to_string();
-            if !path.ends_with(std::path::MAIN_SEPARATOR) {
-                path.push(std::path::MAIN_SEPARATOR);
-            }
+            let strong = ui.visuals().strong_text_color();
+            let weak = ui.visuals().weak_text_color();
             let clip = ui.clip_rect();
-            let painter = ui.painter().with_clip_rect(egui::Rect::from_x_y_ranges(name_cell.x_range().intersection(clip.x_range()), clip.y_range()));
-            let galley = painter.layout(path, font, text, name_cell.width());
-            let line_height = galley.rows.first().map_or(galley.size().y, |row| row.height());
-            let margin = (row_height - line_height) / 2.0;
-            path_height = 2.0 * margin + galley.size().y;
-            painter.galley(egui::pos2(name_cell.min.x, origin.y + margin), galley, text);
+            // Clip to the column, but leave the cell's padding for the hover
+            // pill, which reaches a little past the text on either side.
+            let clip_x = name_cell.x_range().expand(pad - 1.0).intersection(clip.x_range());
+            let painter = ui.painter().with_clip_rect(egui::Rect::from_x_y_ranges(clip_x, clip.y_range()));
+            // Crumbs are joined by a slash, as the path itself is written.
+            let slash = painter.layout_no_wrap(std::path::MAIN_SEPARATOR_STR.to_owned(), font.clone(), weak);
+            let line_height = slash.size().y;
+            let pitch = line_height + 4.0;
+            // First line centred in a normal row, later lines a pitch apart.
+            let first_top = origin.y + (row_height - line_height) / 2.0;
+            let (left, full) = (name_cell.min.x, name_cell.width());
+            let (mut x, mut line) = (left, 0usize);
+            let crumbs = self.app.breadcrumbs();
+            for (i, &id) in crumbs.iter().enumerate() {
+                let last = i + 1 == crumbs.len();
+                let mut name = tree.node(id).name.to_string_lossy().into_owned();
+                if last && !name.ends_with(std::path::MAIN_SEPARATOR) {
+                    name.push(std::path::MAIN_SEPARATOR);
+                }
+                let color = if last { strong } else { text };
+                // An ancestor carries the marker after it, so the two move to
+                // the next line together and no line starts with a marker.
+                // A root that is itself a separator, or ends in one, needs no
+                // second one after it.
+                let marked = !last && !name.ends_with(std::path::MAIN_SEPARATOR);
+                let marker_room = if marked { GAP + slash.size().x } else { 0.0 };
+                let whole = painter.layout_no_wrap(name.clone(), font.clone(), color);
+                if x > left && x + whole.size().x + marker_room > left + full {
+                    x = left;
+                    line += 1;
+                }
+                // A name wider than the column is cut into one piece per line.
+                let pieces = if whole.size().x + marker_room <= full {
+                    vec![whole]
+                } else {
+                    let wrapped = painter.layout(name, font.clone(), color, (full - marker_room).max(1.0));
+                    wrapped.rows.iter().map(|row| painter.layout_no_wrap(row.text().trim_end().to_owned(), font.clone(), color)).collect()
+                };
+                let mut rects = Vec::with_capacity(pieces.len());
+                for (n, piece) in pieces.iter().enumerate() {
+                    if n > 0 {
+                        x = left;
+                        line += 1;
+                    }
+                    let min = egui::pos2(x, first_top + pitch * line as f32);
+                    rects.push(egui::Rect::from_min_size(min, piece.size()));
+                    x += piece.size().x;
+                }
+                // One response per piece; the crumb reacts as a whole. The
+                // current folder lights up like the rest but goes nowhere:
+                // it senses hover only, so no press, hand or underline.
+                let sense = if last { Sense::hover() } else { Sense::click() };
+                let (mut hovered, mut pressed) = (false, false);
+                for (n, rect) in rects.iter().enumerate() {
+                    let response = ui.interact(rect.expand2(egui::vec2(3.0, 1.0)), ui.id().with(("crumb", i, n)), sense);
+                    hovered |= response.hovered();
+                    pressed |= response.is_pointer_button_down_on();
+                    if !last && response.clicked() {
+                        target = Some(id);
+                    }
+                }
+                if hovered {
+                    if !last {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    // A pill behind the crumb, darker while pressed, and on
+                    // an ancestor an underline as on a link.
+                    let visuals = ui.visuals();
+                    // The current folder's pill is fainter: present, not inviting.
+                    let strength = if last {
+                        0.07
+                    } else if pressed {
+                        0.28
+                    } else {
+                        0.14
+                    };
+                    let fill = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), strength);
+                    for rect in &rects {
+                        painter.rect_filled(rect.expand2(egui::vec2(3.0, 1.0)), 4.0, fill);
+                        if !last {
+                            painter.hline(rect.x_range(), rect.max.y - 1.0, egui::Stroke::new(1.0_f32, text));
+                        }
+                    }
+                }
+                for (piece, rect) in pieces.into_iter().zip(&rects) {
+                    painter.galley(rect.min, piece, color);
+                }
+                if marked {
+                    painter.galley(egui::pos2(x + GAP, first_top + pitch * line as f32), slash.clone(), weak);
+                    x += GAP + slash.size().x + GAP;
+                } else if !last {
+                    x += GAP;
+                }
+            }
+            // The margin above the first line, repeated below the last.
+            crumbs_height = 2.0 * (first_top - origin.y) + pitch * line as f32 + line_height;
         }
         // Never so tall that the list below is squeezed out.
         let limit = (ui.available_height() * 0.5).max(row_height);
-        let height = row_height.max(path_height).min(limit);
+        let height = row_height.max(crumbs_height).min(limit);
         let row_rect = egui::Rect::from_min_size(origin, egui::vec2(row_width, height));
         ui.allocate_rect(row_rect, Sense::hover());
         // Figures sit on the first line, level with the start of the path.
@@ -202,6 +294,7 @@ impl Gui {
             }
             ui.painter().with_clip_rect(c).text(egui::pos2(c.max.x - pad, c.center().y), egui::Align2::RIGHT_CENTER, value, mono.clone(), text);
         }
+        target
     }
 
     /// Rows of the tree. `edges` are the absolute x positions of the name,
@@ -255,7 +348,7 @@ impl Gui {
         }
         // Pinned first row: the current directory, with its ancestors as
         // clickable crumbs for moving back up the tree.
-        self.current_dir_row(ui, edges, row_height);
+        let zoom_up = self.current_dir_row(ui, edges, row_height);
 
         let scroll_id = ui.id().with("tree-scroll");
         let output = scroll.show_rows(ui, row_height, rows.len(), |ui, range| {
@@ -408,6 +501,11 @@ impl Gui {
             }
         });
         ui.ctx().memory_mut(|m| m.data.insert_temp(scroll_id, output.state.offset.y));
+        if let Some(id) = zoom_up
+            && self.app.zoom_to(id)
+        {
+            self.map_key = None;
+        }
         if let Some(id) = toggle {
             self.app.toggle_expanded(id);
         }
