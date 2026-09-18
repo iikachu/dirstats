@@ -11,7 +11,7 @@
 
 use dirstats_app::NodeId;
 
-#[cfg(all(windows, feature = "trash"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
 use crate::dialogs::Dialog;
 #[cfg(feature = "trash")]
 use crate::menu::TRASH_NAME;
@@ -56,7 +56,7 @@ impl Gui {
     }
 
     pub(super) fn permanent(&self) -> Permanent {
-        if !cfg!(windows) {
+        if !cfg!(any(windows, target_os = "linux")) {
             Permanent::Unavailable
         } else if self.app.permanent_delete() {
             Permanent::Enabled
@@ -106,16 +106,16 @@ impl Gui {
                 if let Err(err) = self.app.trash_node(node) {
                     self.app.message = Some(format!("move to {TRASH_NAME} failed: {err}"));
                     // On Windows the usual causes are an item too large for
-                    // the bin or a drive without one; offer the way past them.
-                    #[cfg(windows)]
+                    // the bin or a drive without one, on Linux a mount with no trash folder; offer the way past them.
+                    #[cfg(any(windows, target_os = "linux"))]
                     if self.app.check_removable(node).is_ok() {
                         self.dialog = Some(Dialog::TrashFailed { node, error: err.to_string() });
                     }
                 }
             }
-            #[cfg(all(windows, feature = "trash"))]
+            #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
             NodeAction::DeletePermanently => self.ask_delete(node),
-            #[cfg(all(windows, feature = "trash"))]
+            #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
             NodeAction::EnablePermanentDelete => match self.app.check_removable(node) {
                 Ok(()) => self.dialog = Some(Dialog::EnablePermanent { then: Some(node) }),
                 Err(err) => self.app.message = Some(format!("delete failed: {err}")),

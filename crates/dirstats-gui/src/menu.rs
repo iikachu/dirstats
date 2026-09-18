@@ -29,10 +29,10 @@ pub(super) enum NodeAction {
     #[cfg(feature = "icloud")]
     Evict,
     /// Windows: delete without the Recycle Bin, after the gate and a confirmation.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     DeletePermanently,
     /// Windows: open the gate dialog, then delete if it is accepted.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     EnablePermanentDelete,
 }
 
@@ -133,7 +133,7 @@ pub(super) fn node_menu(
                     if menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), true).clicked() {
                         action = Some(NodeAction::Trash);
                     }
-                    #[cfg(windows)]
+                    #[cfg(any(windows, target_os = "linux"))]
                     match permanent {
                         Permanent::Unavailable => {}
                         Permanent::Locked => {
@@ -169,7 +169,7 @@ pub(super) fn node_menu(
             }
         }
     }
-    #[cfg(not(all(windows, feature = "trash")))]
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "trash")))]
     let _ = (trashed, permanent);
     if action.is_some() {
         ui.close();
@@ -436,16 +436,16 @@ mod tests {
             assert!(click("Deleted", with(TrashState::Deleted)).is_empty());
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         #[test]
-        fn no_permanent_delete_off_windows() {
+        fn no_permanent_delete_on_macos() {
             for permanent in [Permanent::Locked, Permanent::Enabled] {
                 let text = labels(Path::new(PATH), Args { permanent, ..Args::default() });
                 assert!(!text.iter().any(|t| t.contains("Permanent")), "{permanent:?}");
             }
         }
 
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         #[test]
         fn locked_permanent_delete_opens_the_gate() {
             let args = Args { permanent: Permanent::Locked, ..Args::default() };
@@ -453,7 +453,7 @@ mod tests {
             assert!(matches!(click("Enable Permanent Delete…", args)[..], [NodeAction::EnablePermanentDelete]));
         }
 
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         #[test]
         fn enabled_permanent_delete_deletes() {
             let args = Args { permanent: Permanent::Enabled, ..Args::default() };
@@ -461,7 +461,7 @@ mod tests {
             assert!(matches!(click("Delete Permanently", args)[..], [NodeAction::DeletePermanently]));
         }
 
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         #[test]
         fn permanent_delete_only_for_present_items() {
             let args = Args { permanent: Permanent::Enabled, trashed: TrashState::Deleted, ..Args::default() };

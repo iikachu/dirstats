@@ -19,13 +19,11 @@ pub mod delete;
 pub mod format;
 pub mod locations;
 pub mod scanner;
-pub mod settings;
 
 #[cfg(feature = "trash")]
 pub use delete::{DeleteFailure, DeleteOutcome, DeleteStatus, RunningDelete};
 pub use dirstats_scan::{self as scan, NodeId, ScanOptions, SizeMetric, Tree};
 pub use scanner::{RunningScan, ScanStatus};
-pub use settings::Settings;
 
 use std::io;
 #[cfg(feature = "trash")]
@@ -68,10 +66,10 @@ pub struct App {
     pub evicted: foldhash::HashSet<NodeId>,
     /// Permanent deletion in progress, if any. Front ends call
     /// [`App::poll_delete`] each tick to adopt the outcome.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub delete: Option<RunningDelete>,
-    /// Preferences that persist between runs; see [`App::set_permanent_delete`].
-    pub settings: Settings,
+    /// Set by the permanent-delete gate for this run only; never saved.
+    permanent_delete: bool,
     /// Whether the scanned tree sits on a Time Machine backup volume;
     /// probed once per scan in [`App::set_tree`].
     pub backup_volume: bool,
@@ -82,20 +80,19 @@ pub struct App {
 impl App {
     #[must_use]
     pub fn new(options: ScanOptions) -> Self {
-        Self { options, settings: Settings::load(), ..Self::default() }
+        Self { options, ..Self::default() }
     }
 
-    /// Whether permanent deletion is offered; only ever true on Windows,
-    /// where the Recycle Bin can refuse large items or be absent.
+    /// Whether permanent deletion is offered; only on Windows and Linux,
+    /// where the trash can refuse items, and only once the gate is passed.
     #[must_use]
     pub fn permanent_delete(&self) -> bool {
-        cfg!(windows) && self.settings.permanent_delete
+        cfg!(any(windows, target_os = "linux")) && self.permanent_delete
     }
 
-    /// Remember the user's answer to the permanent-delete gate.
-    pub fn set_permanent_delete(&mut self, enabled: bool) -> io::Result<()> {
-        self.settings.permanent_delete = enabled;
-        self.settings.save()
+    /// Pass the permanent-delete gate until the app quits.
+    pub fn enable_permanent_delete(&mut self) {
+        self.permanent_delete = true;
     }
 
     /// Start scanning `root` on a worker thread, cancelling any running scan.
@@ -446,7 +443,7 @@ impl App {
     /// Recycle Bin. Refused unless [`App::permanent_delete`] is on. Only
     /// one deletion runs at a time. The front end is expected to have
     /// confirmed with the user; nothing here asks.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub fn delete_node_permanently(&mut self, id: NodeId) -> io::Result<()> {
         if !self.permanent_delete() {
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, "permanent delete is not enabled"));
@@ -466,7 +463,7 @@ impl App {
     /// Adopt a finished deletion: the node counts as deleted when its path
     /// is gone, whatever happened underneath. Returns the path and outcome
     /// for the front end to report when a deletion has just finished.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub fn poll_delete(&mut self) -> Option<(PathBuf, DeleteOutcome)> {
         let running = self.delete.as_ref()?;
         let DeleteStatus::Done(outcome) = running.try_finish() else { return None };

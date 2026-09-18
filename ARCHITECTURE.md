@@ -18,7 +18,7 @@ a front end.
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
 | Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
 | NTFS | `dirstats-ntfs` | GPL-3.0-or-later | Whole-volume scan from the master file table (Windows, needs administrator rights); walks with `dirstats-scan` otherwise |
-| App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash; on Windows also gated permanent delete), persisted settings |
+| App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash; on Windows and Linux also gated permanent delete) |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
 
@@ -84,11 +84,17 @@ the right strategy without per-entry cost.
   treemap from `dirstats-treemap::render` is uploaded as a texture and
   re-rendered only when the tree, directory, layout or panel size changes.
   Hover uses the grid hit-test index; click reveals, double-click zooms,
-  right-click opens or trashes. On Windows the menu also offers permanent
-  deletion behind a one-time gate, done by the app's own bottom-up walker
-  (as WinDirStat does) rather than the shell, with its own confirmation,
-  progress and failure report; the Recycle Bin path stays with the trash
-  crate, which refuses rather than nukes items the bin cannot take.
+  right-click opens or trashes. On Windows and Linux the menu also offers
+  permanent deletion behind a gate that lasts until the app quits (nothing
+  is saved between runs), done by the app's own bottom-up
+  walker (as WinDirStat does) rather than the shell, with its own
+  confirmation, progress and failure report; the trash path stays with the
+  trash crate, which refuses rather than nukes items the Recycle Bin or a
+  Linux mount without a writable `.Trash-$UID` folder cannot take, and the
+  refusal offers permanent delete as the next step. macOS is deliberately
+  left out: the Finder trash accepts items on every local and most network
+  volumes, so the escape hatch would only add a way to lose data, and Time
+  Machine snapshots are guarded separately (`backup::BLOCKS_TRASH`).
 
 ## Roadmap
 
