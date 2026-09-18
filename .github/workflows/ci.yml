@@ -91,7 +91,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: e2e
-      - run: cargo test -p dirstats-gui --features e2e,egui-fonts --locked -- --include-ignored --nocapture
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash --locked -- --include-ignored --nocapture
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
