@@ -10,11 +10,35 @@
 //! The entry list: the zoom directory's row, the expandable tree under it and keyboard navigation.
 
 use dirstats_app::{NodeId, format};
+use dirstats_treemap::render::{ExtensionColors, ExtensionMix};
 use eframe::egui::{self, Color32, Key, Sense};
 
 use crate::menu::{NodeAction, TrashState, node_menu, zoom_label};
 use crate::theme::hover_fill;
 use crate::{Gui, Highlight, Selection, format_time, icons};
+
+/// A node's share of its parent as a bar on `track`, the filled part
+/// split into the largest extensions below the node in their treemap
+/// colours. The tail of smaller extensions stays in the plain bar colour.
+fn share_bar(ui: &egui::Ui, bar: egui::Rect, track: Color32, palette: Option<(&ExtensionMix, &ExtensionColors)>, id: NodeId, share: f64, size: u64) {
+    ui.painter().rect_filled(bar, 2.0, track);
+    let mut filled = bar;
+    filled.set_width(bar.width() * (share / 100.0) as f32);
+    ui.painter().rect_filled(filled, 2.0, ui.visuals().weak_text_color());
+    let Some((mix, colors)) = palette else { return };
+    if size == 0 {
+        return;
+    }
+    let painter = ui.painter().with_clip_rect(filled);
+    let mut x = filled.min.x;
+    for &(rank, bytes) in mix.segments(id) {
+        let width = filled.width() * (bytes as f64 / size as f64) as f32;
+        let segment = egui::Rect::from_min_max(egui::pos2(x, filled.min.y), egui::pos2(x + width, filled.max.y));
+        let [r, g, b] = colors.color_at(rank as usize).to_srgb();
+        painter.rect_filled(segment, 0.0, Color32::from_rgb(r, g, b));
+        x += width;
+    }
+}
 
 impl Gui {
     /// Keyboard navigation in the tree. Up and down move through the visible
@@ -168,10 +192,8 @@ impl Gui {
 
         let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
         if edges[2] - edges[1] > 0.0 && bar.width() > 0.0 {
-            ui.painter().rect_filled(bar, 2.0, ui.visuals().extreme_bg_color);
-            let mut filled = bar;
-            filled.set_width(bar.width() * (share / 100.0) as f32);
-            ui.painter().rect_filled(filled, 2.0, ui.visuals().weak_text_color());
+            // A darker track than the rows', since this row sits on their track colour.
+            share_bar(ui, bar, ui.visuals().extreme_bg_color, self.mix.as_ref().zip(self.colors.as_ref()), dir, share, size);
         }
         let figures = [
             (edges[2], edges[3], format!("{share:.1}")),
@@ -328,23 +350,7 @@ impl Gui {
                 // tail of smaller extensions stays in the plain bar colour.
                 let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
                 if edges[2] - edges[1] > 0.0 && bar.width() > 0.0 {
-                    ui.painter().rect_filled(bar, 2.0, ui.visuals().faint_bg_color);
-                    let mut filled = bar;
-                    filled.set_width(bar.width() * (share / 100.0) as f32);
-                    ui.painter().rect_filled(filled, 2.0, ui.visuals().weak_text_color());
-                    if let (Some(mix), Some(colors)) = (mix, colors)
-                        && size > 0
-                    {
-                        let painter = ui.painter().with_clip_rect(filled);
-                        let mut x = filled.min.x;
-                        for &(rank, bytes) in mix.segments(id) {
-                            let width = filled.width() * (bytes as f64 / size as f64) as f32;
-                            let segment = egui::Rect::from_min_max(egui::pos2(x, filled.min.y), egui::pos2(x + width, filled.max.y));
-                            let [r, g, b] = colors.color_at(rank as usize).to_srgb();
-                            painter.rect_filled(segment, 0.0, Color32::from_rgb(r, g, b));
-                            x += width;
-                        }
-                    }
+                    share_bar(ui, bar, ui.visuals().faint_bg_color, mix.zip(colors), id, share, size);
                 }
 
                 // Share and size: right-aligned monospace, clipped to their cells.
