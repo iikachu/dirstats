@@ -1,10 +1,13 @@
 name: Nightly
 
-# Benches too slow for every PR. The listing and walker benches fail when
-# their scanners disagree on what they found, so a red run means wrong
-# results, not just slow ones; the MFT reader's agreement is tested on every
-# PR (ci.yml). Timings go to the job summary or a criterion report artifact.
+# Benches and tests too slow for every PR. The listing and walker benches
+# fail when their scanners disagree on what they found, so a red run means
+# wrong results, not just slow ones; the MFT reader's agreement is tested on
+# every PR (ci.yml). Timings go to the job summary or a criterion report
+# artifact.
 #
+# - disk scan: the GUI scanning each runner's whole system disk through the
+#   real entry point (e2e::real_disk_scan), about 2 minutes each.
 # - ntfs bench: the NTFS MFT reader against the walker, warm and cold.
 # - windows listing: dua-core's listing against std::fs::read_dir and a
 #   direct FileIdBothDirectoryInfo walk, on NTFS, FAT32, exFAT and ReFS.
@@ -36,6 +39,36 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  disk-scan:
+    name: disk scan (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      DIRSTATS_E2E_OUT: ${{ github.workspace }}/e2e-out
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      # The GUI is rendered offscreen with wgpu. Windows (WARP) and macOS
+      # (Metal) have an adapter already; Linux needs a software Vulkan driver.
+      - name: Install lavapipe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash --locked -- --ignored --exact e2e::real_disk_scan --nocapture
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disk-scan-screenshots-${{ matrix.os }}
+          path: e2e-out/*.png
+          if-no-files-found: warn
+
   ntfs-bench:
     name: ntfs bench (windows, elevated)
     runs-on: windows-latest

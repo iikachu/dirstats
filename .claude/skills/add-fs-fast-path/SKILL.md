@@ -60,8 +60,9 @@ and simply walks where the fast path does not apply.
   handle code is). That way the logic is tested on all three CI runners.
 - Compare against the walker: scan the same fixture both ways and assert
   equal file counts and sizes under each `SizeMetric`.
-- The `gui e2e` CI job scans each runner's whole system disk through the real
-  entry point; its log prints scan time, file count and total size. Quote
+- The nightly `disk scan` jobs scan each runner's whole system disk through
+  the real entry point; the log prints scan time, file count and total size.
+  Start the `Nightly` workflow on your branch from the Actions tab and quote
   before and after figures from it in the PR. Windows runners are elevated,
   so privileged paths do run there.
 - From a Mac, at least type-check the Windows side (see the

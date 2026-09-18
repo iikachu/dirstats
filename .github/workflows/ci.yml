@@ -82,9 +82,9 @@ jobs:
       - name: Install lavapipe
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
-      # Includes the ignored tests: the one that scans the runner's whole
-      # system disk, and the one that moves a fixture file to its trash.
-      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash --locked -- --include-ignored --nocapture
+      # Fixture tests only, including the ignored one that moves a fixture
+      # file to the trash. The whole-disk scan runs nightly (nightly.yml).
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash --locked -- --include-ignored --skip real_disk_scan --nocapture
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -109,7 +109,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: e2e
-      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash --locked -- --include-ignored --nocapture
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash --locked -- --include-ignored --skip real_disk_scan --nocapture
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

@@ -21,8 +21,8 @@ reading before a non-trivial change.
 
 `bench/` holds benches that are their own Cargo workspaces, outside the one
 above: the shelved Linux walker and the Windows listing bench. PR CI doesn't
-build them. `.github/workflows/nightly.yml` runs them, and the NTFS MFT bench,
-every night, and on PRs that change them.
+build them. `.github/workflows/nightly.yml` runs them, the NTFS MFT bench and the
+GUI's whole-disk scan every night, and on PRs that change them.
 
 ## Commands
 

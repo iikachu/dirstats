@@ -67,5 +67,5 @@ missing, check the "PR screenshots" workflow run in the Actions tab.
 - Images go on the `ci-screenshots` branch, under `<yyyy-mm>/pr-<n>/<run id>/`.
   Only the bot writes there. A weekly job rewrites the branch as a single
   commit, dropping months older than 90 days.
-- `real-disk*` screenshots scan the runner's own disk and differ on every
-  run, so they're never listed as "also changed".
+- `real-disk*` screenshots come from the nightly `disk scan` jobs, not from
+  CI, so they never appear in the bot's comment.
