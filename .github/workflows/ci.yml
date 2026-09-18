@@ -29,6 +29,24 @@ jobs:
       - run: cargo build --workspace --all-targets --locked
       - run: cargo test --workspace --locked
 
+  # Each feature on its own, with defaults off, so a cfg gate that only
+  # compiles with the defaults (or a warning it leaves) is caught.
+  features:
+    name: feature combinations (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-hack
+      - run: cargo hack check --workspace --each-feature --exclude-features e2e --all-targets --locked
+
   # No hosted Arch runner exists, so run in the official container. Catches
   # breakage from Arch's rolling toolchain/libc ahead of Ubuntu LTS.
   test-arch:
