@@ -387,7 +387,7 @@ impl App {
     pub fn trash_node(&mut self, id: NodeId) -> io::Result<()> {
         let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
         self.check_removable(id)?;
-        let location = platform_trash(&path)?;
+        let location = dataless::materialising(|| platform_trash(&path))?;
         self.trashed.insert(id, location);
         self.message = Some(format!("moved to {}: {}", TRASH_NAME, path.display()));
         Ok(())
@@ -482,10 +482,44 @@ impl App {
         if original.exists() {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "something else is at the original path"));
         }
-        std::fs::rename(&location, &original)?;
+        dataless::materialising(|| std::fs::rename(&location, &original))?;
         self.trashed.remove(&id);
         self.message = Some(format!("put back: {}", original.display()));
         Ok(())
+    }
+}
+
+/// Actions that move or open files must be allowed to fetch an evicted
+/// iCloud item, while the scanner keeps the process from ever doing so
+/// (see the scan crate). A thread-scoped policy overrides the process
+/// one, so the acting thread turns fetching on just for the operation.
+#[cfg(target_os = "macos")]
+mod dataless {
+    use std::ffi::c_int;
+    // From <sys/resource.h>; not in the libc crate this project pins.
+    const IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES: c_int = 3;
+    const IOPOL_SCOPE_THREAD: c_int = 1;
+    const IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT: c_int = 0;
+    const IOPOL_MATERIALIZE_DATALESS_FILES_ON: c_int = 2;
+
+    unsafe extern "C" {
+        fn setiopolicy_np(iotype: c_int, scope: c_int, policy: c_int) -> c_int;
+    }
+
+    pub fn materialising<T>(f: impl FnOnce() -> T) -> T {
+        // SAFETY: plain policy calls on the current thread; failure only
+        // means the policy is unsupported and the operation runs as is.
+        unsafe { setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, IOPOL_MATERIALIZE_DATALESS_FILES_ON) };
+        let result = f();
+        unsafe { setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT) };
+        result
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+mod dataless {
+    pub fn materialising<T>(f: impl FnOnce() -> T) -> T {
+        f()
     }
 }
 
