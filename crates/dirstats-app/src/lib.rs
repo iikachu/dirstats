@@ -68,7 +68,7 @@ pub struct App {
     pub evicted: foldhash::HashSet<NodeId>,
     /// Permanent deletion in progress, if any. Front ends call
     /// [`App::poll_delete`] each tick to adopt the outcome.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub delete: Option<RunningDelete>,
     /// Preferences that persist between runs; see [`App::set_permanent_delete`].
     pub settings: Settings,
@@ -89,7 +89,7 @@ impl App {
     /// where the Recycle Bin can refuse large items or be absent.
     #[must_use]
     pub fn permanent_delete(&self) -> bool {
-        cfg!(windows) && self.settings.permanent_delete
+        cfg!(any(windows, target_os = "linux")) && self.settings.permanent_delete
     }
 
     /// Remember the user's answer to the permanent-delete gate.
@@ -446,7 +446,7 @@ impl App {
     /// Recycle Bin. Refused unless [`App::permanent_delete`] is on. Only
     /// one deletion runs at a time. The front end is expected to have
     /// confirmed with the user; nothing here asks.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub fn delete_node_permanently(&mut self, id: NodeId) -> io::Result<()> {
         if !self.permanent_delete() {
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, "permanent delete is not enabled"));
@@ -466,7 +466,7 @@ impl App {
     /// Adopt a finished deletion: the node counts as deleted when its path
     /// is gone, whatever happened underneath. Returns the path and outcome
     /// for the front end to report when a deletion has just finished.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub fn poll_delete(&mut self) -> Option<(PathBuf, DeleteOutcome)> {
         let running = self.delete.as_ref()?;
         let DeleteStatus::Done(outcome) = running.try_finish() else { return None };

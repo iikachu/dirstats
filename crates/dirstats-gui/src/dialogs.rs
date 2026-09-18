@@ -13,9 +13,24 @@ use dirstats_app::{NodeId, format};
 use eframe::egui;
 
 use crate::Gui;
+use crate::menu::TRASH_NAME;
+
+/// When permanent delete is the way forward.
+const WHEN: &str = if cfg!(windows) {
+    "items too large to recycle or on drives without a Recycle Bin"
+} else {
+    "items on drives or mounts without a Trash folder"
+};
+
+/// Why the trash refused an item.
+const TRASH_REFUSED: &str = if cfg!(windows) {
+    "The item may be too large to recycle, or the drive has no Recycle Bin."
+} else {
+    "The drive or mount may have no Trash folder, or it could not be created."
+};
 
 /// A modal in front of the window; at most one at a time.
-#[cfg(all(windows, feature = "trash"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
 #[derive(Debug)]
 pub(super) enum Dialog {
     /// The permanent-delete gate. `then` is the node whose deletion was
@@ -32,7 +47,7 @@ pub(super) enum Dialog {
 impl Gui {
     /// Open the confirmation for deleting `node` permanently, or explain
     /// why that is refused.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub(super) fn ask_delete(&mut self, node: NodeId) {
         match self.app.check_removable(node) {
             Ok(()) if self.app.delete.is_some() => self.app.message = Some("delete failed: a deletion is already running".into()),
@@ -43,7 +58,7 @@ impl Gui {
 
     /// Draw the running-deletion progress and whichever dialog is open.
     /// Both are modal: nothing behind them takes input.
-    #[cfg(all(windows, feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
     pub(super) fn dialogs(&mut self, ctx: &egui::Context) {
         use egui::{Modal, RichText};
         const WIDTH: f32 = 440.0;
@@ -87,11 +102,11 @@ impl Gui {
             match &dialog {
                 Dialog::EnablePermanent { then } => {
                     ui.heading("Enable permanent delete?");
-                    ui.label(
-                        "Files deleted this way skip the Recycle Bin and cannot be recovered by dirstats or Windows. \
-                         Use it for items too large to recycle or on drives without a Recycle Bin. \
+                    ui.label(format!(
+                        "Files deleted this way skip the {TRASH_NAME} and cannot be recovered. \
+                         Use it for {WHEN}. \
                          You will be asked to confirm each deletion.",
-                    );
+                    ));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button(RichText::new("Enable").strong()).clicked() {
                             enable = Some((true, *then));
@@ -111,8 +126,8 @@ impl Gui {
                     let count = tree.map(|t| t.node(*node).file_count).unwrap_or_default();
                     ui.label(RichText::new(if is_dir { format!("{size}, {count} files") } else { size }).weak());
                     ui.label(
-                        RichText::new("It will not go to the Recycle Bin and cannot be recovered. \
-                                       Links are removed without touching what they point at.")
+                        RichText::new(format!("It will not go to the {TRASH_NAME} and cannot be recovered. \
+                                        Links are removed without touching what they point at."))
                             .color(ui.visuals().error_fg_color),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -132,9 +147,9 @@ impl Gui {
                 }
                 Dialog::TrashFailed { node, error } => {
                     let path = self.app.path_of(*node).unwrap_or_default();
-                    ui.heading("Couldn't move to the Recycle Bin");
+                    ui.heading(format!("Couldn't move to the {TRASH_NAME}"));
                     ui.add(egui::Label::new(RichText::new(path.display().to_string()).strong()).wrap());
-                    ui.label("The item may be too large to recycle, or the drive has no Recycle Bin.");
+                    ui.label(TRASH_REFUSED);
                     ui.label(RichText::new(error).weak().small());
                     let enabled = self.app.permanent_delete();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
