@@ -36,10 +36,15 @@ PNGs land in `target/e2e/` (or `DIRSTATS_E2E_OUT`).
 - `assert_scanned(&harness)`: the invariants every finished scan must hold.
 - `click(&mut harness, label)`: a real pointer click at the widget's centre.
 - `screenshot(&mut harness, name)`: writes `<name>-<os>.png`.
+- `right_click(&mut harness, label)` / `right_click_at(&mut harness, pos)`:
+  opens a context menu. Menu rows are labelled buttons (`"Zoom in"`,
+  `"Copy path"`); click them with `click`.
+- `treemap_point(&harness, name)`: screen centre of a file's treemap box.
 
 ## Writing a test
 
-1. Build a fixture with `tempfile::tempdir()` and files of distinct, well
+1. Build a fixture in `fixture_dir()` (under `/tmp` on Unix, so screenshots
+   show no personal path) with files of distinct, well
    separated sizes (entries sort largest first; near-equal sizes make order
    depend on allocation rounding). Use `vec![0_u8; n]` contents.
 2. `harness(root.path())`, `wait_for_scan`, `assert_scanned`.
@@ -103,7 +108,9 @@ cargo check -p dirstats-gui --features e2e,egui-fonts --tests --locked --target 
 
 ## Before handing over
 
-Run the first command above, then `cargo test --workspace --locked` to show
+Run the first command above (add `trash` to run the trash test, which
+is ignored by default), then `cargo test --workspace --locked` to show
 ordinary tests are untouched. Open one of the PNGs and look at it. On a PR,
 the `gui e2e` job's `e2e-screenshots-<os>` artifacts are the evidence for
-Linux and Windows; say plainly which platforms you ran yourself.
+Linux and Windows; say plainly which platforms you ran yourself. To put
+them in the PR as before/after images, follow `gui-pr-screenshots`.
