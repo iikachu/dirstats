@@ -84,23 +84,50 @@ impl Gui {
                     if icon_button(ui, icons::Glyph::ChevronLeft, can_back, "Back (Backspace)").clicked() {
                         zoom_target = Some(None);
                     }
+                    // Crumbs joined by slashes, as the path is written. Each
+                    // lights up under the pointer with a pill; ancestors are
+                    // links, with an underline, a hand and a darker pill while
+                    // pressed. The current folder's pill is fainter and a click
+                    // on it does nothing.
                     let crumbs = self.app.breadcrumbs();
+                    let text = ui.visuals().text_color();
+                    let mut separated = true;
                     for (i, &id) in crumbs.iter().enumerate() {
-                        if i > 0 {
-                            let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
-                            icons::paint(ui.painter(), rect, icons::Glyph::ChevronRight, ui.visuals().weak_text_color());
+                        let last = i + 1 == crumbs.len();
+                        // A root that is itself a separator, or ends in one,
+                        // needs no second one after it.
+                        if !separated {
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(std::path::MAIN_SEPARATOR_STR).size(15.0).color(ui.visuals().weak_text_color()))
+                                    .selectable(false),
+                            );
                         }
                         let name = tree.node(id).name.to_string_lossy().into_owned();
-                        if i + 1 == crumbs.len() {
-                            ui.add(egui::Label::new(egui::RichText::new(name).strong().size(15.0)).truncate());
-                        } else {
-                            let link = ui.add(egui::Label::new(egui::RichText::new(name).size(15.0)).sense(Sense::click()).truncate());
-                            if link.hovered() {
+                        separated = name.ends_with(std::path::MAIN_SEPARATOR);
+                        // Held back so the pill can go beneath the text.
+                        let pill = ui.painter().add(egui::Shape::Noop);
+                        let rich = egui::RichText::new(name).size(15.0);
+                        let rich = if last { rich.strong() } else { rich.color(text) };
+                        let sense = if last { Sense::hover() } else { Sense::click() };
+                        let crumb = ui.add(egui::Label::new(rich).sense(sense).selectable(false).truncate());
+                        if crumb.hovered() {
+                            let visuals = ui.visuals();
+                            let strength = if last {
+                                0.07
+                            } else if crumb.is_pointer_button_down_on() {
+                                0.28
+                            } else {
+                                0.14
+                            };
+                            let fill = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), strength);
+                            ui.painter().set(pill, egui::Shape::rect_filled(crumb.rect.expand2(egui::vec2(4.0, 2.0)), 4.0, fill));
+                            if !last {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                ui.painter().hline(crumb.rect.x_range(), crumb.rect.max.y - 1.0, egui::Stroke::new(1.0_f32, text));
                             }
-                            if link.clicked() {
-                                zoom_target = Some(Some(id));
-                            }
+                        }
+                        if !last && crumb.clicked() {
+                            zoom_target = Some(Some(id));
                         }
                     }
                 });
