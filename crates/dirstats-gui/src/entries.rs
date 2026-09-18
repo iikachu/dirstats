@@ -156,9 +156,9 @@ impl Gui {
         // The path, wrapping onto more lines when it is longer than the name
         // column. The first line is centred in a normal row; the margin
         // above it is repeated below the last.
-        // It starts where the names below do, past the room they keep for
-        // an expander.
-        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad + 18.0 + 2.0, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
+        // It has no expander, so it starts at the column's left edge rather
+        // than where the names below do.
+        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
         let mut path_height = 0.0;
         if name_cell.width() > 4.0 {
             let font = egui::TextStyle::Body.resolve(ui.style());
