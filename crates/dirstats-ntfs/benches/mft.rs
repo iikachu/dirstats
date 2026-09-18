@@ -17,6 +17,8 @@
 //! empty one still has something to scan. Elsewhere the bench does nothing.
 
 use criterion::{Criterion, criterion_group, criterion_main};
+#[cfg(windows)]
+use criterion::SamplingMode;
 
 #[cfg(windows)]
 #[path = "../tests/support/mod.rs"]
@@ -48,8 +50,10 @@ fn mft_vs_walk(c: &mut Criterion) {
         let mut group = c.benchmark_group(format!("ntfs/{}/{}", root.display(), if cold { "cold" } else { "warm" }));
         if cold {
             // Every scan starts from an emptied cache, so warming up only
-            // costs time; one sample is one scan of up to a second or so.
-            group.sample_size(10).warm_up_time(Duration::from_secs(1)).measurement_time(Duration::from_secs(10));
+            // costs time. Flat sampling keeps each sample to a few scans
+            // instead of ramping up to 10, which at under a second each
+            // fits the default 5 s.
+            group.sample_size(10).sampling_mode(SamplingMode::Flat).warm_up_time(Duration::from_secs(1));
         } else {
             group.sample_size(20);
         }
