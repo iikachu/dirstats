@@ -27,7 +27,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageChops
+from PIL import Image
 
 REPO = os.environ["GITHUB_REPOSITORY"]
 SHOTS_BRANCH = "ci-screenshots"
@@ -92,9 +92,7 @@ def download(run_id, dest):
 
 def same_pixels(a, b):
     with Image.open(a) as x, Image.open(b) as y:
-        if x.size != y.size:
-            return False
-        return ImageChops.difference(x.convert("RGBA"), y.convert("RGBA")).getbbox() is None
+        return x.size == y.size and x.convert("RGBA").tobytes() == y.convert("RGBA").tobytes()
 
 
 def base_run(pr):
