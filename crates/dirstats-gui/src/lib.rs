@@ -1853,7 +1853,11 @@ impl Gui {
                 // Start a new line here rather than let the label wrap itself:
                 // a label pushed whole onto the next line still claims an
                 // empty piece of this one, and its rect spans both.
-                let width = crumb_ui.painter().layout_no_wrap(name.clone(), body_font.clone(), text).size().x;
+                // An ancestor's width includes the marker after it, so the two
+                // move to the next line together and no line starts with one.
+                const MARKER: f32 = 12.0;
+                let marker_room = if i + 1 == crumbs.len() { 0.0 } else { crumb_ui.spacing().item_spacing.x + MARKER };
+                let width = crumb_ui.painter().layout_no_wrap(name.clone(), body_font.clone(), text).size().x + marker_room;
                 let at_line_start = crumb_ui.cursor().min.x <= name_cell.min.x + 0.5;
                 if !at_line_start && width > crumb_ui.available_size_before_wrap().x {
                     crumb_ui.end_row();
@@ -1878,7 +1882,7 @@ impl Gui {
                     if link.clicked() {
                         target = Some(id);
                     }
-                    let (rect, _) = crumb_ui.allocate_exact_size(egui::vec2(12.0, 12.0), Sense::hover());
+                    let (rect, _) = crumb_ui.allocate_exact_size(egui::vec2(MARKER, MARKER), Sense::hover());
                     icons::paint(crumb_ui.painter(), rect, icons::Glyph::ChevronRight, crumb_ui.visuals().weak_text_color());
                 }
             }
