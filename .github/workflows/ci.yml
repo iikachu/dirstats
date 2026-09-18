@@ -149,26 +149,3 @@ jobs:
           name: disk-scan-screenshots-${{ matrix.os }}
           path: e2e-out/*.png
           if-no-files-found: warn
-
-  ntfs-elevated:
-    name: ntfs tests (windows, elevated)
-    runs-on: windows-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ntfs
-      # Hosted Windows runners run as an administrator, which reading the
-      # MFT needs; fail loudly if that ever changes.
-      - name: Check elevation
-        shell: pwsh
-        run: |
-          $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-          if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw "not elevated" }
-      # Elevated-only tests: the MFT reader agrees with the walker, warm and
-      # cold. The bench runs nightly (nightly.yml).
-      - run: cargo test -p dirstats-ntfs --test mft_vs_walk --locked -- --ignored --test-threads=1
-        env:
-          DIRSTATS_TEST_VOLUME: 'D:\'
