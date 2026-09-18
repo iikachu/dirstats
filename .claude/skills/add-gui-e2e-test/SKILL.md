@@ -43,8 +43,9 @@ PNGs land in `target/e2e/` (or `DIRSTATS_E2E_OUT`).
 
 ## Writing a test
 
-1. Build a fixture in `fixture_dir()` (under `/tmp` on Unix, so screenshots
-   show no personal path) with files of distinct, well
+1. Build a fixture in `fixture_dir("<unique-name>")` (under `/tmp` on Unix,
+   so screenshots show no personal path; the fixed name keeps pixels identical
+   run to run) with files of distinct, well
    separated sizes (entries sort largest first; near-equal sizes make order
    depend on allocation rounding). Use `vec![0_u8; n]` contents.
 2. `harness(root.path())`, `wait_for_scan`, `assert_scanned`.
@@ -112,4 +113,4 @@ Run the first command above (add `trash` to run the trash test, which
 is ignored by default), then `cargo test --workspace --locked` to show
 ordinary tests are untouched. Open one of the PNGs and look at it. On a PR,
 the `gui e2e` job's `e2e-screenshots-<os>` artifacts are the evidence for
-Linux and Windows; say plainly which platforms you ran yourself.
+Linux and Windows; say plainly which platforms you ran yourself. To show them on the PR, follow `gui-pr-screenshots`.

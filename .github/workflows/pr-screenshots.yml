@@ -1,0 +1,65 @@
+# Posts before/after GUI screenshots on a PR, as github-actions[bot]. See
+# .github/scripts/pr_screenshots.py and the gui-pr-screenshots skill.
+#
+# Security: these triggers run main's copy of this workflow with a write
+# token, including for PRs from forks. So it must never check out or run PR
+# code: it reads only the PR body and the PNGs CI uploaded, as data.
+name: PR screenshots
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  pull_request_target:
+    types: [edited]
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-screenshots-${{ github.event.workflow_run.head_sha || github.event.pull_request.number || 'prune' }}
+
+jobs:
+  post:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request') ||
+      (github.event_name == 'pull_request_target' && github.event.changes.body)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # main's scripts only; never the PR's head.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - run: pip install --quiet pillow==11.3.0
+      - name: Post screenshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$RUN_ID" ]; then
+            python3 .github/scripts/pr_screenshots.py post --run "$RUN_ID"
+          else
+            python3 .github/scripts/pr_screenshots.py post --pr "$PR"
+          fi
+
+  prune:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - run: pip install --quiet pillow==11.3.0
+      - run: python3 .github/scripts/pr_screenshots.py prune
+        env:
+          GH_TOKEN: ${{ github.token }}
