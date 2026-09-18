@@ -212,7 +212,10 @@ impl Tree {
     }
 
     pub fn nodes(&self) -> impl Iterator<Item = (NodeId, &Node)> {
-        self.nodes.iter().enumerate().map(|(i, n)| (NodeId(i as u32), n))
+        self.nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (NodeId(i as u32), n))
     }
 
     /// Children of `id`, largest first.

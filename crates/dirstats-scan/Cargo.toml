@@ -15,3 +15,9 @@ foldhash.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+rayon.workspace = true
+
+[[bench]]
+name = "bulk_listing"
+harness = false

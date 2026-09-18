@@ -71,7 +71,9 @@ pub fn scan_with(
     let descend = move |entry: &Entry| {
         if !duplicates.is_empty()
             && entry.file_type.is_dir()
-            && duplicates.iter().any(|d| d.parent() == Some(&*entry.parent_path) && d.file_name() == Some(&*entry.file_name))
+            && duplicates.iter().any(|d| {
+                d.parent() == Some(&*entry.parent_path) && d.file_name() == Some(&*entry.file_name)
+            })
         {
             return false;
         }
@@ -205,7 +207,10 @@ pub fn scan_with(
     if tree.len() == 1
         && let Some(err) = root_error
     {
-        return Err(io::Error::new(err.kind(), format!("cannot read {}: {err}", root.display())));
+        return Err(io::Error::new(
+            err.kind(),
+            format!("cannot read {}: {err}", root.display()),
+        ));
     }
     tree.finish(options.size_metric);
     Ok(tree)
@@ -274,7 +279,11 @@ mod platform {
     const IOPOL_MATERIALIZE_DATALESS_FILES_OFF: std::ffi::c_int = 1;
 
     unsafe extern "C" {
-        fn setiopolicy_np(iotype: std::ffi::c_int, scope: std::ffi::c_int, policy: std::ffi::c_int) -> std::ffi::c_int;
+        fn setiopolicy_np(
+            iotype: std::ffi::c_int,
+            scope: std::ffi::c_int,
+            policy: std::ffi::c_int,
+        ) -> std::ffi::c_int;
     }
 
     /// Never download evicted iCloud Drive (or other file-provider) items.
@@ -327,7 +336,10 @@ mod platform {
             .lines()
             .filter_map(|line| {
                 let mut columns = line.split('\t');
-                Some((Path::new(columns.next()?), data.join(columns.next()?.trim_start_matches('/'))))
+                Some((
+                    Path::new(columns.next()?),
+                    data.join(columns.next()?.trim_start_matches('/')),
+                ))
             })
             // A target is a duplicate only when its firmlink is inside the
             // scan too. Scanning the Data volume itself, or the target or
@@ -408,9 +420,17 @@ mod tests {
         let tree = scan(dir.path(), &options).unwrap();
         let root = tree.root();
         assert_eq!(tree.node(root).file_count, 2);
-        assert_eq!(tree.node(root).dir_count, 1, "one subdirectory below the root");
+        assert_eq!(
+            tree.node(root).dir_count,
+            1,
+            "one subdirectory below the root"
+        );
         let newest = tree.nodes().filter_map(|(_, n)| n.modified).max();
-        assert_eq!(tree.node(root).modified, newest, "root carries the newest change below it");
+        assert_eq!(
+            tree.node(root).modified,
+            newest,
+            "root carries the newest change below it"
+        );
         let children = tree.children(root);
         assert_eq!(children.len(), 2);
         assert_eq!(&*tree.node(children[0]).name, OsStr::new("sub"));
@@ -589,11 +609,28 @@ mod tests {
         use std::path::PathBuf;
         let table = "/Users\tUsers\n/usr/local\tusr/local\n";
         let data = |s: &str| PathBuf::from("/System/Volumes/Data").join(s);
-        assert_eq!(platform::firmlink_duplicates(table, Path::new("/")), vec![data("Users"), data("usr/local")]);
-        assert!(platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data/Users/me")).is_empty(), "no firmlink below a Data folder");
-        assert_eq!(platform::firmlink_duplicates(table, Path::new("/Users/me")), Vec::<PathBuf>::new(), "no firmlink inside a home scan");
-        assert_eq!(platform::firmlink_duplicates(table, Path::new("/usr")), vec![data("usr/local")]);
-        assert!(platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data")).is_empty(), "the Data volume counts everything");
+        assert_eq!(
+            platform::firmlink_duplicates(table, Path::new("/")),
+            vec![data("Users"), data("usr/local")]
+        );
+        assert!(
+            platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data/Users/me"))
+                .is_empty(),
+            "no firmlink below a Data folder"
+        );
+        assert_eq!(
+            platform::firmlink_duplicates(table, Path::new("/Users/me")),
+            Vec::<PathBuf>::new(),
+            "no firmlink inside a home scan"
+        );
+        assert_eq!(
+            platform::firmlink_duplicates(table, Path::new("/usr")),
+            vec![data("usr/local")]
+        );
+        assert!(
+            platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data")).is_empty(),
+            "the Data volume counts everything"
+        );
         assert!(platform::firmlink_duplicates("", Path::new("/")).is_empty());
     }
 }
