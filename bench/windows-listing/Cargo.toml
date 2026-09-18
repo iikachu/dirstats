@@ -1,13 +1,14 @@
 [package]
-name = "dirstats-archive-windows-listing"
+name = "dirstats-bench-windows-listing"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
 publish = false
-description = "Archived: Windows directory listing bench, dua-core against std::fs::read_dir and a direct FileIdBothDirectoryInfo walk (dirstats #16)"
+description = "Windows directory listing bench, dua-core against std::fs::read_dir and a direct FileIdBothDirectoryInfo walk, run nightly (dirstats #16)"
 
-# Its own workspace, so the main workspace (and so CI) never builds it.
+# Its own workspace, so the main workspace and PR CI never build it; the
+# nightly workflow does.
 [workspace]
 
 [dev-dependencies]

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // by dirstats contributors
 
-//! Archived experiment: a Linux walker that lists directories with
+//! Shelved experiment: a Linux walker that lists directories with
 //! `getdents64` and stats entries with `statx`, with each idea for making it
 //! faster than dua-core's `std::fs` walker as a switch. See README.md for
-//! the results that got it shelved and how to run the bench again.
+//! the results that got it shelved and how the nightly bench runs it.
 //!
 //! Scans build an ordinary [`dirstats_scan::Tree`] through the public
 //! [`TreeBuilder`], so results compare directly with [`dirstats_scan::scan`].
@@ -87,7 +87,7 @@ pub fn io_uring_available() -> bool {
     false
 }
 
-/// Scan `root` with the archived walker. Linux only; elsewhere, and when
+/// Scan `root` with the experimental walker. Linux only; elsewhere, and when
 /// this kernel has no `statx`, it fails with `Unsupported`.
 pub fn scan(root: impl AsRef<Path>, options: &Options) -> io::Result<Tree> {
     let root = root.as_ref();
@@ -97,7 +97,7 @@ pub fn scan(root: impl AsRef<Path>, options: &Options) -> io::Result<Tree> {
         return build(root, options, || walk.next(&never));
     }
     let _ = (root, options);
-    Err(io::Error::new(io::ErrorKind::Unsupported, "the archived walker needs Linux 4.11+ with statx"))
+    Err(io::Error::new(io::ErrorKind::Unsupported, "the experimental walker needs Linux 4.11+ with statx"))
 }
 
 /// One entry of a walk. Walks yield every directory before its contents.

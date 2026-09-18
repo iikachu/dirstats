@@ -1,4 +1,4 @@
-# Archived: Windows directory listing bench
+# Windows directory listing bench (nightly)
 
 Everything on Windows that isn't a whole NTFS drive scanned elevated (a
 folder, FAT32, exFAT, ReFS, network shares, NTFS without admin rights) is
@@ -6,9 +6,11 @@ walked by dua-core, which lists each directory with
 `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`. This bench, from
 #16, checks whether that is actually faster than the alternatives.
 
-This directory is its own Cargo workspace, so the main workspace and CI never
-build it. `ci/windows-listing-bench.yml` is the workflow, kept outside
-`.github/workflows` so it doesn't run.
+This directory is its own Cargo workspace, so the main workspace and PR CI
+never build it. The `windows listing` job in `.github/workflows/nightly.yml`
+runs it every night on NTFS, FAT32, exFAT and ReFS virtual disks and uploads
+the criterion report. The walkers must agree before anything is timed, so a
+walker that finds something different fails the run.
 
 ## What it compares
 
@@ -53,16 +55,16 @@ elevated process and a volume other than the system drive.
 - To make rescans faster on Windows: either a dirstats walker built around
   the `raw` listing, or fixing the costs above in dua-core upstream. Rerun
   this bench to confirm.
-- After a dua-core upgrade, to see whether the gap closed.
+- After a dua-core upgrade, to see whether the gap closed. Bump `dua-core`
+  in this crate's `Cargo.toml` too; it has its own lock file.
 
 ## Running it
 
 ```bash
-cd archive/windows-listing && cargo bench --bench listing
+cd bench/windows-listing && cargo bench --bench listing
 ```
 
 On Windows, elevated, set `DIRSTATS_BENCH_ROOTS` (`label=path;...`) and
 `DIRSTATS_BENCH_FIXTURE_FILES`; see the top of `benches/listing.rs`. Set
-`DIRSTATS_BENCH_COLD=0` to skip cold runs. To run it in CI, copy
-`ci/windows-listing-bench.yml` to `.github/workflows/` and start it from the
-Actions tab.
+`DIRSTATS_BENCH_COLD=0` to skip cold runs. To run it in CI outside the
+schedule, start the `Nightly` workflow from the Actions tab.
