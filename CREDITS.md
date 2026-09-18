@@ -6,6 +6,7 @@ dirstats is a workspace of two crates with different licenses:
 |---|---|---|
 | `crates/dirstats-scan` | Apache-2.0 (`LICENSE-APACHE`) | `tree.rs`, `scan.rs` |
 | `crates/dirstats-treemap` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | `layout.rs`, `render.rs`, examples |
+| `crates/dirstats-ntfs` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | `mft.rs`, `volume.rs` |
 | `crates/dirstats-app`, `crates/dirstats-tui`, `crates/dirstats` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | app state, terminal UI, binary |
 
 `dirstats-scan` contains no GPL-derived code and must stay that way: code
@@ -27,6 +28,9 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
   - `crates/dirstats-treemap/src/render.rs`: port of `Controls/TreeMap.cpp` / `TreeMap.h`
     (`DrawTreeMap`, `DrawCushion`, `AddRidge`, `CColorSpace`, default
     palette and "Classic" options).
+  - `crates/dirstats-ntfs/src/mft.rs`, `volume.rs`: port of `FinderNtfs.cpp`
+    (locating and reading the master file table, update sequence fixups,
+    attribute parsing, sparse, compressed and `WofCompressedData` sizes).
 
 ## dua-cli / dua-core — parallel traversal and tree design
 

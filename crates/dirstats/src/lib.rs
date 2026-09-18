@@ -143,7 +143,7 @@ fn normalize(path: &Path) -> PathBuf {
 /// Scan synchronously and print the largest entries under the root.
 pub fn print_summary(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
-    let tree = dirstats_scan::scan(cli.scan_root()?, &cli.scan_options())?;
+    let tree = dirstats_ntfs::scan(cli.scan_root()?, &cli.scan_options())?;
     let root = tree.root();
     println!(
         "{} entries, {} files, {} in {:.2?}",
@@ -164,7 +164,7 @@ pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::er
     use dirstats_treemap::render::{ExtensionColors, render};
     use dirstats_treemap::{Shading, Style, TreemapOptions};
 
-    let tree = dirstats_scan::scan(cli.scan_root()?, &cli.scan_options())?;
+    let tree = dirstats_ntfs::scan(cli.scan_root()?, &cli.scan_options())?;
     let style = match cli.layout {
         LayoutStyle::Rows => Style::Rows,
         LayoutStyle::Squarified => Style::Squarified,

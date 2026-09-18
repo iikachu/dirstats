@@ -17,6 +17,8 @@ icloud = ["dep:objc2-foundation", "dep:objc2"]
 
 [dependencies]
 dirstats-scan.workspace = true
+# Reads the master file table of NTFS volumes on Windows; walks elsewhere.
+dirstats-ntfs.workspace = true
 foldhash.workspace = true
 trash = { workspace = true, optional = true }
 open = { workspace = true, optional = true }

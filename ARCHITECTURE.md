@@ -17,6 +17,7 @@ a front end.
 | Persist | `dirstats-scan` (feature `serde`) | Apache-2.0 | Save and load scans |
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
 | Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
+| NTFS | `dirstats-ntfs` | GPL-3.0-or-later | Whole-volume scan from the master file table (Windows, needs administrator rights); walks with `dirstats-scan` otherwise |
 | App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash; on Windows also gated permanent delete), persisted settings |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
@@ -28,7 +29,8 @@ Rules:
   reports through `Progress` and a cancel flag.
 - `dirstats-scan` stays free of GPL-derived code (see
   `CREDITS.md`). GPL-derived fast paths (for example an NTFS MFT reader from
-  WinDirStat) go in a separate GPL crate that plugs in behind a trait.
+  WinDirStat) go in a separate GPL crate that offers the same `scan_with`
+  and builds its result with `dirstats_scan::TreeBuilder`.
 
 ## Build targets and feature flags
 
@@ -65,7 +67,7 @@ accounting for each well-known filesystem. The scan layer exposes one
 
 | Concern | macOS | Linux | Windows |
 |---|---|---|---|
-| Bulk enumeration | `getattrlistbulk` (dua-core) | `getdents64` + `statx` (planned) | `FileIdBothDirectoryInfo` (dua-core); NTFS MFT reader (planned, GPL crate) |
+| Bulk enumeration | `getattrlistbulk` (dua-core) | `getdents64` + `statx` (planned) | `FileIdBothDirectoryInfo` (dua-core); NTFS master file table for whole drives (`dirstats-ntfs`, done) |
 | Volume boundary | `st_dev` | `st_dev` / `statx` mount id | volume serial from `GetFileInformationByHandle` (planned) |
 | Hard links | `st_nlink` + inode set | `st_nlink` + inode set | file ID set; `nlink` via handle (planned) |
 | Allocated size | `st_blocks`; APFS clone accounting (planned) | `st_blocks`; cap inflated NTFS mounts (done) | allocation size from enumeration; compressed and sparse (planned) |

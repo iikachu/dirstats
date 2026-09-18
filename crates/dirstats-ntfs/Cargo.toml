@@ -1,0 +1,17 @@
+[package]
+name = "dirstats-ntfs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "NTFS fast path for dirstats: reads the master file table instead of walking directories"
+keywords = ["ntfs", "mft", "disk-usage", "scan"]
+categories = ["filesystem"]
+
+[dependencies]
+dirstats-scan.workspace = true
+foldhash.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Volume handles and the FSCTLs that locate the master file table.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl"] }
