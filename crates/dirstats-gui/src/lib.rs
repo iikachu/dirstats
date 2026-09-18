@@ -1847,9 +1847,19 @@ impl Gui {
                     name.push('/');
                     crumb_ui.add(egui::Label::new(egui::RichText::new(name).strong().color(text)).wrap().selectable(false));
                 } else {
+                    // Held back so the hover fill can go beneath the text.
+                    let fill = crumb_ui.painter().add(egui::Shape::Noop);
                     let link = crumb_ui.add(egui::Label::new(egui::RichText::new(name).color(text)).wrap().sense(Sense::click()).selectable(false));
                     if link.hovered() {
                         crumb_ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        // A pill behind the crumb, darker while pressed, and
+                        // an underline as on a link.
+                        let visuals = crumb_ui.visuals();
+                        let strength = if link.is_pointer_button_down_on() { 0.28 } else { 0.14 };
+                        let color = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), strength);
+                        let pill = link.rect.expand2(egui::vec2(3.0, 1.0));
+                        crumb_ui.painter().set(fill, egui::Shape::rect_filled(pill, 4.0, color));
+                        crumb_ui.painter().hline(link.rect.x_range(), link.rect.max.y - 1.0, egui::Stroke::new(1.0_f32, text));
                     }
                     if link.clicked() {
                         target = Some(id);
