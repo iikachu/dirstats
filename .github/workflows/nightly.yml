@@ -1,15 +1,16 @@
 name: Nightly
 
-# Benches too slow for every PR. The listing and walker benches fail when
-# their scanners disagree on what they found, so a red run means wrong
-# results, not just slow ones; the MFT reader's agreement is tested on every
-# PR (ci.yml). Timings go to the job summary or a criterion report artifact.
+# Benches and elevated tests too slow or too heavy for every PR. Each job
+# fails when its scanners disagree on what they found, so a red run means
+# wrong results, not just slow ones. Timings go to the job summary or a
+# criterion report artifact.
 #
-# - ntfs bench: the NTFS MFT reader against the walker, warm and cold.
-# - windows listing: dua-core's listing against std::fs::read_dir and a
-#   direct FileIdBothDirectoryInfo walk, on NTFS, FAT32, exFAT and ReFS.
-# - linux walker: the shelved getdents64 + statx walker's variants against
-#   dirstats-scan, on ext4, XFS and NFS.
+# - bench ntfs: the elevated tests that the NTFS MFT reader agrees with the
+#   walker, then the MFT bench against the walker, warm and cold.
+# - bench windows listing: dua-core's listing against std::fs::read_dir and
+#   a direct FileIdBothDirectoryInfo walk, on NTFS, FAT32, exFAT and ReFS.
+# - bench linux walker: the shelved getdents64 + statx walker's variants
+#   against dirstats-scan, on ext4, XFS and NFS.
 #
 # The baseline in every bench is dirstats-scan, so a nightly run on an
 # unchanged bench still says whether main's scan got faster or slower.
@@ -36,8 +37,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  ntfs-bench:
-    name: ntfs bench (windows, elevated)
+  bench-ntfs:
+    name: bench ntfs (windows, elevated)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -53,6 +54,12 @@ jobs:
         run: |
           $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw "not elevated" }
+      # Elevated-only tests: the MFT reader agrees with the walker, warm and
+      # cold. `cargo test --workspace` skips them (#[ignore]), so this is the
+      # only place they run.
+      - run: cargo test -p dirstats-ntfs --test mft_vs_walk --locked -- --ignored --test-threads=1
+        env:
+          DIRSTATS_TEST_VOLUME: 'D:\'
       # D:\ holds only the checkout and build output, so add a generated tree;
       # C:\ takes about 12 minutes warm and far longer cold.
       - run: cargo bench -p dirstats-ntfs --bench mft --locked
@@ -63,12 +70,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ntfs-bench
+          name: bench-ntfs
           path: target/criterion
           if-no-files-found: warn
 
-  windows-listing:
-    name: windows listing (ntfs folder, fat32, exfat, refs)
+  bench-windows-listing:
+    name: bench windows listing (ntfs folder, fat32, exfat, refs)
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -109,12 +116,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-listing-bench
+          name: bench-windows-listing
           path: bench/windows-listing/target/criterion
           if-no-files-found: warn
 
-  linux-walker:
-    name: linux walker (${{ matrix.fs }})
+  bench-linux-walker:
+    name: bench linux walker (${{ matrix.fs }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -189,5 +196,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: linux-walker-bench-${{ matrix.fs }}
+          name: bench-linux-walker-${{ matrix.fs }}
           path: bench.md

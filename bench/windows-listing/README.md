@@ -7,8 +7,8 @@ walked by dua-core, which lists each directory with
 #16, checks whether that is actually faster than the alternatives.
 
 This directory is its own Cargo workspace, so the main workspace and PR CI
-never build it. The `windows listing` job in `.github/workflows/nightly.yml`
-runs it every night on NTFS, FAT32, exFAT and ReFS virtual disks and uploads
+never build it. The `bench windows listing` job in
+`.github/workflows/nightly.yml` runs it every night on NTFS, FAT32, exFAT and ReFS virtual disks and uploads
 the criterion report. The walkers must agree before anything is timed, so a
 walker that finds something different fails the run.
 

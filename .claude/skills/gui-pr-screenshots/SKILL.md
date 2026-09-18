@@ -68,4 +68,5 @@ missing, check the "PR screenshots" workflow run in the Actions tab.
   Only the bot writes there. A weekly job rewrites the branch as a single
   commit, dropping months older than 90 days.
 - `real-disk*` screenshots scan the runner's own disk and differ on every
-  run, so they're never listed as "also changed".
+  run. They come from the `disk scan` jobs, whose `disk-scan-screenshots-*`
+  artifacts the bot doesn't collect.
