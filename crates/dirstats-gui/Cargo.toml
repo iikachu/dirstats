@@ -18,4 +18,5 @@ egui-fonts = []
 dirstats-app.workspace = true
 dirstats-treemap.workspace = true
 eframe.workspace = true
+rfd.workspace = true
 chrono.workspace = true

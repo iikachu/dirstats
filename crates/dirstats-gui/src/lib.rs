@@ -280,6 +280,8 @@ mod icons {
         /// `storage`, a stack of drives.
         Storage,
         Folder,
+        /// Open folder, for browsing to one.
+        FolderOpen,
         /// `cloud_off`.
         CloudOff,
         Cloud,
@@ -296,6 +298,7 @@ mod icons {
                 Glyph::ViewColumn => "M121-280v-400q0-33 23.5-56.5T201-760h559q33 0 56.5 23.5T840-680v400q0 33-23.5 56.5T760-200H201q-33 0-56.5-23.5T121-280Zm79 0h133v-400H200v400Zm213 0h133v-400H413v400Zm213 0h133v-400H626v400Z",
                 Glyph::Home => "M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z",
                 Glyph::Storage => "M120-160v-160h720v160H120Zm80-40h80v-80h-80v80Zm-80-440v-160h720v160H120Zm80-40h80v-80h-80v80Zm-80 280v-160h720v160H120Zm80-40h80v-80h-80v80Z",
+                Glyph::FolderOpen => "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640H447l-80-80H160v480l96-320h684L837-217q-8 26-29.5 41.5T760-160H160Zm84-80h516l72-240H316l-72 240Zm0 0 72-240-72 240Zm-84-400v-80 80Z",
                 Glyph::Folder => "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z",
                 Glyph::CloudOff => "m792-56-88-88H260q-83 0-141.5-58.5T60-344q0-74 49-129t123-59q7-29 20.5-56t30.5-48L56-792l56-56 736 736-56 56ZM260-224h364L340-508q-2 12-3 24t-1 24h-76q-42 0-71 29t-29 71q0 42 29 71t71 29Zm527-2-57-57q13-14 21.5-30.5T760-350q0-42-29-71t-71-29h-60v-80q0-50-35-85t-85-35q-16 0-31.5 4T419-633l-58-58q28-19 60-29t65-10q83 0 141.5 58.5T686-530h14q62 0 108 41.5T854-370q0 32-12 61.5T787-226ZM590-462Zm-244 98Z",
                 Glyph::Cloud => "M260-160q-91 0-155.5-63T40-377q0-78 47-139t123-78q25-92 100-149t170-57q117 0 198.5 81.5T760-520q69 8 114.5 59.5T920-340q0 75-52.5 127.5T740-160H260Zm0-80h480q42 0 71-29t29-71q0-42-29-71t-71-29h-60v-80q0-83-58.5-141.5T480-720q-83 0-141.5 58.5T280-520h-20q-58 0-99 41t-41 99q0 58 41 99t99 41Zm220-240Z",
@@ -2026,7 +2029,7 @@ impl Gui {
         let height = 44.0
             + if self.app.message.is_some() { 22.0 } else { 0.0 }
             + if self.full_disk_access == Some(false) { 70.0 } else { 0.0 }
-            + row_height * locations.len() as f32;
+            + row_height * (locations.len() + 1) as f32;
         let top = (rect.center().y - height / 2.0).max(rect.min.y + 16.0);
         let panel = egui::Rect::from_min_size(egui::pos2(rect.center().x - width / 2.0, top), egui::vec2(width, height));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(panel).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -2057,7 +2060,7 @@ impl Gui {
         let body = egui::TextStyle::Body.resolve(child.style());
         let small = egui::TextStyle::Small.resolve(child.style());
         let mut chosen = None;
-        for (i, location) in locations.iter().enumerate() {
+        for location in locations.iter() {
             let (row_rect, row) = child.allocate_exact_size(egui::vec2(width, row_height), Sense::click());
             let painter = child.painter();
             if row.hovered() {
@@ -2098,12 +2101,26 @@ impl Gui {
                 filled.set_width(bar.width() * (format::percent(used, total) / 100.0) as f32);
                 painter.rect_filled(filled, 2.0, weak);
             }
-            if i + 1 < locations.len() {
-                painter.hline(row_rect.x_range(), row_rect.max.y, egui::Stroke::new(1.0_f32, child.visuals().faint_bg_color));
-            }
+            painter.hline(row_rect.x_range(), row_rect.max.y, egui::Stroke::new(1.0_f32, child.visuals().faint_bg_color));
             if row.clicked() {
                 chosen = Some(location.path.clone());
             }
+        }
+        // Last row: a native folder dialog for scanning anywhere else.
+        let (row_rect, row) = child.allocate_exact_size(egui::vec2(width, row_height), Sense::click());
+        let painter = child.painter();
+        if row.hovered() {
+            painter.rect_filled(row_rect, 4.0, hover_fill(child.visuals()));
+        }
+        let text = child.visuals().text_color();
+        let weak = child.visuals().weak_text_color();
+        let icon_rect = egui::Rect::from_center_size(egui::pos2(row_rect.min.x + 22.0, row_rect.center().y), egui::vec2(22.0, 22.0));
+        icons::paint(painter, icon_rect, icons::Glyph::FolderOpen, text);
+        let left = row_rect.min.x + 44.0;
+        painter.text(egui::pos2(left, row_rect.min.y + 8.0), egui::Align2::LEFT_TOP, "Browse…", body, text);
+        painter.text(egui::pos2(left, row_rect.max.y - 8.0), egui::Align2::LEFT_BOTTOM, "Choose any folder as the root", small, weak);
+        if row.clicked() {
+            chosen = rfd::FileDialog::new().set_title("Choose a folder to scan").pick_folder();
         }
         if let Some(path) = chosen {
             self.app.start_scan(path);
