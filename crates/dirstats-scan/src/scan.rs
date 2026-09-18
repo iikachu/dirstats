@@ -698,6 +698,81 @@ mod tests {
         }
     }
 
+    /// Mount points directly below `dir`, from this process's mount table.
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    fn mounts_below(dir: &Path) -> Vec<std::path::PathBuf> {
+        let table = fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
+        table
+            .lines()
+            .filter_map(|line| line.split(' ').nth(4))
+            .map(std::path::PathBuf::from)
+            .filter(|mount| mount.parent() == Some(dir))
+            .collect()
+    }
+
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    #[test]
+    fn linux_walker_stays_on_the_roots_mount() {
+        let dev = Path::new("/dev");
+        let mounts = mounts_below(dev);
+        if mounts.is_empty() {
+            eprintln!("skipped: nothing is mounted below /dev here");
+            return;
+        }
+        let tree = scan(dev, &ScanOptions::default()).unwrap();
+        let mut checked = 0;
+        for (id, node) in tree.nodes() {
+            if node.kind == Kind::Directory && mounts.contains(&tree.path(id)) {
+                assert!(tree.children(id).is_empty(), "{} was entered", tree.path(id).display());
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "no mount point below /dev was listed: {mounts:?}");
+    }
+
+    /// Run by `bind_mounts_are_not_entered` inside a private mount namespace.
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    #[test]
+    #[ignore = "run inside a mount namespace by bind_mounts_are_not_entered"]
+    fn bind_mount_scan_inside_namespace() {
+        let Some(root) = std::env::var_os("DIRSTATS_BIND_ROOT") else {
+            return;
+        };
+        let root = Path::new(&root);
+        let tree = scan(root, &ScanOptions::default()).unwrap();
+        let bound = find(&tree, "bound").unwrap();
+        assert!(tree.children(bound).is_empty(), "the bind mount was entered");
+        let payloads = tree.nodes().filter(|(_, n)| &*n.name == OsStr::new("payload")).count();
+        assert_eq!(payloads, 1, "the bound data is counted once");
+    }
+
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    #[test]
+    fn bind_mounts_are_not_entered() {
+        use std::process::Command;
+        // A bind mount needs a mount namespace, which unprivileged users only
+        // get where user namespaces are allowed (not on Ubuntu 24.04 runners).
+        let probe = Command::new("unshare").args(["--user", "--map-root-user", "--mount", "true"]).output();
+        if !probe.is_ok_and(|output| output.status.success()) {
+            eprintln!("skipped: cannot create a user and mount namespace here");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("data")).unwrap();
+        fs::write(dir.path().join("data/payload"), vec![0u8; 40_000]).unwrap();
+        fs::create_dir(dir.path().join("bound")).unwrap();
+        let status = Command::new("unshare")
+            .args(["--user", "--map-root-user", "--mount", "sh", "-c"])
+            .arg(r#"mount --bind "$1/data" "$1/bound" && exec "$2" --exact scan::tests::bind_mount_scan_inside_namespace --ignored --nocapture"#)
+            .arg("sh")
+            .arg(dir.path())
+            .arg(std::env::current_exe().unwrap())
+            .env("DIRSTATS_BIND_ROOT", dir.path())
+            .status()
+            .unwrap();
+        assert!(status.success(), "the scan inside the namespace failed");
+    }
+
     #[cfg(all(target_os = "linux", feature = "linux-fast"))]
     #[test]
     fn linux_walker_stops_on_cancel() {

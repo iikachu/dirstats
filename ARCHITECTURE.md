@@ -68,10 +68,10 @@ accounting for each well-known filesystem. The scan layer exposes one
 | Concern | macOS | Linux | Windows |
 |---|---|---|---|
 | Bulk enumeration | `getattrlistbulk` (dua-core) | `getdents64` + `statx` in inode order (`linux-fast`, done) | `FileIdBothDirectoryInfo` (dua-core); NTFS master file table for whole drives (`dirstats-ntfs`, done) |
-| Volume boundary | `st_dev` | `st_dev` / `statx` mount id | volume serial from `GetFileInformationByHandle` (planned) |
+| Volume boundary | `st_dev` | `statx` mount id, `st_dev` before Linux 5.8 (done) | volume serial from `GetFileInformationByHandle` (planned) |
 | Hard links | `st_nlink` + inode set | `st_nlink` + inode set | file ID set; `nlink` via handle (planned) |
 | Allocated size | `st_blocks`; APFS clone accounting (planned) | `st_blocks`; cap inflated NTFS mounts (done) | allocation size from enumeration; compressed and sparse (planned) |
-| Filesystem quirks | firmlinks, packages (from Disk Inventory X) | bind mounts, btrfs subvolumes | reparse points, junctions, OneDrive placeholders |
+| Filesystem quirks | firmlinks, packages (from Disk Inventory X) | bind mounts not entered, btrfs subvolumes included (done, by mount id) | reparse points, junctions, OneDrive placeholders |
 
 Detection of the filesystem type is done once per volume so the scan picks
 the right strategy without per-entry cost.

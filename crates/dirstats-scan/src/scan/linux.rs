@@ -44,7 +44,8 @@ const MASK: u32 = libc::STATX_TYPE
     | libc::STATX_INO
     | libc::STATX_SIZE
     | libc::STATX_BLOCKS
-    | libc::STATX_MTIME;
+    | libc::STATX_MTIME
+    | libc::STATX_MNT_ID;
 /// Never follow the last component, and never trigger an automount: an
 /// unmounted autofs point is reported as it is, as `stat` would.
 const FLAGS: libc::c_int = libc::AT_SYMLINK_NOFOLLOW | libc::AT_NO_AUTOMOUNT;
@@ -65,8 +66,8 @@ struct Shared {
     ready: Condvar,
     stop: AtomicBool,
     next_directory: AtomicUsize,
-    /// Device of the root when the walk must not leave its filesystem.
-    boundary: Option<u64>,
+    /// Where the root is mounted, when the walk must not leave it.
+    boundary: Option<Mount>,
 }
 
 impl Shared {
@@ -115,7 +116,7 @@ impl Walk {
             ready: Condvar::new(),
             stop: AtomicBool::new(false),
             next_directory: AtomicUsize::new(1),
-            boundary: options.same_filesystem.then(|| device(&stat)),
+            boundary: options.same_filesystem.then(|| Mount::of(&stat)),
         });
         let root_entry = Walked {
             parent: None,
@@ -286,7 +287,7 @@ fn stat_all(shared: &Shared, dir: &File, path: &Arc<Path>, directory: usize, nam
         let (kind, metadata, descend) = match statx(dir.as_raw_fd(), &name) {
             Ok(stat) => {
                 let kind = kind_of(&stat);
-                let inside = shared.boundary.is_none_or(|boundary| boundary == device(&stat));
+                let inside = shared.boundary.is_none_or(|boundary| boundary.holds(Mount::of(&stat)));
                 (kind, Ok(stat_of(&stat)), kind == Kind::Directory && inside)
             }
             // Gone since the listing, or not ours to see: the listing's
@@ -398,6 +399,33 @@ fn kind_of_dirent(kind: u8) -> Kind {
     }
 }
 
+/// The mount an entry was reached through.
+///
+/// The mount id (Linux 5.8 and later) is what "the same filesystem" means
+/// to a user: a bind mount of a directory on the same device is another
+/// mount and is not entered, so its contents are not counted twice, while
+/// a btrfs subvolume, which has a device number of its own but is not
+/// mounted separately, is part of the scan. Older kernels leave the mount
+/// id out and the device number decides, as with `stat`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Mount {
+    id: Option<u64>,
+    device: u64,
+}
+
+impl Mount {
+    fn of(stat: &Statx) -> Self {
+        Self { id: (stat.mask & libc::STATX_MNT_ID != 0).then_some(stat.mnt_id), device: device(stat) }
+    }
+
+    fn holds(self, entry: Self) -> bool {
+        match (self.id, entry.id) {
+            (Some(root), Some(entry)) => root == entry,
+            _ => self.device == entry.device,
+        }
+    }
+}
+
 /// The device number, packed the same way for every entry of a walk.
 fn device(stat: &Statx) -> u64 {
     (u64::from(stat.dev_major) << 32) | u64::from(stat.dev_minor)
@@ -434,6 +462,16 @@ mod tests {
         bytes[18] = kind;
         bytes[19..19 + name.len()].copy_from_slice(name);
         bytes
+    }
+
+    #[test]
+    fn mount_ids_decide_over_devices_when_known() {
+        let mount = |id, device| Mount { id, device };
+        let root = mount(Some(30), 1);
+        assert!(root.holds(mount(Some(30), 2)), "a btrfs subvolume on the root's mount is inside");
+        assert!(!root.holds(mount(Some(31), 1)), "a bind mount of the same device is outside");
+        assert!(mount(None, 1).holds(mount(None, 1)), "without mount ids the device decides");
+        assert!(!mount(None, 1).holds(mount(Some(30), 2)));
     }
 
     #[test]
