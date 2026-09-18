@@ -48,10 +48,9 @@ serde = ["dirstats-scan/serde"]     # save/load scans
 ```
 
 Per-crate features:
-- `dirstats-scan`: `serde`; `macos-fast`
-  (getattrlistbulk, already via dua-core), `windows-fast`
-  (FileIdBothDirectoryInfo, already via dua-core). Fast paths are on by
-  default on their platform and fall back to the generic walker.
+- `dirstats-scan`: `serde`. Bulk listing (getattrlistbulk on macOS,
+  FileIdBothDirectoryInfo on Windows) comes from dua-core and needs no
+  feature.
 - `dirstats-treemap`: `parallel` (rayon cushion rendering), `png`
   (example output).
 
