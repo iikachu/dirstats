@@ -2394,7 +2394,11 @@ impl Gui {
         }
 
         if let Some(node) = hovered {
-            if response.clicked() {
+            if response.double_clicked() {
+                // Cells are files, so this zooms to the folder holding one;
+                // the first click of the pair has already selected it.
+                self.zoom(node);
+            } else if response.clicked() {
                 self.select(node);
             }
             if response.secondary_clicked() {
