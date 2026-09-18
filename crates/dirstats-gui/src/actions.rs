@@ -48,6 +48,8 @@ impl Gui {
             TrashState::Trashed
         } else if self.app.is_deleted(node) {
             TrashState::Deleted
+        } else if self.app.is_time_machine(node) {
+            TrashState::TimeMachine
         } else {
             TrashState::Present
         }

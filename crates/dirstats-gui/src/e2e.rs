@@ -337,3 +337,51 @@ fn context_menu_moves_a_file_to_the_trash() {
         harness.get_by_label(&format!("In {TRASH_NAME}"));
     }
 }
+
+/// Inside a Time Machine backup the menu carries a note. On macOS the trash
+/// item is disabled and the note says where backups are managed; elsewhere
+/// the backup is just files, so the note only names it and the trash stays.
+#[cfg(feature = "trash")]
+#[test]
+fn time_machine_backup_offers_no_trash() {
+    use crate::menu::TRASH_NAME;
+    use egui_kittest::kittest::NodeT;
+
+    let root = fixture_dir();
+    let snapshot = root.path().join("Backups.backupdb/Mac/2026-09-01-120000/Macintosh HD/Users/me");
+    std::fs::create_dir_all(&snapshot).unwrap();
+    std::fs::write(snapshot.join("photos.zip"), vec![0_u8; 300_000]).unwrap();
+    std::fs::create_dir(root.path().join("Documents")).unwrap();
+    std::fs::write(root.path().join("Documents/report.pdf"), vec![0_u8; 100_000]).unwrap();
+    let trash = format!("Move to {TRASH_NAME}");
+
+    let mut harness = harness(root.path());
+    wait_for_scan(&mut harness, Duration::from_secs(30));
+    assert_scanned(&harness);
+
+    // An ordinary folder beside the backup keeps its trash item.
+    right_click(&mut harness, "Documents/");
+    assert!(!harness.get_by_label(&trash).accesskit_node().is_disabled());
+    assert!(harness.query_by_label(dirstats_app::backup::NOTE).is_none());
+    harness.key_press(Key::Escape);
+    harness.step();
+
+    right_click(&mut harness, "Backups.backupdb/");
+    harness.get_by_label(dirstats_app::backup::NOTE);
+    let disabled = harness.get_by_label(&trash).accesskit_node().is_disabled();
+    assert_eq!(disabled, cfg!(target_os = "macos"), "trash item disabled only on macOS");
+    screenshot(&mut harness, "time-machine-menu");
+
+    // The app decides, whatever a front end offers.
+    let gui = harness.state();
+    let tree = gui.app.tree.as_ref().unwrap();
+    let backup = tree.children(tree.root()).iter().copied().find(|&id| tree.node(id).name.to_string_lossy() == "Backups.backupdb").unwrap();
+    assert!(gui.app.is_time_machine(backup));
+    if cfg!(target_os = "macos") {
+        let err = gui.app.check_removable(backup).unwrap_err();
+        assert!(err.to_string().contains("Managed by Time Machine"), "{err}");
+    } else {
+        assert!(dirstats_app::backup::NOTE.contains("macOS Time Machine backup"));
+        gui.app.check_removable(backup).expect("only macOS keeps backups out of the trash");
+    }
+}

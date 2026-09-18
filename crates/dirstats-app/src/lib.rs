@@ -12,6 +12,7 @@
 //! draws whatever the state says. Scans run on a worker thread; call
 //! [`App::poll`] on every tick to pick up the result.
 
+pub mod backup;
 pub mod cloud;
 #[cfg(feature = "trash")]
 pub mod delete;
@@ -70,6 +71,9 @@ pub struct App {
     pub delete: Option<RunningDelete>,
     /// Preferences that persist between runs; see [`App::set_permanent_delete`].
     pub settings: Settings,
+    /// Whether the scanned tree sits on a Time Machine backup volume;
+    /// probed once per scan in [`App::set_tree`].
+    pub backup_volume: bool,
     /// Root of the last scan, for [`App::rescan`].
     last_root: Option<PathBuf>,
 }
@@ -142,6 +146,7 @@ impl App {
         self.trashed.clear();
         self.deleted.clear();
         self.evicted.clear();
+        self.backup_volume = backup::is_backup_volume(&tree.path(tree.root()));
         self.tree = Some(tree);
     }
 
@@ -403,6 +408,16 @@ impl App {
         Ok(())
     }
 
+    /// Whether `id` is part of a Time Machine backup; see [`backup::NOTE`].
+    #[must_use]
+    pub fn is_time_machine(&self, id: NodeId) -> bool {
+        // By ancestor names rather than `tree.path`, which allocates, since
+        // front ends ask for every displayed row. The scan root's own path
+        // was covered by the volume probe.
+        let Some(tree) = &self.tree else { return false };
+        self.backup_volume || self.ancestor_or_self(id, |n| &*tree.node(n).name == std::ffi::OsStr::new("Backups.backupdb"))
+    }
+
     /// Why `id` must not be removed, if it is one of the places no disk
     /// usage tool should offer to delete: the scan root, a drive or
     /// filesystem root, or the user's home folder.
@@ -419,6 +434,9 @@ impl App {
         let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
         if home.is_some_and(|home| home == path) {
             return refuse("the home folder is not removable");
+        }
+        if backup::BLOCKS_TRASH && self.is_time_machine(id) {
+            return refuse(backup::NOTE);
         }
         Ok(())
     }
