@@ -8,6 +8,11 @@ description = "Parallel cross-platform disk usage scanning into a compact tree"
 keywords = ["disk-usage", "filesystem", "du", "scan"]
 categories = ["filesystem"]
 
+[features]
+default = ["linux-fast"]
+# Walk Linux with getdents64 and statx instead of std::fs; no effect elsewhere.
+linux-fast = ["dep:libc"]
+
 [dependencies]
 # Parallel native directory traversal (MIT, by Sebastian Thiel).
 dua-core.workspace = true
@@ -15,3 +20,6 @@ foldhash.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true, optional = true }
