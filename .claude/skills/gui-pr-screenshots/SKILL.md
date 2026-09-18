@@ -55,7 +55,7 @@ the job with `gh run rerun "$BEFORE_RUN" --job <e2e job id>`.
 
 Open the images and look at them before publishing. Check the change is
 visible, and that nothing but `/tmp/dirstats-e2e-…`, runner paths
-(`/home/runner`, `C:\Users\runneradmin`) and fixture names shows up.
+(`/home/runner`, `C:\Users\RUNNER~1\AppData\Local\Temp`) and fixture names shows up.
 
 ## 3. Host them
 
