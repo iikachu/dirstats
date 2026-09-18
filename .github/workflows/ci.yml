@@ -77,9 +77,10 @@ jobs:
         run: |
           $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw "not elevated" }
+      # D:\ holds only the checkout and build output; C:\ takes about 12 minutes.
       - run: cargo bench -p dirstats-ntfs --bench mft --locked
         env:
-          DIRSTATS_BENCH_ROOT: 'C:\'
+          DIRSTATS_BENCH_ROOT: 'D:\'
       - name: Upload criterion report
         if: always()
         uses: actions/upload-artifact@v4
