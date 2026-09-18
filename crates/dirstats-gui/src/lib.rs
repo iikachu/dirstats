@@ -1841,10 +1841,21 @@ impl Gui {
             crumb_ui.set_clip_rect(egui::Rect::from_x_y_ranges(name_cell.x_range().intersection(clip.x_range()), clip.y_range()));
             crumb_ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
             let crumbs = self.app.breadcrumbs();
+            let body_font = egui::TextStyle::Body.resolve(crumb_ui.style());
             for (i, &id) in crumbs.iter().enumerate() {
                 let mut name = tree.node(id).name.to_string_lossy().into_owned();
                 if i + 1 == crumbs.len() {
                     name.push('/');
+                }
+                // Start a new line here rather than let the label wrap itself:
+                // a label pushed whole onto the next line still claims an
+                // empty piece of this one, and its rect spans both.
+                let width = crumb_ui.painter().layout_no_wrap(name.clone(), body_font.clone(), text).size().x;
+                let at_line_start = crumb_ui.cursor().min.x <= name_cell.min.x + 0.5;
+                if !at_line_start && width > crumb_ui.available_size_before_wrap().x {
+                    crumb_ui.end_row();
+                }
+                if i + 1 == crumbs.len() {
                     crumb_ui.add(egui::Label::new(egui::RichText::new(name).strong().color(text)).wrap().selectable(false));
                 } else {
                     // Held back so the hover fill can go beneath the text.
