@@ -3,7 +3,7 @@
 
 //! Parallel, cross-platform disk usage scanning.
 //!
-//! [`scan`] walks a directory tree using native bulk directory APIs and
+//! [`scan()`] walks a directory tree using native bulk directory APIs and
 //! returns a compact [`Tree`] whose children are sorted by size.
 //!
 //! See `CREDITS.md` in the repository for the projects this crate builds on.
