@@ -136,14 +136,10 @@ impl Gui {
         }
     }
 
-    /// Rows of the tree. `edges` are the absolute x positions of the name,
-    /// bar, share, size, items, files, dirs and modified columns and the
-    /// right edge of modified, straight from the header, so cells always
-    /// line up with it.
     /// The current directory as a fixed row above the list: its figures in
     /// the usual columns, and the name cell holding its full path as plain
-    /// text. The row takes no selection, hover, keyboard or menu; moving up
-    /// the tree is the toolbar crumbs' job.
+    /// text, styled like any other row. It takes no selection, hover,
+    /// keyboard or menu; moving up the tree is the toolbar crumbs' job.
     pub(super) fn current_dir_row(&self, ui: &mut egui::Ui, edges: [f32; 9], row_height: f32) {
         let Some(tree) = self.app.tree.as_ref() else { return };
         let Some(dir) = self.app.dir() else { return };
@@ -153,9 +149,6 @@ impl Gui {
         let share = format::percent(size, parent_size);
         let pad = 6.0;
         let mono = egui::TextStyle::Monospace.resolve(ui.style());
-        // The background is painted once the wrapped crumbs have said how
-        // tall the row is, but has to sit beneath them.
-        let background = ui.painter().add(egui::Shape::Noop);
         let origin = ui.cursor().min;
         let row_width = ui.available_width();
         let text = ui.visuals().text_color();
@@ -163,7 +156,9 @@ impl Gui {
         // The path, wrapping onto more lines when it is longer than the name
         // column. The first line is centred in a normal row; the margin
         // above it is repeated below the last.
-        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
+        // It starts where the names below do, past the room they keep for
+        // an expander.
+        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad + 18.0 + 2.0, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
         let mut path_height = 0.0;
         if name_cell.width() > 4.0 {
             let font = egui::TextStyle::Body.resolve(ui.style());
@@ -173,7 +168,7 @@ impl Gui {
             }
             let clip = ui.clip_rect();
             let painter = ui.painter().with_clip_rect(egui::Rect::from_x_y_ranges(name_cell.x_range().intersection(clip.x_range()), clip.y_range()));
-            let galley = painter.layout(path, font, ui.visuals().strong_text_color(), name_cell.width());
+            let galley = painter.layout(path, font, text, name_cell.width());
             let line_height = galley.rows.first().map_or(galley.size().y, |row| row.height());
             let margin = (row_height - line_height) / 2.0;
             path_height = 2.0 * margin + galley.size().y;
@@ -184,16 +179,13 @@ impl Gui {
         let height = row_height.max(path_height).min(limit);
         let row_rect = egui::Rect::from_min_size(origin, egui::vec2(row_width, height));
         ui.allocate_rect(row_rect, Sense::hover());
-        ui.painter().set(background, egui::Shape::rect_filled(row_rect, 0.0, ui.visuals().faint_bg_color));
-        ui.painter().hline(row_rect.x_range(), row_rect.max.y, ui.visuals().widgets.noninteractive.bg_stroke);
         // Figures sit on the first line, level with the start of the path.
         let (top, bottom) = (row_rect.min.y, row_rect.min.y + row_height);
         let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
 
         let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
         if edges[2] - edges[1] > 0.0 && bar.width() > 0.0 {
-            // A darker track than the rows', since this row sits on their track colour.
-            share_bar(ui, bar, ui.visuals().extreme_bg_color, self.mix.as_ref().zip(self.colors.as_ref()), dir, share, size);
+            share_bar(ui, bar, ui.visuals().faint_bg_color, self.mix.as_ref().zip(self.colors.as_ref()), dir, share, size);
         }
         let figures = [
             (edges[2], edges[3], format!("{share:.1}")),
@@ -212,6 +204,10 @@ impl Gui {
         }
     }
 
+    /// Rows of the tree. `edges` are the absolute x positions of the name,
+    /// bar, share, size, items, files, dirs and modified columns and the
+    /// right edge of modified, straight from the header, so cells always
+    /// line up with it.
     pub(super) fn entry_list(&mut self, ui: &mut egui::Ui, edges: [f32; 9], row_height: f32) {
         if self.app.tree.is_none() {
             return;
