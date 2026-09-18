@@ -16,6 +16,8 @@ dirstats-tui = { path = "crates/dirstats-tui", version = "0.1.0" }
 dirstats-gui = { path = "crates/dirstats-gui", version = "0.1.0" }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "pollster"] }
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+# Headless GUI harness with an offscreen wgpu renderer; only the e2e tests use it.
+egui_kittest = { version = "0.33", features = ["eframe", "wgpu"] }
 clap = { version = "4.5", features = ["derive"] }
 open = "5"
 # Windows needs one COM init mode; apartment-threaded matches a GUI main thread.

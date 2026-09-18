@@ -13,6 +13,8 @@ icloud = ["dirstats-app/icloud"]
 open = ["dirstats-app/open"]
 # Keep egui's bundled fonts and text sizes instead of the platform's own.
 egui-fonts = []
+# End-to-end tests that drive the whole GUI headlessly (CI only; pulls in wgpu).
+e2e = ["dep:egui_kittest", "dep:tempfile"]
 
 [dependencies]
 dirstats-app.workspace = true
@@ -20,3 +22,5 @@ dirstats-treemap.workspace = true
 eframe.workspace = true
 rfd.workspace = true
 chrono.workspace = true
+egui_kittest = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }

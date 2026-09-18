@@ -19,6 +19,8 @@ mod chrome;
 mod columns;
 #[cfg(all(windows, feature = "trash"))]
 mod dialogs;
+#[cfg(all(test, feature = "e2e"))]
+mod e2e;
 mod entries;
 mod icons;
 mod legend;
@@ -76,25 +78,30 @@ pub fn run(app: App) -> eframe::Result<()> {
         APP_NAME,
         options,
         Box::new(|cc| {
-            // The egui-fonts feature keeps egui's bundled fonts and sizes for comparison.
-            if !cfg!(feature = "egui-fonts") {
-                let (fonts, system) = system_fonts();
-                cc.egui_ctx.set_fonts(fonts);
-                if system {
-                    cc.egui_ctx.all_styles_mut(|style| style.text_styles = system_text_sizes());
-                }
-            }
-            // Monospace faces (Hack, SF Mono, Cascadia) all carry a taller
-            // x-height than their proportional partners, so the numeric
-            // columns sit a step below body text whichever fonts are in use.
-            cc.egui_ctx.all_styles_mut(|style| {
-                let body = style.text_styles[&egui::TextStyle::Body].size;
-                style.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(body - MONO_STEP));
-            });
-            apply_theme(&cc.egui_ctx);
+            configure(&cc.egui_ctx);
             Ok(Box::new(Gui::new(app)))
         }),
     )
+}
+
+/// Fonts, text sizes and theme, set once before the first frame.
+fn configure(ctx: &egui::Context) {
+    // The egui-fonts feature keeps egui's bundled fonts and sizes for comparison.
+    if !cfg!(feature = "egui-fonts") {
+        let (fonts, system) = system_fonts();
+        ctx.set_fonts(fonts);
+        if system {
+            ctx.all_styles_mut(|style| style.text_styles = system_text_sizes());
+        }
+    }
+    // Monospace faces (Hack, SF Mono, Cascadia) all carry a taller
+    // x-height than their proportional partners, so the numeric
+    // columns sit a step below body text whichever fonts are in use.
+    ctx.all_styles_mut(|style| {
+        let body = style.text_styles[&egui::TextStyle::Body].size;
+        style.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(body - MONO_STEP));
+    });
+    apply_theme(ctx);
 }
 
 struct Gui {
