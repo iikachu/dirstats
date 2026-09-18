@@ -141,7 +141,7 @@ jobs:
       - name: Install lavapipe
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
-      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash,delete --locked -- --ignored --exact e2e::real_disk_scan --nocapture
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash,delete,ntfs-mft --locked -- --ignored --exact e2e::real_disk_scan --nocapture
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

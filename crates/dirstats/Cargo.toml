@@ -34,7 +34,7 @@ delete = ["dirstats-app/delete", "dirstats-gui?/delete"]
 icloud = ["dirstats-app/icloud", "dirstats-gui?/icloud"]
 # Scan whole NTFS volumes from the master file table (Windows, as
 # administrator); without it, or when it cannot, dirstats walks directories.
-ntfs-mft = ["dirstats-app/ntfs-mft"]
+ntfs-mft = ["dirstats-app/ntfs-mft", "dirstats-tui?/ntfs-mft", "dirstats-gui?/ntfs-mft"]
 # Write a cushion treemap PNG with `--png`.
 png = ["dep:png"]
 
