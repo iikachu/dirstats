@@ -1806,40 +1806,53 @@ impl Gui {
         let share = format::percent(size, parent_size);
         let pad = 6.0;
         let mono = egui::TextStyle::Monospace.resolve(ui.style());
-        let (row_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::hover());
-        ui.painter().rect_filled(row_rect, 0.0, ui.visuals().faint_bg_color);
-        ui.painter().hline(row_rect.x_range(), row_rect.max.y, ui.visuals().widgets.noninteractive.bg_stroke);
+        // The background is painted once the wrapped crumbs have said how
+        // tall the row is, but has to sit beneath them.
+        let background = ui.painter().add(egui::Shape::Noop);
+        let origin = ui.cursor().min;
+        let row_width = ui.available_width();
         let text = ui.visuals().text_color();
-        let (top, bottom) = (row_rect.min.y, row_rect.max.y);
-        let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
 
-        // Crumbs laid out from the right so the current name stays visible
-        // and far ancestors drop off the left when the column is narrow.
-        let name_cell = cell(edges[0], edges[1]).shrink2(egui::vec2(pad, 0.0));
+        // Crumbs from the left, wrapping onto more lines when the path is
+        // longer than the name column.
+        let inset = 3.0;
+        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y + inset), egui::pos2(edges[1] - pad, f32::INFINITY));
         let mut target = None;
+        let mut crumbs_height = 0.0;
         if name_cell.width() > 4.0 {
-            let mut crumb_ui = ui.new_child(egui::UiBuilder::new().max_rect(name_cell).layout(egui::Layout::right_to_left(egui::Align::Center)));
-            crumb_ui.set_clip_rect(name_cell.intersect(ui.clip_rect()));
-            crumb_ui.spacing_mut().item_spacing.x = 2.0;
+            let layout = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
+            let mut crumb_ui = ui.new_child(egui::UiBuilder::new().max_rect(name_cell).layout(layout));
+            let clip = ui.clip_rect();
+            crumb_ui.set_clip_rect(egui::Rect::from_x_y_ranges(name_cell.x_range().intersection(clip.x_range()), clip.y_range()));
+            crumb_ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
             let crumbs = self.app.breadcrumbs();
-            for (i, &id) in crumbs.iter().enumerate().rev() {
+            for (i, &id) in crumbs.iter().enumerate() {
                 let mut name = tree.node(id).name.to_string_lossy().into_owned();
                 if i + 1 == crumbs.len() {
                     name.push('/');
-                    crumb_ui.add(egui::Label::new(egui::RichText::new(name).strong().color(text)).truncate().selectable(false));
+                    crumb_ui.add(egui::Label::new(egui::RichText::new(name).strong().color(text)).wrap().selectable(false));
                 } else {
-                    let (rect, _) = crumb_ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
-                    icons::paint(crumb_ui.painter(), rect, icons::Glyph::ChevronRight, crumb_ui.visuals().weak_text_color());
-                    let link = crumb_ui.add(egui::Label::new(egui::RichText::new(name).color(text)).sense(Sense::click()).selectable(false));
+                    let link = crumb_ui.add(egui::Label::new(egui::RichText::new(name).color(text)).wrap().sense(Sense::click()).selectable(false));
                     if link.hovered() {
                         crumb_ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
                     if link.clicked() {
                         target = Some(id);
                     }
+                    let (rect, _) = crumb_ui.allocate_exact_size(egui::vec2(12.0, 12.0), Sense::hover());
+                    icons::paint(crumb_ui.painter(), rect, icons::Glyph::ChevronRight, crumb_ui.visuals().weak_text_color());
                 }
             }
+            crumbs_height = crumb_ui.min_rect().height();
         }
+        let height = row_height.max(crumbs_height + 2.0 * inset);
+        let row_rect = egui::Rect::from_min_size(origin, egui::vec2(row_width, height));
+        ui.allocate_rect(row_rect, Sense::hover());
+        ui.painter().set(background, egui::Shape::rect_filled(row_rect, 0.0, ui.visuals().faint_bg_color));
+        ui.painter().hline(row_rect.x_range(), row_rect.max.y, ui.visuals().widgets.noninteractive.bg_stroke);
+        // Figures sit on the first line, level with the start of the path.
+        let (top, bottom) = (row_rect.min.y, row_rect.min.y + row_height);
+        let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
 
         let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
         if edges[2] - edges[1] > 0.0 && bar.width() > 0.0 {
