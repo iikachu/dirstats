@@ -66,13 +66,13 @@ window fails to open (except on Windows, where the error is reported). With no t
 
 Per-crate features:
 - `dirstats-app`: `open`, `trash`, `delete`, `icloud`, `ntfs-mft`; none by
-  default. `ntfs-mft` pulls in `dirstats-ntfs`; without it Windows walks
+  default. `ntfs-mft` pulls in `dirstats-ntfs` on Windows only; without it Windows walks
   directories like every other platform.
   `trash` and `delete` are independent; `delete` only does anything on
   Windows and Linux, so a macOS build without `trash` cannot remove files.
 - `dirstats-gui`: forwards those, plus `egui-fonts` and `e2e` (headless
   end-to-end tests, CI only).
-- `dirstats-tui`: forwards `open` and `trash`.
+- `dirstats-tui`: forwards `open`, `trash` and `ntfs-mft`.
 - `dirstats-treemap`: `parallel` (rayon cushion rendering), on by default.
 - `dirstats-scan`: none yet. Fast paths are chosen by `cfg` per platform;
   `serde` for saved scans is planned.

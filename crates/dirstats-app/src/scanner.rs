@@ -3,9 +3,9 @@
 
 //! Background scan handle.
 
-#[cfg(feature = "ntfs-mft")]
+#[cfg(all(windows, feature = "ntfs-mft"))]
 use dirstats_ntfs::scan_with;
-#[cfg(not(feature = "ntfs-mft"))]
+#[cfg(not(all(windows, feature = "ntfs-mft")))]
 use dirstats_scan::scan_with;
 use dirstats_scan::{Progress, ScanOptions, Tree};
 use std::io;

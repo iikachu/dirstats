@@ -15,7 +15,8 @@ trash = ["dep:trash", "dep:objc2-foundation"]
 # per-run gate; nothing on macOS).
 delete = []
 # Scan whole NTFS volumes from the master file table (Windows, needs
-# administrator rights; the directory walker is used otherwise).
+# administrator rights; the directory walker is used otherwise). Does
+# nothing on other platforms.
 ntfs-mft = ["dep:dirstats-ntfs"]
 # Open and reveal actions via the desktop.
 open = ["dep:open"]
@@ -24,8 +25,6 @@ icloud = ["dep:objc2-foundation", "dep:objc2"]
 
 [dependencies]
 dirstats-scan.workspace = true
-# Reads the master file table of NTFS volumes on Windows; walks elsewhere.
-dirstats-ntfs = { workspace = true, optional = true }
 foldhash.workspace = true
 trash = { workspace = true, optional = true }
 open = { workspace = true, optional = true }
@@ -35,6 +34,9 @@ open = { workspace = true, optional = true }
 libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# Reads the master file table of NTFS volumes; only built on Windows, so
+# ntfs-mft does nothing elsewhere.
+dirstats-ntfs = { workspace = true, optional = true }
 # Drive enumeration; attribute clearing and delete-on-close for permanent deletion.
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_WindowsProgramming"] }
 
