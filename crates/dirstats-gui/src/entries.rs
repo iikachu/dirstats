@@ -219,7 +219,15 @@ impl Gui {
                     // A pill behind the crumb, darker while pressed, and on
                     // an ancestor an underline as on a link.
                     let visuals = ui.visuals();
-                    let fill = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), if pressed { 0.28 } else { 0.14 });
+                    // The current folder's pill is fainter: present, not inviting.
+                    let strength = if last {
+                        0.07
+                    } else if pressed {
+                        0.28
+                    } else {
+                        0.14
+                    };
+                    let fill = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), strength);
                     for rect in &rects {
                         painter.rect_filled(rect.expand2(egui::vec2(3.0, 1.0)), 4.0, fill);
                         if !last {
