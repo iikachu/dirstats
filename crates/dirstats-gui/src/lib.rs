@@ -1814,9 +1814,11 @@ impl Gui {
         let text = ui.visuals().text_color();
 
         // Crumbs from the left, wrapping onto more lines when the path is
-        // longer than the name column.
+        // longer than the name column. The cell is one line tall: a wrapping
+        // layout takes its rect's height as the height of the first line and
+        // grows downward from there.
         let inset = 3.0;
-        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y + inset), egui::pos2(edges[1] - pad, f32::INFINITY));
+        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y + inset), egui::pos2(edges[1] - pad, origin.y + row_height - inset));
         let mut target = None;
         let mut crumbs_height = 0.0;
         if name_cell.width() > 4.0 {
@@ -1845,7 +1847,9 @@ impl Gui {
             }
             crumbs_height = crumb_ui.min_rect().height();
         }
-        let height = row_height.max(crumbs_height + 2.0 * inset);
+        // Never so tall that the list below is squeezed out.
+        let limit = (ui.available_height() * 0.5).max(row_height);
+        let height = row_height.max(crumbs_height + 2.0 * inset).min(limit);
         let row_rect = egui::Rect::from_min_size(origin, egui::vec2(row_width, height));
         ui.allocate_rect(row_rect, Sense::hover());
         ui.painter().set(background, egui::Shape::rect_filled(row_rect, 0.0, ui.visuals().faint_bg_color));
