@@ -1421,7 +1421,6 @@ impl Gui {
         // Before the first scan the location picker floats over the middle of
         // the whole body rather than sitting in the treemap column.
         if self.app.scan.is_none() && self.app.tree.is_none() {
-            ui.painter().rect_filled(body, 0.0, ui.visuals().panel_fill.gamma_multiply(0.85));
             let mut overlay = ui.new_child(egui::UiBuilder::new().max_rect(body).id_salt("location-picker"));
             self.location_picker(&mut overlay);
         }
@@ -2024,14 +2023,19 @@ impl Gui {
         }
         let locations = self.locations.get_or_insert_with(dirstats_app::locations::list);
         let rect = ui.available_rect_before_wrap();
-        let width = rect.width().min(560.0);
+        let width = (rect.width() - 2.0 * PAD - 32.0).min(560.0).max(200.0);
         let row_height = 48.0;
         let height = 44.0
             + if self.app.message.is_some() { 22.0 } else { 0.0 }
             + if self.full_disk_access == Some(false) { 70.0 } else { 0.0 }
             + row_height * (locations.len() + 1) as f32;
-        let top = (rect.center().y - height / 2.0).max(rect.min.y + 16.0);
+        let top = (rect.center().y - height / 2.0).max(rect.min.y + 16.0 + PAD);
         let panel = egui::Rect::from_min_size(egui::pos2(rect.center().x - width / 2.0, top), egui::vec2(width, height));
+        // Opaque card under the content so the column guide lines behind
+        // it do not show through.
+        const PAD: f32 = 20.0;
+        let card = panel.expand(PAD);
+        ui.painter().rect(card, 8.0, ui.visuals().panel_fill, ui.visuals().widgets.noninteractive.bg_stroke, egui::StrokeKind::Outside);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(panel).layout(egui::Layout::top_down(egui::Align::Min)));
         child.label(egui::RichText::new("Choose a location to scan").heading().strong().size(22.0));
         if let Some(message) = &self.app.message {
