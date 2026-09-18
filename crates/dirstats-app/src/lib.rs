@@ -12,6 +12,7 @@
 //! draws whatever the state says. Scans run on a worker thread; call
 //! [`App::poll`] on every tick to pick up the result.
 
+pub mod backup;
 pub mod cloud;
 #[cfg(feature = "trash")]
 pub mod delete;
@@ -55,7 +56,8 @@ pub struct App {
     /// Directories opened in a tree view.
     pub expanded: foldhash::HashSet<NodeId>,
     /// Nodes moved to the trash since the last scan, with where they went
-    /// when known (macOS), which is what [`App::put_back`] needs. Their
+    /// when known, which is what [`App::put_back`] needs: the trashed item's
+    /// path on macOS, its Recycle Bin id on Windows. Their
     /// descendants count as trashed too.
     pub trashed: foldhash::HashMap<NodeId, Option<PathBuf>>,
     /// Nodes deleted permanently since the last scan (Windows). Their
@@ -70,6 +72,9 @@ pub struct App {
     pub delete: Option<RunningDelete>,
     /// Preferences that persist between runs; see [`App::set_permanent_delete`].
     pub settings: Settings,
+    /// Whether the scanned tree sits on a Time Machine backup volume;
+    /// probed once per scan in [`App::set_tree`].
+    pub backup_volume: bool,
     /// Root of the last scan, for [`App::rescan`].
     last_root: Option<PathBuf>,
 }
@@ -142,6 +147,7 @@ impl App {
         self.trashed.clear();
         self.deleted.clear();
         self.evicted.clear();
+        self.backup_volume = backup::is_backup_volume(&tree.path(tree.root()));
         self.tree = Some(tree);
     }
 
@@ -403,6 +409,16 @@ impl App {
         Ok(())
     }
 
+    /// Whether `id` is part of a Time Machine backup; see [`backup::NOTE`].
+    #[must_use]
+    pub fn is_time_machine(&self, id: NodeId) -> bool {
+        // By ancestor names rather than `tree.path`, which allocates, since
+        // front ends ask for every displayed row. The scan root's own path
+        // was covered by the volume probe.
+        let Some(tree) = &self.tree else { return false };
+        self.backup_volume || self.ancestor_or_self(id, |n| &*tree.node(n).name == std::ffi::OsStr::new("Backups.backupdb"))
+    }
+
     /// Why `id` must not be removed, if it is one of the places no disk
     /// usage tool should offer to delete: the scan root, a drive or
     /// filesystem root, or the user's home folder.
@@ -419,6 +435,9 @@ impl App {
         let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
         if home.is_some_and(|home| home == path) {
             return refuse("the home folder is not removable");
+        }
+        if backup::BLOCKS_TRASH && self.is_time_machine(id) {
+            return refuse(backup::NOTE);
         }
         Ok(())
     }
@@ -482,7 +501,7 @@ impl App {
         if original.exists() {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "something else is at the original path"));
         }
-        dataless::materialising(|| std::fs::rename(&location, &original))?;
+        dataless::materialising(|| platform_put_back(&location, &original))?;
         self.trashed.remove(&id);
         self.message = Some(format!("put back: {}", original.display()));
         Ok(())
@@ -546,10 +565,47 @@ fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
     Ok(resulting.and_then(|url| url.path()).map(|p| PathBuf::from(p.to_string())))
 }
 
-#[cfg(all(feature = "trash", not(target_os = "macos")))]
+/// On Windows the Recycle Bin entry is looked up after the move, the most
+/// recent one from `path`, and its id kept for Put Back.
+#[cfg(all(feature = "trash", windows))]
+fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
+    // Paths are compared canonical, as the scan may name the folder by
+    // its short (8.3) name and the Recycle Bin by the long one.
+    let parent = path.parent().and_then(|p| p.canonicalize().ok());
+    trash::delete(path).map_err(io::Error::other)?;
+    let (Some(parent), Some(name)) = (parent, path.file_name()) else { return Ok(None) };
+    // The item is in the bin whether or not it can be found there again.
+    let Ok(items) = trash::os_limited::list() else { return Ok(None) };
+    Ok(items
+        .into_iter()
+        .filter(|item| item.name == name && item.original_parent.canonicalize().is_ok_and(|p| p == parent))
+        .max_by_key(|item| item.time_deleted)
+        .map(|item| PathBuf::from(item.id)))
+}
+
+#[cfg(all(feature = "trash", not(any(target_os = "macos", windows))))]
 fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
     trash::delete(path).map_err(io::Error::other)?;
     Ok(None)
+}
+
+/// Move a trashed item from `location`, as [`platform_trash`] reported it,
+/// back to `original`.
+#[cfg(all(feature = "trash", not(windows)))]
+fn platform_put_back(location: &Path, original: &Path) -> io::Result<()> {
+    std::fs::rename(location, original)
+}
+
+/// Restored through the shell rather than renamed, so the Recycle Bin's
+/// record of the item goes with it.
+#[cfg(all(feature = "trash", windows))]
+fn platform_put_back(location: &Path, original: &Path) -> io::Result<()> {
+    let items = trash::os_limited::list().map_err(io::Error::other)?;
+    let Some(item) = items.into_iter().find(|item| Path::new(&item.id) == location) else {
+        return Err(io::Error::new(io::ErrorKind::NotFound, format!("no longer in the {TRASH_NAME}")));
+    };
+    trash::os_limited::restore_all([item]).map_err(io::Error::other)?;
+    if original.exists() { Ok(()) } else { Err(io::Error::other("restored somewhere else")) }
 }
 
 #[cfg(test)]
@@ -601,7 +657,8 @@ mod tests {
         assert_eq!(app.tree_rows().len(), 2);
     }
 
-    /// Moves a real temporary file to the system trash; run explicitly with
+    /// Moves a real temporary file to the system trash, and back where the
+    /// platform allows; run explicitly with
     /// `cargo test -p dirstats-app --features trash -- --ignored`.
     #[cfg(feature = "trash")]
     #[test]
@@ -615,6 +672,12 @@ mod tests {
         assert!(!path.exists(), "file should have moved to the trash");
         assert!(app.is_trashed(small));
         assert!(app.message.as_deref().unwrap().starts_with("moved to "));
+        if cfg!(any(target_os = "macos", windows)) {
+            assert!(app.can_put_back(small), "trash location not found");
+            app.put_back(small).unwrap();
+            assert!(path.exists(), "file should be back");
+            assert!(!app.is_trashed(small));
+        }
     }
 
     #[test]

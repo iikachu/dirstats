@@ -110,5 +110,6 @@ starting:
 | A new optional capability | `add-feature-flag` |
 | Touching `cfg(windows)` / `cfg(linux)` code or `Cargo.lock` | `windows-check-from-mac` |
 | Testing GUI behaviour headlessly | `add-gui-e2e-test` |
+| Screenshots on a PR that changes the GUI | `gui-pr-screenshots` |
 
 They are plain Markdown; any agent can follow them.
