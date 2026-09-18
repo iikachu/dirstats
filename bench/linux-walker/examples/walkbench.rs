@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // by dirstats contributors
 
-//! Times every archived walker variant against dirstats-scan (dua-core's
-//! walker) on one root and prints a Markdown table. `ci/linux-walker-bench.yml`
-//! runs it on ext4, XFS and NFS.
+//! Times every walker variant against dirstats-scan (dua-core's walker) on
+//! one root and prints a Markdown table. The nightly workflow runs it on
+//! ext4, XFS and NFS.
 //!
 //! ```text
-//! cd archive/linux-walker
+//! cd bench/linux-walker
 //! cargo build --release --example walkbench
 //! sudo target/release/examples/walkbench --root /usr --label "ext4 /usr" --reps 5 --cold
 //! ```
@@ -16,7 +16,7 @@
 //! page, dentry and inode caches are dropped before every scan. Every
 //! scan's file count and total size are checked against dua-core's.
 
-use dirstats_archive_linux_walker::{LinuxWalker, Options, io_uring_available};
+use dirstats_bench_linux_walker::{LinuxWalker, Options, io_uring_available};
 use dirstats_scan::{ScanOptions, SizeMetric, Tree};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -93,7 +93,7 @@ fn main() {
             let start = Instant::now();
             let tree: Tree = match walker {
                 None => dirstats_scan::scan(&args.root, &ScanOptions { size_metric: SizeMetric::Allocated, ..ScanOptions::default() }),
-                Some(walker) => dirstats_archive_linux_walker::scan(
+                Some(walker) => dirstats_bench_linux_walker::scan(
                     &args.root,
                     &Options { walker: walker.clone(), size_metric: SizeMetric::Allocated, ..Options::default() },
                 ),
@@ -125,4 +125,10 @@ fn main() {
         println!("| {name} | {:.3} s | {:.3} s | {ratio:.2}× | {same} |", mid.as_secs_f64(), best.as_secs_f64());
     }
     println!();
+    // The nightly workflow runs this as a test: a walker that disagrees with
+    // dua-core fails it, after the table is printed.
+    if shapes.iter().any(|shape| *shape != shapes[0]) {
+        eprintln!("some walkers disagree with dua-core; see the table");
+        std::process::exit(1);
+    }
 }

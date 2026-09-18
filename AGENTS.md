@@ -19,6 +19,11 @@ reading before a non-trivial change.
 | `dirstats-tui`, `dirstats-gui` | presentation and input only | GPL-3.0-or-later |
 | `dirstats` | CLI and binary; picks a front end | GPL-3.0-or-later |
 
+`bench/` holds benches that are their own Cargo workspaces, outside the one
+above: the shelved Linux walker and the Windows listing bench. PR CI doesn't
+build them. `.github/workflows/nightly.yml` runs them, and the NTFS MFT bench,
+every night, and on PRs that change them.
+
 ## Commands
 
 ```bash
