@@ -140,7 +140,6 @@ impl Gui {
         // longer than the name column. Laid out by hand on a fixed line
         // pitch: every piece of text gets a rect exactly its own size, so
         // hover pills are the same height on every line and never overlap.
-        const MARKER: f32 = 12.0;
         const GAP: f32 = 2.0;
         let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
         let mut target = None;
@@ -154,7 +153,9 @@ impl Gui {
             // pill, which reaches a little past the text on either side.
             let clip_x = name_cell.x_range().expand(pad - 1.0).intersection(clip.x_range());
             let painter = ui.painter().with_clip_rect(egui::Rect::from_x_y_ranges(clip_x, clip.y_range()));
-            let line_height = painter.layout_no_wrap("Ag".to_owned(), font.clone(), text).size().y;
+            // Crumbs are joined by a slash, as the path itself is written.
+            let slash = painter.layout_no_wrap(std::path::MAIN_SEPARATOR_STR.to_owned(), font.clone(), weak);
+            let line_height = slash.size().y;
             let pitch = line_height + 4.0;
             // First line centred in a normal row, later lines a pitch apart.
             let first_top = origin.y + (row_height - line_height) / 2.0;
@@ -164,13 +165,16 @@ impl Gui {
             for (i, &id) in crumbs.iter().enumerate() {
                 let last = i + 1 == crumbs.len();
                 let mut name = tree.node(id).name.to_string_lossy().into_owned();
-                if last {
-                    name.push('/');
+                if last && !name.ends_with(std::path::MAIN_SEPARATOR) {
+                    name.push(std::path::MAIN_SEPARATOR);
                 }
                 let color = if last { strong } else { text };
                 // An ancestor carries the marker after it, so the two move to
                 // the next line together and no line starts with a marker.
-                let marker_room = if last { 0.0 } else { GAP + MARKER };
+                // A root that is itself a separator, or ends in one, needs no
+                // second one after it.
+                let marked = !last && !name.ends_with(std::path::MAIN_SEPARATOR);
+                let marker_room = if marked { GAP + slash.size().x } else { 0.0 };
                 let whole = painter.layout_no_wrap(name.clone(), font.clone(), color);
                 if x > left && x + whole.size().x + marker_room > left + full {
                     x = left;
@@ -219,10 +223,11 @@ impl Gui {
                 for (piece, rect) in pieces.into_iter().zip(&rects) {
                     painter.galley(rect.min, piece, color);
                 }
-                if !last {
-                    let centre = egui::pos2(x + GAP + MARKER / 2.0, first_top + pitch * line as f32 + line_height / 2.0);
-                    icons::paint(&painter, egui::Rect::from_center_size(centre, egui::vec2(MARKER, MARKER)), icons::Glyph::ChevronRight, weak);
-                    x += GAP + MARKER + GAP;
+                if marked {
+                    painter.galley(egui::pos2(x + GAP, first_top + pitch * line as f32), slash.clone(), weak);
+                    x += GAP + slash.size().x + GAP;
+                } else if !last {
+                    x += GAP;
                 }
             }
             // The margin above the first line, repeated below the last.
