@@ -51,9 +51,12 @@ fn mft_vs_walk(c: &mut Criterion) {
         if cold {
             // Every scan starts from an emptied cache, so warming up only
             // costs time. Flat sampling keeps each sample to a few scans
-            // instead of ramping up to 10, which at under a second each
-            // fits the default 5 s.
-            group.sample_size(10).sampling_mode(SamplingMode::Flat).warm_up_time(Duration::from_secs(1));
+            // instead of ramping up to 10; 15 s fits 10 such samples.
+            group
+                .sample_size(10)
+                .sampling_mode(SamplingMode::Flat)
+                .warm_up_time(Duration::from_secs(1))
+                .measurement_time(Duration::from_secs(15));
         } else {
             group.sample_size(20);
         }
