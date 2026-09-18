@@ -3,7 +3,8 @@
 //
 // Traversal is provided by dua-core (MIT, by Sebastian Thiel,
 // https://github.com/Byron/dua-cli), which uses getattrlistbulk on macOS and
-// FileIdBothDirectoryInfo enumeration on Windows.
+// FileIdBothDirectoryInfo enumeration on Windows. On Linux the `linux-fast`
+// feature swaps in the getdents64 and statx walker in `scan/linux.rs`.
 //
 // Capping inflated block counts on Linux NTFS mounts is an idea credited to
 // dust (https://github.com/bootandy/dust, issue #295); the code here was
@@ -18,6 +19,10 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::SystemTime;
+
+#[cfg(all(target_os = "linux", feature = "linux-fast"))]
+mod linux;
 
 #[derive(Clone, Debug)]
 pub struct ScanOptions {
@@ -28,6 +33,9 @@ pub struct ScanOptions {
     /// Count data reachable through several hard links only once.
     pub count_hard_links_once: bool,
     pub size_metric: SizeMetric,
+    /// Use this platform's filesystem fast path when one is compiled in and
+    /// applies to the root; `false` always takes the generic walker.
+    pub fast_path: bool,
 }
 
 impl Default for ScanOptions {
@@ -37,6 +45,7 @@ impl Default for ScanOptions {
             same_filesystem: true,
             count_hard_links_once: true,
             size_metric: SizeMetric::default(),
+            fast_path: true,
         }
     }
 }
@@ -62,6 +71,22 @@ pub fn scan_with(
     progress: &Progress,
 ) -> io::Result<Tree> {
     let root = root.as_ref();
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    if options.fast_path
+        && let Some(mut walk) = linux::Walk::start(root, options)
+    {
+        return build(root, options, cancel, progress, || walk.next(cancel));
+    }
+    walk_generic(root, options, cancel, progress)
+}
+
+/// Scan with dua-core's walker, which every platform supports.
+fn walk_generic(
+    root: &Path,
+    options: &ScanOptions,
+    cancel: &AtomicBool,
+    progress: &Progress,
+) -> io::Result<Tree> {
     platform::prepare_process();
     let root_device = platform::root_device(root)?;
     let same_filesystem = options.same_filesystem;
@@ -90,8 +115,68 @@ pub fn scan_with(
         dua_core::Options::default(),
         descend,
     );
+    build(root, options, cancel, progress, || {
+        walk.next_cancellable(cancel).map(|item| item.map(walked))
+    })
+}
+
+/// One entry of a walk. Walks yield every directory before its contents.
+struct Walked {
+    /// Walk-local index of the directory holding this entry; `None` for the root.
+    parent: Option<usize>,
+    /// Walk-local index of this entry when it is a directory.
+    directory: Option<usize>,
+    name: Box<OsStr>,
+    kind: Kind,
+    /// `None` when the walk did not ask for metadata.
+    metadata: Option<io::Result<Stat>>,
+}
+
+/// The attributes of an entry that a scan uses.
+struct Stat {
+    apparent_size: u64,
+    allocated_size: u64,
+    modified: Option<SystemTime>,
+    /// Identity of multiply-linked data and its total link count, when known.
+    link: Option<((u64, u64), Option<u64>)>,
+}
+
+fn walked(entry: Entry) -> Walked {
+    let kind = if entry.file_type.is_dir() {
+        Kind::Directory
+    } else if entry.file_type.is_file() {
+        Kind::File
+    } else if entry.file_type.is_symlink() {
+        Kind::Symlink
+    } else {
+        Kind::Other
+    };
+    Walked {
+        parent: entry.parent_directory_id.map(|id| id.index()),
+        directory: entry.directory_id.map(|id| id.index()),
+        name: entry.file_name.as_os_str().into(),
+        kind,
+        metadata: entry.metadata.map(|metadata| {
+            metadata.map(|metadata| Stat {
+                apparent_size: platform::len(&metadata),
+                allocated_size: platform::allocated_size(&metadata),
+                modified: metadata.modified().ok(),
+                link: platform::link_identity(&metadata),
+            })
+        }),
+    }
+}
+
+/// Build a tree from the entries `next` yields.
+fn build(
+    root: &Path,
+    options: &ScanOptions,
+    cancel: &AtomicBool,
+    progress: &Progress,
+    mut next: impl FnMut() -> Option<io::Result<Walked>>,
+) -> io::Result<Tree> {
     let mut tree = Tree::new();
-    // Maps dua-core's dense directory ids to tree nodes.
+    // Maps the walk's dense directory indices to tree nodes.
     let mut directory_nodes: Vec<Option<NodeId>> = Vec::new();
     // Hard-linked data seen so far, with the links not yet encountered. An
     // entry is dropped once every link has been seen, so the map only holds
@@ -104,7 +189,7 @@ pub fn scan_with(
     // Kept so that a scan yielding nothing but the root can fail with it.
     let mut root_error: Option<io::Error> = None;
 
-    while let Some(item) = walk.next_cancellable(cancel) {
+    while let Some(item) = next() {
         let entry = match item {
             Ok(entry) => entry,
             Err(err) if tree.is_empty() => return Err(err),
@@ -117,9 +202,9 @@ pub fn scan_with(
             }
         };
 
-        let parent = match entry.parent_directory_id {
+        let parent = match entry.parent {
             None => None,
-            Some(id) => match directory_nodes.get(id.index()).copied().flatten() {
+            Some(index) => match directory_nodes.get(index).copied().flatten() {
                 Some(parent) => Some(parent),
                 None => continue,
             },
@@ -127,17 +212,9 @@ pub fn scan_with(
         let name: Box<OsStr> = if parent.is_none() {
             root.as_os_str().into()
         } else {
-            entry.file_name.as_os_str().into()
+            entry.name
         };
-        let kind = if entry.file_type.is_dir() {
-            Kind::Directory
-        } else if entry.file_type.is_file() {
-            Kind::File
-        } else if entry.file_type.is_symlink() {
-            Kind::Symlink
-        } else {
-            Kind::Other
-        };
+        let kind = entry.kind;
 
         let mut node = Node {
             name,
@@ -151,14 +228,14 @@ pub fn scan_with(
             duplicate_link: false,
             error: false,
         };
-        match &entry.metadata {
-            Some(Ok(metadata)) => {
-                node.apparent_size = platform::len(metadata);
-                node.allocated_size = platform::allocated_size(metadata);
-                node.modified = metadata.modified().ok();
+        match entry.metadata {
+            Some(Ok(stat)) => {
+                node.apparent_size = stat.apparent_size;
+                node.allocated_size = stat.allocated_size;
+                node.modified = stat.modified;
                 if options.count_hard_links_once
                     && kind == Kind::File
-                    && let Some((identity, links)) = platform::link_identity(metadata)
+                    && let Some((identity, links)) = stat.link
                 {
                     node.duplicate_link = match pending_links.entry(identity) {
                         std::collections::hash_map::Entry::Vacant(slot) => {
@@ -186,8 +263,7 @@ pub fn scan_with(
         }
 
         let id = tree.push(node);
-        if let Some(directory) = entry.directory_id {
-            let index = directory.index();
+        if let Some(index) = entry.directory {
             if directory_nodes.len() <= index {
                 directory_nodes.resize(index + 1, None);
             }
@@ -240,13 +316,17 @@ mod platform {
     /// Blocks beyond the file's length that we still believe (preallocation).
     const PLAUSIBLE_EXTRA_BLOCKS: u64 = 1 << 16;
 
-    /// `st_blocks` in 512-byte units, unless it is implausibly larger than the
+    pub fn allocated_size(metadata: &Metadata) -> u64 {
+        allocated_from_blocks(metadata.len(), metadata.blocks(), metadata.blksize())
+    }
+
+    /// `blocks` in 512-byte units, unless it is implausibly larger than the
     /// file (seen on NTFS mounts), in which case the length rounded up to whole
     /// I/O blocks is used instead.
-    pub fn allocated_size(metadata: &Metadata) -> u64 {
-        let reported = metadata.blocks().saturating_mul(512);
-        let io_block = metadata.blksize().max(1);
-        let rounded_len = metadata.len().next_multiple_of(io_block);
+    pub fn allocated_from_blocks(len: u64, blocks: u64, io_block: u64) -> u64 {
+        let reported = blocks.saturating_mul(512);
+        let io_block = io_block.max(1);
+        let rounded_len = len.next_multiple_of(io_block);
         let plausible_max =
             rounded_len.saturating_add(io_block.saturating_mul(PLAUSIBLE_EXTRA_BLOCKS));
         if reported <= plausible_max {
@@ -581,6 +661,62 @@ mod tests {
     unsafe extern "C" {
         #[link_name = "geteuid"]
         fn libc_geteuid() -> u32;
+    }
+
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    #[test]
+    fn linux_walker_matches_the_portable_one() {
+        use std::collections::BTreeMap;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("a/b/c")).unwrap();
+        fs::create_dir(root.join("empty")).unwrap();
+        fs::create_dir(root.join("wide")).unwrap();
+        // More entries than one stat chunk, so the chunks are shared out.
+        for i in 0..1000 {
+            fs::write(root.join("wide").join(format!("f{i}")), vec![7u8; i]).unwrap();
+            if i % 100 == 0 {
+                fs::create_dir(root.join("wide").join(format!("d{i}"))).unwrap();
+                fs::write(root.join("wide").join(format!("d{i}/inner")), b"x").unwrap();
+            }
+        }
+        fs::write(root.join("a/b/c/deep"), vec![1u8; 70_000]).unwrap();
+        fs::write(root.join("ラウト.txt"), b"hello").unwrap();
+        fs::hard_link(root.join("a/b/c/deep"), root.join("a/link")).unwrap();
+        std::os::unix::fs::symlink(root.join("a"), root.join("to_a")).unwrap();
+
+        // Which of two links counts as the duplicate depends on arrival
+        // order, which differs between walkers; compare with both counted.
+        let options = ScanOptions { threads: 3, count_hard_links_once: false, ..ScanOptions::default() };
+        assert!(linux::Walk::start(root, &options).is_some(), "the Linux walker runs here");
+        let links_once = ScanOptions { count_hard_links_once: true, ..options.clone() };
+        assert_eq!(scan(root, &links_once).unwrap().nodes().filter(|(_, n)| n.duplicate_link).count(), 1);
+        for metric in [SizeMetric::Apparent, SizeMetric::Allocated] {
+            let options = ScanOptions { size_metric: metric, ..options.clone() };
+            let describe = |tree: &Tree| {
+                tree.nodes()
+                    .map(|(id, n)| (tree.path(id), (n.kind, tree.size(id), n.file_count, n.dir_count, n.error, n.modified)))
+                    .collect::<BTreeMap<_, _>>()
+            };
+            let fast = scan(root, &options).unwrap();
+            let portable = walk_generic(root, &options, &AtomicBool::new(false), &Progress::default()).unwrap();
+            assert_eq!(describe(&fast), describe(&portable), "{metric:?}");
+        }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    #[test]
+    fn linux_walker_stops_on_cancel() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..50 {
+            fs::create_dir(dir.path().join(format!("d{i}"))).unwrap();
+        }
+        let cancel = AtomicBool::new(false);
+        let mut walk = linux::Walk::start(dir.path(), &ScanOptions::default()).unwrap();
+        assert!(walk.next(&cancel).is_some(), "the root comes first");
+        cancel.store(true, Ordering::Relaxed);
+        assert!(walk.next(&cancel).is_none());
+        drop(walk); // joins the workers; hangs if one missed the stop
     }
 
     #[cfg(target_os = "macos")]
