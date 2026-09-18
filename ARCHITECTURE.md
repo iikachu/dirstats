@@ -48,7 +48,7 @@ serde = ["dirstats-scan/serde"]     # save/load scans
 ```
 
 Per-crate features:
-- `dirstats-scan`: `serde`; `linux-fast` (statx/getdents64), `macos-fast`
+- `dirstats-scan`: `serde`; `macos-fast`
   (getattrlistbulk, already via dua-core), `windows-fast`
   (FileIdBothDirectoryInfo, already via dua-core). Fast paths are on by
   default on their platform and fall back to the generic walker.
@@ -67,7 +67,7 @@ accounting for each well-known filesystem. The scan layer exposes one
 
 | Concern | macOS | Linux | Windows |
 |---|---|---|---|
-| Bulk enumeration | `getattrlistbulk` (dua-core) | `getdents64` + `statx` (planned) | `FileIdBothDirectoryInfo` (dua-core); NTFS master file table for whole drives (`dirstats-ntfs`, done) |
+| Bulk enumeration | `getattrlistbulk` (dua-core) | `getdents64` + `statx` via `std::fs` (dua-core); a custom walker was tried and dropped, see #18 | `FileIdBothDirectoryInfo` (dua-core); NTFS master file table for whole drives (`dirstats-ntfs`, done) |
 | Volume boundary | `st_dev` | `st_dev` / `statx` mount id | volume serial from `GetFileInformationByHandle` (planned) |
 | Hard links | `st_nlink` + inode set | `st_nlink` + inode set | file ID set; `nlink` via handle (planned) |
 | Allocated size | `st_blocks`; APFS clone accounting (planned) | `st_blocks`; cap inflated NTFS mounts (done) | allocation size from enumeration; compressed and sparse (planned) |
