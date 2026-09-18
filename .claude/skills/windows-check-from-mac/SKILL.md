@@ -51,8 +51,8 @@ for lack of a cross C compiler; note it and rely on CI for that crate.
 | target-specific dependencies resolve and compile under `--locked` | it runs, or the Win32 calls succeed |
 | feature and `cfg` combinations are consistent | behaviour that needs administrator rights or a real NTFS volume |
 
-Behaviour is proven by the CI run on `windows-latest`, including the
-`gui e2e` job that scans `C:\` through the real entry point. Say in the
+Behaviour is proven by the CI run on `windows-latest`, and by the nightly
+`disk scan` job that scans `C:\` through the real entry point. Say in the
 hand-over which of the two you have: "type-checks for Windows" is not
 "works on Windows".
 

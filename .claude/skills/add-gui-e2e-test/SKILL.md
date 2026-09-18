@@ -87,7 +87,9 @@ PNGs land in `target/e2e/` (or `DIRSTATS_E2E_OUT`).
 - Tests run in parallel in one process. Do not set environment variables or
   the current directory inside a test.
 - Anything that scans outside a tempdir must be `#[ignore = "..."]`; CI runs
-  ignored tests with `--include-ignored`, ordinary runs skip them.
+  ignored tests with `--include-ignored`, ordinary runs skip them. The
+  `gui e2e` jobs skip `real_disk_scan`, which runs nightly on its own
+  (`disk scan` in `nightly.yml`); a new whole-disk test belongs there too.
 
 ## Boundaries
 
