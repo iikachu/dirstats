@@ -153,6 +153,16 @@ pub(super) fn node_menu(
             TrashState::Deleted => {
                 ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), "Deleted", false));
             }
+            TrashState::TimeMachine => {
+                // Shown but disabled, with where to go instead, so the
+                // missing action does not read as a bug.
+                ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), false));
+                ui.horizontal(|ui| {
+                    ui.add_space(10.0);
+                    ui.add(egui::Label::new(egui::RichText::new(dirstats_app::backup::MANAGED_ELSEWHERE).weak().small()).wrap().selectable(false));
+                });
+                ui.add_space(4.0);
+            }
         }
     }
     #[cfg(not(all(windows, feature = "trash")))]
@@ -173,6 +183,8 @@ pub(super) enum TrashState {
     Trashed,
     /// Deleted permanently (Windows), or under something that was.
     Deleted,
+    /// Part of a Time Machine backup: removed from Time Machine, not here.
+    TimeMachine,
 }
 
 /// A menu row: optional leading icon in a fixed slot so labels line up,
