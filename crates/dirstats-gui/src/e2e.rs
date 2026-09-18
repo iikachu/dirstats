@@ -161,3 +161,50 @@ fn real_disk_scan() {
     }
     screenshot(&mut harness, "real-disk");
 }
+
+/// A real secondary click on the labelled widget, opening its context menu.
+fn open_menu_on(harness: &mut Harness<'_, Gui>, label: &str) {
+    let pos = harness.get_by_label(label).rect().center();
+    harness.event(egui::Event::PointerMoved(pos));
+    harness.step();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
+        harness.step();
+    }
+    harness.step();
+}
+
+/// Inside a Time Machine backup the trash item stays in the menu but is
+/// disabled, and the menu says where backups are managed instead.
+#[cfg(feature = "trash")]
+#[test]
+fn time_machine_backup_offers_no_trash() {
+    let root = tempfile::tempdir().unwrap();
+    let snapshot = root.path().join("Backups.backupdb/Mac/2026-09-01-120000/Macintosh HD/Users/me");
+    std::fs::create_dir_all(&snapshot).unwrap();
+    std::fs::write(snapshot.join("photos.zip"), vec![0_u8; 300_000]).unwrap();
+    std::fs::create_dir(root.path().join("Documents")).unwrap();
+    std::fs::write(root.path().join("Documents/report.pdf"), vec![0_u8; 100_000]).unwrap();
+
+    let mut harness = harness(root.path());
+    wait_for_scan(&mut harness, Duration::from_secs(30));
+    assert_scanned(&harness);
+
+    // An ordinary folder beside the backup keeps its trash item.
+    open_menu_on(&mut harness, "Documents/");
+    assert!(harness.query_by_label(dirstats_app::backup::MANAGED_ELSEWHERE).is_none());
+    harness.key_press(Key::Escape);
+    harness.step();
+
+    open_menu_on(&mut harness, "Backups.backupdb/");
+    harness.get_by_label(dirstats_app::backup::MANAGED_ELSEWHERE);
+    screenshot(&mut harness, "time-machine-menu");
+
+    // The app refuses too, whatever a front end offers.
+    let gui = harness.state();
+    let tree = gui.app.tree.as_ref().unwrap();
+    let backup = tree.children(tree.root()).iter().copied().find(|&id| tree.node(id).name.to_string_lossy() == "Backups.backupdb").unwrap();
+    assert!(gui.app.is_time_machine(backup));
+    let err = gui.app.check_removable(backup).unwrap_err();
+    assert!(err.to_string().contains("Time Machine"), "{err}");
+}

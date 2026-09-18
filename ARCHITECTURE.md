@@ -71,7 +71,7 @@ accounting for each well-known filesystem. The scan layer exposes one
 | Volume boundary | `st_dev` | `st_dev` / `statx` mount id | volume serial from `GetFileInformationByHandle` (planned) |
 | Hard links | `st_nlink` + inode set | `st_nlink` + inode set | file ID set; `nlink` via handle (planned) |
 | Allocated size | `st_blocks`; APFS clone accounting (planned) | `st_blocks`; cap inflated NTFS mounts (done) | allocation size from enumeration; compressed and sparse (planned) |
-| Filesystem quirks | firmlinks, packages (from Disk Inventory X) | bind mounts, btrfs subvolumes | reparse points, junctions, OneDrive placeholders |
+| Filesystem quirks | firmlinks, packages (from Disk Inventory X); Time Machine backups are not offered for trash (done) | bind mounts, btrfs subvolumes | reparse points, junctions, OneDrive placeholders |
 
 Detection of the filesystem type is done once per volume so the scan picks
 the right strategy without per-entry cost.
