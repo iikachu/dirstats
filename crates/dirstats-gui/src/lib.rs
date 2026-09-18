@@ -73,12 +73,23 @@ enum Permanent {
     Enabled,
 }
 
-/// Menu items for a node: the same in the tree and the treemap. `is_dir`
-/// decides whether "Zoom in" is offered. Returns the chosen action.
+/// Label of the zoom item for `node`: a folder zooms into itself, a file
+/// into the folder holding it, and nothing is offered when that is where
+/// the view already is.
+fn zoom_label(tree: &dirstats_app::Tree, current: Option<NodeId>, node: NodeId) -> Option<&'static str> {
+    if !tree.children(node).is_empty() {
+        return Some("Zoom in");
+    }
+    let parent = tree.node(node).parent?;
+    (Some(parent) != current).then_some("Zoom in to containing folder")
+}
+
+/// Menu items for a node: the same in the tree and the treemap. `zoom` is
+/// the label of the zoom item, if one is offered. Returns the chosen action.
 fn node_menu(
     ui: &mut egui::Ui,
     path: &std::path::Path,
-    is_dir: bool,
+    zoom: Option<&str>,
     trashed: TrashState,
     permanent: Permanent,
     cloud: dirstats_app::cloud::CloudStatus,
@@ -105,7 +116,9 @@ fn node_menu(
     });
     menu_separator(ui);
     // Icons only on actions, none on navigation; labels stay aligned either way.
-    if is_dir && menu_item(ui, None, "Zoom in", false).clicked() {
+    if let Some(label) = zoom
+        && menu_item(ui, None, label, false).clicked()
+    {
         action = Some(NodeAction::Zoom);
     }
     if menu_item(ui, Some(icons::Glyph::ContentCopy), "Copy path", false).clicked() {
@@ -1904,6 +1917,7 @@ impl Gui {
         let evicted_rows: Vec<bool> = rows.iter().map(|&(id, _)| self.app.is_evicted(id)).collect();
         let trash_states: Vec<TrashState> = rows.iter().map(|&(id, _)| self.trash_state(id)).collect();
         let permanent = self.permanent();
+        let current_dir = self.app.dir();
         let mut select = None;
         let mut toggle = None;
         let mut menu_action: Option<(NodeId, NodeAction)> = None;
@@ -2075,8 +2089,9 @@ impl Gui {
                 let path = tree.path(id);
                 let trash_state = trash_states[row_index];
                 let cloud = cloud_states[row_index];
+                let zoom = zoom_label(tree, current_dir, id);
                 row.context_menu(|ui| {
-                    if let Some(action) = node_menu(ui, &path, is_dir, trash_state, permanent, cloud) {
+                    if let Some(action) = node_menu(ui, &path, zoom, trash_state, permanent, cloud) {
                         menu_action = Some((id, action));
                     }
                 });
@@ -2365,15 +2380,15 @@ impl Gui {
         }
         // The menu is drawn every frame from the pinned node, not from hover.
         if let Some(node) = self.menu_node {
-            let (path, is_dir) = match &self.app.tree {
-                Some(tree) => (tree.path(node), !tree.children(node).is_empty()),
-                None => (std::path::PathBuf::new(), false),
+            let (path, zoom) = match &self.app.tree {
+                Some(tree) => (tree.path(node), zoom_label(tree, self.app.dir(), node)),
+                None => (std::path::PathBuf::new(), None),
             };
             let trash_state = self.trash_state(node);
             let permanent = self.permanent();
             let mut action = None;
             let cloud = self.cloud_status(node);
-            let menu = response.context_menu(|ui| action = node_menu(ui, &path, is_dir, trash_state, permanent, cloud));
+            let menu = response.context_menu(|ui| action = node_menu(ui, &path, zoom, trash_state, permanent, cloud));
             if menu.is_none() {
                 self.menu_node = None;
             }
