@@ -110,13 +110,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: bench-listing
-      # One virtual disk per filesystem the MFT reader cannot handle. Needs
-      # an elevated runner, which hosted Windows runners are.
-      - name: Create FAT32, exFAT and ReFS volumes
+      # One virtual disk per filesystem, so each can be dismounted before a
+      # cold scan (the NTFS one holds a folder, which the MFT reader does not
+      # take). Needs an elevated runner, which hosted Windows runners are.
+      - name: Create NTFS, FAT32, exFAT and ReFS volumes
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force C:\vhd | Out-Null
-          foreach ($v in @(@{fs='fat32'; letter='F'; mb=4096}, @{fs='exfat'; letter='G'; mb=4096}, @{fs='refs'; letter='R'; mb=8192})) {
+          foreach ($v in @(@{fs='ntfs'; letter='N'; mb=4096}, @{fs='fat32'; letter='F'; mb=4096}, @{fs='exfat'; letter='G'; mb=4096}, @{fs='refs'; letter='R'; mb=8192})) {
             $file = "C:\vhd\$($v.fs).vhdx"
             @(
               "create vdisk file=`"$file`" maximum=$($v.mb) type=expandable",
@@ -131,11 +132,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "diskpart failed for $($v.fs)" }
           }
           Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter, FileSystem, Size
-      # dua-core's FileIdBothDirectoryInfo listing against std::fs::read_dir,
-      # warm and cold, on each filesystem.
+      # dua-core's FileIdBothDirectoryInfo listing against std::fs::read_dir
+      # and a direct call, warm and cold (volume dismounted), on each.
       - run: cargo bench -p dirstats-scan --bench listing --locked
         env:
-          DIRSTATS_BENCH_ROOTS: 'ntfs-folder=D:\listing-bench;fat32=F:\;exfat=G:\;refs=R:\'
+          DIRSTATS_BENCH_ROOTS: 'ntfs-folder=N:\listing-bench;fat32=F:\;exfat=G:\;refs=R:\'
           DIRSTATS_BENCH_FIXTURE_FILES: '50000'
       - name: Upload criterion report
         if: always()

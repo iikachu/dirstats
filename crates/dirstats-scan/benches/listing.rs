@@ -19,11 +19,18 @@
 //!   call.
 //! - `scan`: `dirstats_scan::scan`, the whole scan including the tree.
 //!
-//! Each root is timed warm (a rescan) and, on Windows, cold (standby list
-//! emptied before every scan, which needs administrator rights).
+//! Each root is timed warm (a rescan) and, on Windows, cold. Before every
+//! cold scan the root's volume is dismounted, which drops everything the
+//! filesystem driver holds in memory for it (ReFS keeps its own metadata
+//! cache that the next step alone does not touch), and then the standby list
+//! is emptied, which drops cached file data, including that of a virtual
+//! disk's backing file. The volume mounts again on the next access. Both need
+//! administrator rights, and the dismount needs a volume nothing else has
+//! open, so cold runs cannot use the system drive. A cache below Windows
+//! (a virtual machine host's disk cache) is out of reach.
 //!
 //! ```text
-//! set DIRSTATS_BENCH_ROOTS=ntfs-folder=D:\bench;fat32=F:\;exfat=G:\;refs=R:\
+//! set DIRSTATS_BENCH_ROOTS=ntfs-folder=N:\bench;fat32=F:\;exfat=G:\;refs=R:\
 //! set DIRSTATS_BENCH_FIXTURE_FILES=50000
 //! cargo bench -p dirstats-scan --bench listing
 //! ```
@@ -336,7 +343,7 @@ fn listing(c: &mut Criterion) {
                         let mut total = Duration::ZERO;
                         for _ in 0..iters {
                             if cold {
-                                purge_standby_list();
+                                make_cold(root);
                             }
                             let start = Instant::now();
                             black_box(scan());
@@ -351,8 +358,84 @@ fn listing(c: &mut Criterion) {
     }
 }
 
-/// Drop Windows' cached file data and metadata (the standby list), so the
+/// Dismount the volume holding `root`, then empty the standby list, so the
 /// next scan reads from disk.
+#[cfg(windows)]
+fn make_cold(root: &Path) {
+    use std::path::{Component, Prefix};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+    };
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::Ioctl::{FSCTL_DISMOUNT_VOLUME, FSCTL_LOCK_VOLUME};
+
+    let Some(Component::Prefix(prefix)) = root.components().next() else {
+        panic!(
+            "cold runs need a root with a drive letter: {}",
+            root.display()
+        );
+    };
+    let letter = match prefix.kind() {
+        Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => letter as char,
+        _ => panic!(
+            "cold runs need a root with a drive letter: {}",
+            root.display()
+        ),
+    };
+    let device: Vec<u16> = format!(r"\\.\{letter}:")
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    // SAFETY: `device` is null-terminated; the handle is closed below, and
+    // the control codes take no buffers.
+    unsafe {
+        let volume = CreateFileW(
+            device.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        );
+        assert!(
+            volume != INVALID_HANDLE_VALUE,
+            "cannot open {letter}: (elevated?): {}",
+            std::io::Error::last_os_error()
+        );
+        let mut returned = 0;
+        for (code, what) in [
+            (FSCTL_LOCK_VOLUME, "lock"),
+            (FSCTL_DISMOUNT_VOLUME, "dismount"),
+        ] {
+            let ok = DeviceIoControl(
+                volume,
+                code,
+                std::ptr::null(),
+                0,
+                std::ptr::null_mut(),
+                0,
+                &mut returned,
+                std::ptr::null_mut(),
+            );
+            assert!(
+                ok != 0,
+                "cannot {what} {letter}: (in use, or the system drive?): {}",
+                std::io::Error::last_os_error()
+            );
+        }
+        CloseHandle(volume);
+    }
+    purge_standby_list();
+}
+
+#[cfg(not(windows))]
+fn make_cold(_: &Path) {}
+
+/// Drop Windows' cached file data (the standby list).
 #[cfg(windows)]
 fn purge_standby_list() {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LUID};
@@ -408,9 +491,6 @@ fn purge_standby_list() {
         }
     }
 }
-
-#[cfg(not(windows))]
-fn purge_standby_list() {}
 
 criterion_group!(benches, listing);
 criterion_main!(benches);
