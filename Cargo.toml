@@ -17,6 +17,8 @@ dirstats-gui = { path = "crates/dirstats-gui", version = "0.1.0" }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal", "pollster"] }
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 # Headless GUI harness with an offscreen wgpu renderer; only the e2e tests use it.
+# On Windows, Cargo.lock must give gpu-allocator the same `windows` version as
+# wgpu-hal (0.58), not the 0.56 that trash uses, or wgpu-hal does not compile.
 egui_kittest = { version = "0.33", features = ["eframe", "wgpu"] }
 clap = { version = "4.5", features = ["derive"] }
 open = "5"
