@@ -1838,7 +1838,10 @@ impl Gui {
             let layout = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
             let mut crumb_ui = ui.new_child(egui::UiBuilder::new().max_rect(name_cell).layout(layout));
             let clip = ui.clip_rect();
-            crumb_ui.set_clip_rect(egui::Rect::from_x_y_ranges(name_cell.x_range().intersection(clip.x_range()), clip.y_range()));
+            // Clip to the column, but leave the cell's padding for the hover
+            // pill, which reaches a little past the text on either side.
+            let clip_x = name_cell.x_range().expand(pad - 1.0).intersection(clip.x_range());
+            crumb_ui.set_clip_rect(egui::Rect::from_x_y_ranges(clip_x, clip.y_range()));
             crumb_ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
             let crumbs = self.app.breadcrumbs();
             let body_font = egui::TextStyle::Body.resolve(crumb_ui.style());
