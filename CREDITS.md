@@ -49,12 +49,17 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
 - By Google
 - License: Apache-2.0 (`crates/dirstats-gui/assets/material-symbols/LICENSE`),
   used in `dirstats-gui` under GPL-3.0-or-later.
-- Glyphs used: `chevron_right` (also mirrored for back), `expand_more`,
-  `content_copy`, `open_in_new`, `delete`, `undo` and `view_column`, all from Material
-  Symbols Outlined at 24px. Their SVG path data is inlined in the `icons`
-  module of `crates/dirstats-gui/src/lib.rs` and rasterised at run time;
-  the module header carries the attribution. The first two SVGs are also
-  vendored in `crates/dirstats-gui/assets/material-symbols/`.
+- Glyphs used: `chevron_right` (also mirrored for back),
+  `keyboard_arrow_down`, `content_copy`, `open_in_new`, `delete`, `undo`,
+  `view_column`, `home`, `storage`, `folder`, `folder_open`, `cloud_off`
+  and `cloud`, all from Material Symbols Outlined at 24px.
+- Sources: `crates/dirstats-gui/assets/material-symbols/` holds each SVG
+  unmodified, from `symbols/web/<name>/materialsymbolsoutlined/<name>_24px.svg`
+  at upstream commit `27e9ef1dbeedc13d682fece4a58e1eda4cb0961a`
+  (`expand_more.svg` is kept there too but not used). The only conversion
+  is copying each file's `d` attribute into `crates/dirstats-gui/src/icons.rs`,
+  where it is rasterised at run time; a unit test there checks every
+  inlined path against its SVG.
 
 ## egui / eframe — GUI toolkit
 
