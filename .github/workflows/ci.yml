@@ -50,8 +50,9 @@ jobs:
       - name: Install lavapipe
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
-      # Includes the ignored test that scans the runner's whole system disk.
-      - run: cargo test -p dirstats-gui --features e2e,egui-fonts --locked -- --include-ignored --nocapture
+      # Includes the ignored tests: the one that scans the runner's whole
+      # system disk, and the one that moves a fixture file to its trash.
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash --locked -- --include-ignored --nocapture
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4

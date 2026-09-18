@@ -38,6 +38,16 @@ fn harness(root: &Path) -> Harness<'static, Gui> {
     })
 }
 
+/// A fresh fixture directory. On Unix it goes under `/tmp` rather than the
+/// per-user temp dir (`/var/folders/..` on macOS), so the path in the
+/// toolbar says nothing about the machine and screenshots can be shared.
+fn fixture_dir() -> tempfile::TempDir {
+    #[cfg(unix)]
+    return tempfile::Builder::new().prefix("dirstats-e2e-").tempdir_in("/tmp").unwrap();
+    #[cfg(not(unix))]
+    return tempfile::Builder::new().prefix("dirstats-e2e-").tempdir().unwrap();
+}
+
 /// Step frames until the scan is adopted, then a few more so the treemap
 /// and its texture are built.
 fn wait_for_scan(harness: &mut Harness<'_, Gui>, limit: Duration) {
@@ -92,7 +102,7 @@ fn assert_scanned(harness: &Harness<'_, Gui>) {
 
 #[test]
 fn fixture_scan_lists_and_zooms() {
-    let root = tempfile::tempdir().unwrap();
+    let root = fixture_dir();
     std::fs::create_dir_all(root.path().join("big/nested")).unwrap();
     std::fs::create_dir(root.path().join("small")).unwrap();
     std::fs::write(root.path().join("big/movie.mkv"), vec![0_u8; 300_000]).unwrap();
@@ -160,4 +170,170 @@ fn real_disk_scan() {
         assert!(tree.size(dir) > 1 << 30);
     }
     screenshot(&mut harness, "real-disk");
+}
+
+/// The fixture the context-menu tests share: `big/` (with `movie.mkv` and
+/// `nested/archive.zip`), `readme.md` and `small/notes.txt`, sizes well apart.
+fn menu_fixture() -> tempfile::TempDir {
+    let root = fixture_dir();
+    std::fs::create_dir_all(root.path().join("big/nested")).unwrap();
+    std::fs::create_dir(root.path().join("small")).unwrap();
+    std::fs::write(root.path().join("big/movie.mkv"), vec![0_u8; 600_000]).unwrap();
+    std::fs::write(root.path().join("big/nested/archive.zip"), vec![0_u8; 200_000]).unwrap();
+    std::fs::write(root.path().join("small/notes.txt"), vec![0_u8; 10_000]).unwrap();
+    std::fs::write(root.path().join("readme.md"), vec![0_u8; 50_000]).unwrap();
+    root
+}
+
+/// A real right click at `pos`, then a frame for the menu to appear.
+fn right_click_at(harness: &mut Harness<'_, Gui>, pos: egui::Pos2) {
+    harness.event(egui::Event::PointerMoved(pos));
+    harness.step();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
+        harness.step();
+    }
+    harness.step();
+}
+
+fn right_click(harness: &mut Harness<'_, Gui>, label: &str) {
+    let pos = harness.get_by_label(label).rect().center();
+    right_click_at(harness, pos);
+}
+
+/// Screen position of the middle of `node`'s box in the treemap.
+fn treemap_point(harness: &Harness<'_, Gui>, name: &str) -> egui::Pos2 {
+    let gui = harness.state();
+    let tree = gui.app.tree.as_ref().unwrap();
+    let map = gui.map.as_ref().expect("a treemap");
+    let item = map.items.iter().find(|item| item.leaf && *tree.node(item.node).name == *std::ffi::OsStr::new(name)).unwrap_or_else(|| panic!("no box for {name}"));
+    // The map is the only image the size of its layout.
+    let size = egui::vec2(map.width as f32, map.height as f32);
+    let image = harness
+        .get_all_by_role(egui::accesskit::Role::Image)
+        .map(|node| node.rect())
+        .find(|rect| (rect.size() - size).length() < 2.0)
+        .expect("the treemap image");
+    let r = item.rect;
+    image.min + egui::vec2((r.left + r.right) as f32 / 2.0, (r.top + r.bottom) as f32 / 2.0)
+}
+
+fn dir_name(harness: &Harness<'_, Gui>) -> String {
+    let gui = harness.state();
+    gui.app.tree.as_ref().unwrap().node(gui.app.dir().unwrap()).name.to_string_lossy().into_owned()
+}
+
+#[test]
+fn context_menu_on_a_row_zooms_into_the_folder() {
+    let root = menu_fixture();
+    let mut harness = harness(root.path());
+    wait_for_scan(&mut harness, Duration::from_secs(30));
+    assert_scanned(&harness);
+
+    right_click(&mut harness, "big/");
+    // The menu is open, headed by the folder's name.
+    harness.get_by_label("Zoom in");
+    harness.get_by_label("Copy path");
+    assert!(harness.query_by_label("Zoom in to containing folder").is_none());
+    screenshot(&mut harness, "context-menu-row");
+
+    click(&mut harness, "Zoom in");
+    harness.step();
+    harness.step();
+    assert_eq!(dir_name(&harness), "big");
+    assert!(harness.state().app.can_back());
+    assert!(harness.query_by_label("Copy path").is_none(), "menu still open");
+    harness.get_by_label("movie.mkv");
+    screenshot(&mut harness, "context-menu-row-zoomed");
+}
+
+#[test]
+fn context_menu_copies_a_path_and_closes_on_escape() {
+    let root = menu_fixture();
+    let mut harness = harness(root.path());
+    wait_for_scan(&mut harness, Duration::from_secs(30));
+    assert_scanned(&harness);
+
+    // A file in the folder already shown has nothing to zoom into.
+    right_click(&mut harness, "readme.md");
+    harness.get_by_label("Copy path");
+    assert!(harness.query_by_label("Zoom in").is_none());
+    assert!(harness.query_by_label("Zoom in to containing folder").is_none());
+    screenshot(&mut harness, "context-menu-file");
+
+    harness.key_press(Key::Escape);
+    harness.step();
+    assert!(harness.query_by_label("Copy path").is_none(), "Escape left the menu open");
+
+    right_click(&mut harness, "readme.md");
+    click(&mut harness, "Copy path");
+    harness.step();
+    let message = harness.state().app.message.clone().unwrap_or_default();
+    assert!(message.starts_with("copied ") && message.ends_with("readme.md"), "{message:?}");
+    assert!(harness.query_by_label("Copy path").is_none(), "menu still open");
+}
+
+#[test]
+fn context_menu_on_the_treemap_zooms_to_the_containing_folder() {
+    let root = menu_fixture();
+    let mut harness = harness(root.path());
+    wait_for_scan(&mut harness, Duration::from_secs(30));
+    assert_scanned(&harness);
+
+    let pos = treemap_point(&harness, "movie.mkv");
+    right_click_at(&mut harness, pos);
+    // A file below the shown folder zooms to the folder holding it.
+    harness.get_by_label("Zoom in to containing folder");
+    {
+        let gui = harness.state();
+        let tree = gui.app.tree.as_ref().unwrap();
+        let Some(crate::Selection::Node(selected)) = gui.selection else { panic!("right click did not select a box") };
+        assert_eq!(tree.node(selected).name.to_string_lossy(), "movie.mkv");
+    }
+    screenshot(&mut harness, "context-menu-treemap");
+
+    click(&mut harness, "Zoom in to containing folder");
+    harness.step();
+    harness.step();
+    assert_eq!(dir_name(&harness), "big");
+    screenshot(&mut harness, "context-menu-treemap-zoomed");
+}
+
+/// Moves a file from the test's own tempdir to the system trash, and puts it
+/// back where the platform allows.
+#[cfg(feature = "trash")]
+#[test]
+#[ignore = "moves a file to the system trash"]
+fn context_menu_moves_a_file_to_the_trash() {
+    use crate::menu::TRASH_NAME;
+
+    let root = menu_fixture();
+    let file = root.path().join("readme.md");
+    let mut harness = harness(root.path());
+    wait_for_scan(&mut harness, Duration::from_secs(30));
+    assert_scanned(&harness);
+
+    right_click(&mut harness, "readme.md");
+    screenshot(&mut harness, "context-menu-trash");
+    click(&mut harness, &format!("Move to {TRASH_NAME}"));
+    harness.step();
+    assert!(!file.exists(), "file still on disk: {:?}", harness.state().app.message);
+    {
+        let gui = harness.state();
+        let tree = gui.app.tree.as_ref().unwrap();
+        let node = gui.app.entries().iter().copied().find(|&id| *tree.node(id).name == *std::ffi::OsStr::new("readme.md")).unwrap();
+        assert!(gui.app.is_trashed(node));
+    }
+
+    // Opened again, the menu no longer offers the trash.
+    right_click(&mut harness, "readme.md");
+    assert!(harness.query_by_label(&format!("Move to {TRASH_NAME}")).is_none());
+    screenshot(&mut harness, "context-menu-trashed");
+    if harness.query_by_label("Put Back").is_some() {
+        click(&mut harness, "Put Back");
+        harness.step();
+        assert!(file.exists(), "not put back: {:?}", harness.state().app.message);
+    } else {
+        harness.get_by_label(&format!("In {TRASH_NAME}"));
+    }
 }
