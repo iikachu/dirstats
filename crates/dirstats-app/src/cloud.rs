@@ -98,6 +98,18 @@ pub fn evict(_path: &Path) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "no cloud storage on this platform"))
 }
 
+#[cfg(feature = "icloud")]
+impl crate::App {
+    /// Remove the local copy of a synced iCloud item, keeping it in the cloud.
+    pub fn evict_node(&mut self, id: crate::NodeId) -> io::Result<()> {
+        let path = self.path_of(id).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such entry"))?;
+        evict(&path)?;
+        self.evicted.insert(id);
+        self.message = Some(format!("removed download: {} (rescan to update sizes)", path.display()));
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

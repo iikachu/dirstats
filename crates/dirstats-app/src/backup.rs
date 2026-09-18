@@ -98,6 +98,18 @@ fn volume_root(path: &Path) -> Option<std::path::PathBuf> {
     path.ancestors().last().map(Path::to_path_buf)
 }
 
+impl crate::App {
+    /// Whether `id` is part of a Time Machine backup; see [`NOTE`].
+    #[must_use]
+    pub fn is_time_machine(&self, id: crate::NodeId) -> bool {
+        // By ancestor names rather than `tree.path`, which allocates, since
+        // front ends ask for every displayed row. The scan root's own path
+        // was covered by the volume probe.
+        let Some(tree) = &self.tree else { return false };
+        self.backup_volume || self.ancestor_or_self(id, |n| &*tree.node(n).name == std::ffi::OsStr::new("Backups.backupdb"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
