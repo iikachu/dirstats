@@ -1793,6 +1793,79 @@ impl Gui {
     /// bar, share, size, items, files, dirs and modified columns and the
     /// right edge of modified, straight from the header, so cells always
     /// line up with it.
+    /// The current directory as a fixed row above the list: its figures in
+    /// the usual columns, and the name cell holding the path as crumbs.
+    /// Ancestors are clickable and return the directory to zoom to; the row
+    /// itself takes no selection, hover, keyboard or menu.
+    fn current_dir_row(&self, ui: &mut egui::Ui, edges: [f32; 9], row_height: f32) -> Option<NodeId> {
+        let tree = self.app.tree.as_ref()?;
+        let dir = self.app.dir()?;
+        let node = tree.node(dir);
+        let size = tree.size(dir);
+        let parent_size = node.parent.map_or(size, |p| tree.size(p));
+        let share = format::percent(size, parent_size);
+        let pad = 6.0;
+        let mono = egui::TextStyle::Monospace.resolve(ui.style());
+        let (row_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), Sense::hover());
+        ui.painter().rect_filled(row_rect, 0.0, ui.visuals().faint_bg_color);
+        ui.painter().hline(row_rect.x_range(), row_rect.max.y, ui.visuals().widgets.noninteractive.bg_stroke);
+        let text = ui.visuals().text_color();
+        let (top, bottom) = (row_rect.min.y, row_rect.max.y);
+        let cell = |from: f32, to: f32| egui::Rect::from_min_max(egui::pos2(from, top), egui::pos2(to, bottom));
+
+        // Crumbs laid out from the right so the current name stays visible
+        // and far ancestors drop off the left when the column is narrow.
+        let name_cell = cell(edges[0], edges[1]).shrink2(egui::vec2(pad, 0.0));
+        let mut target = None;
+        if name_cell.width() > 4.0 {
+            let mut crumb_ui = ui.new_child(egui::UiBuilder::new().max_rect(name_cell).layout(egui::Layout::right_to_left(egui::Align::Center)));
+            crumb_ui.set_clip_rect(name_cell.intersect(ui.clip_rect()));
+            crumb_ui.spacing_mut().item_spacing.x = 2.0;
+            let crumbs = self.app.breadcrumbs();
+            for (i, &id) in crumbs.iter().enumerate().rev() {
+                let mut name = tree.node(id).name.to_string_lossy().into_owned();
+                if i + 1 == crumbs.len() {
+                    name.push('/');
+                    crumb_ui.add(egui::Label::new(egui::RichText::new(name).strong().color(text)).truncate().selectable(false));
+                } else {
+                    let (rect, _) = crumb_ui.allocate_exact_size(egui::vec2(14.0, 14.0), Sense::hover());
+                    icons::paint(crumb_ui.painter(), rect, icons::Glyph::ChevronRight, crumb_ui.visuals().weak_text_color());
+                    let link = crumb_ui.add(egui::Label::new(egui::RichText::new(name).color(text)).sense(Sense::click()).selectable(false));
+                    if link.hovered() {
+                        crumb_ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if link.clicked() {
+                        target = Some(id);
+                    }
+                }
+            }
+        }
+
+        let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
+        if edges[2] - edges[1] > 0.0 && bar.width() > 0.0 {
+            ui.painter().rect_filled(bar, 2.0, ui.visuals().extreme_bg_color);
+            let mut filled = bar;
+            filled.set_width(bar.width() * (share / 100.0) as f32);
+            ui.painter().rect_filled(filled, 2.0, ui.visuals().weak_text_color());
+        }
+        let figures = [
+            (edges[2], edges[3], format!("{share:.1}")),
+            (edges[3], edges[4], format::size(size)),
+            (edges[4], edges[5], (node.file_count + node.dir_count).to_string()),
+            (edges[5], edges[6], node.file_count.to_string()),
+            (edges[6], edges[7], node.dir_count.to_string()),
+            (edges[7], edges[8], node.modified.map(format_time).unwrap_or_default()),
+        ];
+        for (from, to, value) in figures {
+            let c = cell(from, to);
+            if c.width() <= 0.0 {
+                continue;
+            }
+            ui.painter().with_clip_rect(c).text(egui::pos2(c.max.x - pad, c.center().y), egui::Align2::RIGHT_CENTER, value, mono.clone(), text);
+        }
+        target
+    }
+
     fn entry_list(&mut self, ui: &mut egui::Ui, edges: [f32; 9], row_height: f32) {
         if self.app.tree.is_none() {
             ui.label("waiting for scan…");
@@ -1838,6 +1911,10 @@ impl Gui {
                 scroll = scroll.vertical_scroll_offset(offset.max(0.0));
             }
         }
+        // Pinned first row: the current directory, with its ancestors as
+        // clickable crumbs for moving back up the tree.
+        let zoom_up = self.current_dir_row(ui, edges, row_height);
+
         let scroll_id = ui.id().with("tree-scroll");
         let output = scroll.show_rows(ui, row_height, rows.len(), |ui, range| {
             for (row_index, &(id, depth)) in rows.iter().enumerate().take(range.end).skip(range.start) {
@@ -2004,6 +2081,11 @@ impl Gui {
             }
         });
         ui.ctx().memory_mut(|m| m.data.insert_temp(scroll_id, output.state.offset.y));
+        if let Some(id) = zoom_up
+            && self.app.zoom_to(id)
+        {
+            self.map_key = None;
+        }
         if let Some(id) = toggle {
             self.app.toggle_expanded(id);
         }
