@@ -21,8 +21,8 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 rayon.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-# Emptying the standby list for cold-cache benches.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
+# Emptying the standby list for cold-cache benches, and the raw listing.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
 
 [[bench]]
 name = "listing"

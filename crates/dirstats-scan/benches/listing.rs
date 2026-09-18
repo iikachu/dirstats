@@ -9,10 +9,14 @@
 //! `FindNextFileW`; its `DirEntry::metadata` comes from the find data, so it
 //! costs no extra call per entry either.
 //!
-//! Three scanners run over each root, all with the same thread count:
+//! These scanners run over each root, all with the same thread count:
 //!
 //! - `dua-core`: `dua_core::walk`, counting files and summing lengths.
 //! - `std`: `std::fs::read_dir` on a rayon pool, doing the same.
+//! - `raw` (Windows only): the same rayon walk, but listing each directory
+//!   with `FileIdBothDirectoryInfo` directly into a per-thread buffer. If it
+//!   matches `std`, dua-core's cost is in its walker, not in the Windows
+//!   call.
 //! - `scan`: `dirstats_scan::scan`, the whole scan including the tree.
 //!
 //! Each root is timed warm (a rescan) and, on Windows, cold (standby list
@@ -96,6 +100,105 @@ fn std_walk(root: &Path, pool: &rayon::ThreadPool) -> Totals {
     }
 }
 
+/// The `std` walk, listing with `FileIdBothDirectoryInfo` instead.
+#[cfg(windows)]
+fn raw_walk(root: &Path, pool: &rayon::ThreadPool) -> Totals {
+    use std::cell::RefCell;
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_BOTH_DIR_INFO, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdBothDirectoryInfo, GetFileInformationByHandleEx,
+        OPEN_EXISTING,
+    };
+
+    thread_local! {
+        // Same size as dua-core's, but allocated once per thread.
+        static BUFFER: RefCell<Vec<u64>> = RefCell::new(vec![0; 8 * 1024]);
+    }
+
+    fn visit(dir: &Path, files: &AtomicU64, bytes: &AtomicU64) {
+        let wide: Vec<u16> = dir.as_os_str().encode_wide().chain([0]).collect();
+        // SAFETY: `wide` is null-terminated; the other arguments follow the
+        // CreateFileW contract.
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                FILE_LIST_DIRECTORY,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                std::ptr::null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return;
+        }
+        let mut subdirs = Vec::new();
+        let (mut local_files, mut local_bytes) = (0, 0);
+        BUFFER.with_borrow_mut(|buffer| {
+            loop {
+                let len = (buffer.len() * 8) as u32;
+                // SAFETY: the handle is open and the buffer is writable and
+                // 8-byte aligned for `len` bytes.
+                let ok = unsafe {
+                    GetFileInformationByHandleEx(
+                        handle,
+                        FileIdBothDirectoryInfo,
+                        buffer.as_mut_ptr().cast(),
+                        len,
+                    )
+                };
+                if ok == 0 {
+                    break;
+                }
+                let base = buffer.as_ptr().cast::<u8>();
+                let mut offset = 0;
+                loop {
+                    // SAFETY: the call filled the buffer with a chain of
+                    // records, each starting at an aligned offset in it.
+                    let info = unsafe { &*base.add(offset).cast::<FILE_ID_BOTH_DIR_INFO>() };
+                    let name = unsafe {
+                        std::slice::from_raw_parts(
+                            info.FileName.as_ptr(),
+                            info.FileNameLength as usize / 2,
+                        )
+                    };
+                    if info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+                        if info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT == 0
+                            && name != [46]
+                            && name != [46, 46]
+                        {
+                            subdirs.push(dir.join(OsString::from_wide(name)));
+                        }
+                    } else if info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+                        local_files += 1;
+                        local_bytes += info.EndOfFile as u64;
+                    }
+                    if info.NextEntryOffset == 0 {
+                        break;
+                    }
+                    offset += info.NextEntryOffset as usize;
+                }
+            }
+        });
+        // SAFETY: the handle came from a successful CreateFileW.
+        unsafe { CloseHandle(handle) };
+        files.fetch_add(local_files, Ordering::Relaxed);
+        bytes.fetch_add(local_bytes, Ordering::Relaxed);
+        subdirs.par_iter().for_each(|sub| visit(sub, files, bytes));
+    }
+    let (files, bytes) = (AtomicU64::new(0), AtomicU64::new(0));
+    pool.install(|| visit(root, &files, &bytes));
+    Totals {
+        files: files.into_inner(),
+        bytes: bytes.into_inner(),
+    }
+}
+
 fn dirstats_scan(root: &Path, options: &dirstats_scan::ScanOptions) -> Totals {
     let tree = dirstats_scan::scan(root, options).unwrap();
     let node = tree.node(tree.root());
@@ -167,6 +270,8 @@ fn roots() -> (Vec<(String, PathBuf)>, Option<tempfile::TempDir>) {
     }
 }
 
+type Scanner<'a> = Box<dyn Fn() -> Totals + 'a>;
+
 fn listing(c: &mut Criterion) {
     let (roots, _keep) = roots();
     let options = dirstats_scan::ScanOptions {
@@ -201,11 +306,14 @@ fn listing(c: &mut Criterion) {
             expected.bytes
         );
 
-        let scanners: [(&str, &dyn Fn() -> Totals); 3] = [
-            ("dua-core", &|| dua_core_walk(root, threads)),
-            ("std", &|| std_walk(root, &pool)),
-            ("scan", &|| dirstats_scan(root, &options)),
+        #[cfg_attr(not(windows), allow(unused_mut))]
+        let mut scanners: Vec<(&str, Scanner)> = vec![
+            ("dua-core", Box::new(|| dua_core_walk(root, threads))),
+            ("std", Box::new(|| std_walk(root, &pool))),
+            ("scan", Box::new(|| dirstats_scan(root, &options))),
         ];
+        #[cfg(windows)]
+        scanners.insert(2, ("raw", Box::new(|| raw_walk(root, &pool))));
         for cold in [false, true] {
             if cold && !cold_runs {
                 continue;
@@ -222,8 +330,8 @@ fn listing(c: &mut Criterion) {
             } else {
                 group.sample_size(20);
             }
-            for (name, scan) in scanners {
-                group.bench_function(BenchmarkId::new(name, label), |b| {
+            for (name, scan) in &scanners {
+                group.bench_function(BenchmarkId::new(*name, label), |b| {
                     b.iter_custom(|iters| {
                         let mut total = Duration::ZERO;
                         for _ in 0..iters {
