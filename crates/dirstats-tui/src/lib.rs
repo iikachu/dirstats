@@ -132,7 +132,7 @@ fn footer_line(app: &App) -> Line<'static> {
     if let Some(scan) = &app.scan {
         return Line::from(Span::styled(
             format!(
-                " scanning {}  {} entries, {} errors, {:.1}s   q quit",
+                " scanning {}  {} entries, {} skipped, {:.1}s   q quit",
                 scan.root.display(),
                 scan.entries(),
                 scan.errors(),

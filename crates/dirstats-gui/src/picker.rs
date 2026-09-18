@@ -145,7 +145,7 @@ impl Gui {
                 "Scanning".to_string(),
                 scan.root.display().to_string(),
                 format!(
-                    "{} entries · {} errors · {:.1}s",
+                    "{} entries · {} skipped · {:.1}s",
                     scan.entries(),
                     scan.errors(),
                     scan.started.elapsed().as_secs_f64()
