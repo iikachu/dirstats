@@ -28,11 +28,12 @@ use egui_kittest::kittest::Queryable;
 
 use crate::{Gui, configure};
 
-/// A window-sized harness around the real [`Gui`], scanning `root`.
+/// A window-sized harness around the real [`Gui`], scanning `root`, in the
+/// light theme (kittest defaults to dark).
 fn harness(root: &Path) -> Harness<'static, Gui> {
     let mut app = App::default();
     app.start_scan(root);
-    Harness::builder().with_size(egui::vec2(1280.0, 800.0)).wgpu().build_eframe(move |cc| {
+    Harness::builder().with_size(egui::vec2(1280.0, 800.0)).with_theme(egui::Theme::Light).wgpu().build_eframe(move |cc| {
         configure(&cc.egui_ctx);
         Gui::new(app)
     })
