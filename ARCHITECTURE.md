@@ -40,24 +40,38 @@ separate, defaults chosen for the common case.
 
 ```toml
 [features]
-default = ["gui", "trash"]
-gui   = ["dep:dirstats-gui"]        # egui window
-tui   = ["dep:dirstats-tui"]        # ratatui + crossterm front end; --tui at run time
-trash = ["dirstats-app/trash"]      # move-to-trash action
-serde = ["dirstats-scan/serde"]     # save/load scans
+default    = ["gui", "tui", "open", "trash", "icloud"]
+gui        = ["dep:dirstats-gui"]  # egui window
+tui        = ["dep:dirstats-tui"]  # ratatui + crossterm; --tui, or chosen when there is no desktop
+open       = [...]                 # open and reveal via the desktop
+trash      = [...]                 # move-to-trash action
+icloud     = [...]                 # iCloud "Remove Download" (macOS; no-op elsewhere)
+png        = ["dep:png"]           # --png writes a cushion treemap image
+egui-fonts = [...]                 # egui's bundled fonts, for comparison
 ```
 
-Per-crate features:
-- `dirstats-scan`: `serde`; `macos-fast`
-  (getattrlistbulk, already via dua-core), `windows-fast`
-  (FileIdBothDirectoryInfo, already via dua-core). Fast paths are on by
-  default on their platform and fall back to the generic walker.
-- `dirstats-treemap`: `parallel` (rayon cushion rendering), `png`
-  (example output).
+`open`, `trash` and `icloud` are owned by `dirstats-app` and forwarded to
+whichever front ends are built with `dep?/feature`.
 
-`cargo build` gives the GUI binary. `cargo build --no-default-features`
-gives only the library. `cargo build --features tui` adds the terminal
-front end.
+With both front ends built the binary picks one at run time
+(`dirstats::session`): `--tui` or `--gui` decide outright; otherwise it
+opens a window when the session looks graphical (`WAYLAND_DISPLAY` or
+`DISPLAY` on Linux and the BSDs, not an SSH session on macOS and Windows),
+uses the terminal when it does not, and falls back to the terminal if the
+window fails to open. With no terminal either, it prints the summary.
+
+Per-crate features:
+- `dirstats-app`: `open`, `trash`, `icloud`; none by default.
+- `dirstats-gui`: forwards those, plus `egui-fonts` and `e2e` (headless
+  end-to-end tests, CI only).
+- `dirstats-tui`: forwards `open` and `trash`.
+- `dirstats-treemap`: `parallel` (rayon cushion rendering), on by default.
+- `dirstats-scan`: none yet. Fast paths are chosen by `cfg` per platform;
+  `serde` for saved scans is planned.
+
+`cargo build` gives the binary with both front ends.
+`cargo build --no-default-features` still builds a binary, which prints
+the summary. CI checks every feature on its own and with defaults off.
 
 ## Platform and filesystem support
 
