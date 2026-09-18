@@ -112,5 +112,4 @@ Run the first command above (add `trash` to run the trash test, which
 is ignored by default), then `cargo test --workspace --locked` to show
 ordinary tests are untouched. Open one of the PNGs and look at it. On a PR,
 the `gui e2e` job's `e2e-screenshots-<os>` artifacts are the evidence for
-Linux and Windows; say plainly which platforms you ran yourself. To put
-them in the PR as before/after images, follow `gui-pr-screenshots`.
+Linux and Windows; say plainly which platforms you ran yourself.
