@@ -48,7 +48,7 @@ serde = ["dirstats-scan/serde"]     # save/load scans
 ```
 
 Per-crate features:
-- `dirstats-scan`: `serde`. Bulk listing (getattrlistbulk on macOS,
+- `dirstats-scan`: none yet (`serde` for saving scans is planned). Bulk listing (getattrlistbulk on macOS,
   FileIdBothDirectoryInfo on Windows) comes from dua-core and needs no
   feature.
 - `dirstats-treemap`: `parallel` (rayon cushion rendering), `png`
