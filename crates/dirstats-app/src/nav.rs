@@ -8,6 +8,17 @@
 
 //! Moving around a finished tree: the current directory and its
 //! selection, the way back, and which directories a tree view has open.
+//!
+//! Everything here is a method on [`App`]:
+//!
+//! - where you are: [`App::dir`], [`App::entries`], [`App::selected`],
+//!   [`App::breadcrumbs`]
+//! - moving the selection: [`App::select`], [`App::move_selection`],
+//!   [`App::select_first`], [`App::select_last`]
+//! - moving between directories: [`App::enter`], [`App::back`],
+//!   [`App::can_back`], [`App::zoom_to`], [`App::reveal`]
+//! - tree views: [`App::toggle_expanded`], [`App::expand_to`],
+//!   [`App::tree_rows`]
 
 use crate::{App, NodeId};
 

@@ -10,6 +10,9 @@
 //! backup disk plugged into another system is just files to that system:
 //! it is labelled as a macOS backup, and nothing is refused. Only the
 //! volume probe touches the disk.
+//!
+//! [`App::is_time_machine`](crate::App::is_time_machine) asks the same of
+//! a scanned node.
 
 use std::path::{Component, Path};
 

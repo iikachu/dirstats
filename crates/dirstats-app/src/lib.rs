@@ -18,12 +18,12 @@ pub mod cloud;
 pub mod delete;
 pub mod format;
 pub mod locations;
-mod nav;
+pub mod nav;
 #[cfg(feature = "open")]
-mod open;
+pub mod open;
 pub mod scanner;
 #[cfg(feature = "trash")]
-mod trash;
+pub mod trash;
 
 #[cfg(feature = "delete")]
 pub use delete::{DeleteFailure, DeleteOutcome, DeleteStatus, RunningDelete};

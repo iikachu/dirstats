@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // by dirstats contributors
 
-//! Permanent deletion on Windows, bypassing the Recycle Bin.
+//! Permanent deletion on Windows and Linux, bypassing the trash.
 //!
 //! The tree is not re-enumerated: the scan already knows every path, so
 //! the worker walks the scanned nodes, removes files first and then
@@ -9,6 +9,10 @@
 //! are removed as links; their targets are never entered. Nothing here is
 //! reversible, so front ends gate it behind [`crate::App::permanent_delete`]
 //! and confirm each deletion themselves.
+//!
+//! Front ends start one with `App::delete_node_permanently` and adopt the
+//! result with `App::poll_delete` each tick; both exist on Windows and
+//! Linux only.
 
 use dirstats_scan::{Kind, NodeId, Tree};
 use std::io;

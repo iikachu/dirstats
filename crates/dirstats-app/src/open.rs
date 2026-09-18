@@ -6,7 +6,8 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-//! Opening entries with the desktop's default handler.
+//! Opening entries with the desktop's default handler: [`App::open_selected`]
+//! and [`App::open_node`]. Needs the `open` feature.
 
 use crate::{App, NodeId};
 use std::io;

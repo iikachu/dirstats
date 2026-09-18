@@ -7,7 +7,16 @@
 // (at your option) any later version.
 
 //! Moving entries to the platform trash (the Recycle Bin on Windows) and
-//! putting them back.
+//! putting them back. Needs the `trash` feature.
+//!
+//! - [`App::trash_selected`] and [`App::trash_node`] move an entry to the
+//!   trash; the tree is not rescanned, and [`App::is_trashed`] says what
+//!   is gone.
+//! - [`App::can_put_back`] and [`App::put_back`] restore it, when the
+//!   platform said where it went.
+//!
+//! [`App::check_removable`] refuses the scan root, drive roots, the home
+//! folder and Time Machine backups before anything moves.
 
 use crate::{App, NodeId};
 use std::io;

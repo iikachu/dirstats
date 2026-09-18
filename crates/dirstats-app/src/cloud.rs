@@ -3,6 +3,9 @@
 
 //! iCloud Drive items on macOS: whether a path is one, and evicting its
 //! local copy so the space comes back without deleting anything.
+//!
+//! On an [`App`](crate::App), `App::evict_node` (`icloud` feature) does the
+//! eviction and records it for `App::is_evicted`.
 
 use std::io;
 use std::path::Path;
