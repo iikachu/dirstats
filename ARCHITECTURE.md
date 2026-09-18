@@ -67,7 +67,7 @@ accounting for each well-known filesystem. The scan layer exposes one
 
 | Concern | macOS | Linux | Windows |
 |---|---|---|---|
-| Bulk enumeration | `getattrlistbulk` (dua-core) | `getdents64` + `statx` in inode order (`linux-fast`, done) | `FileIdBothDirectoryInfo` (dua-core); NTFS master file table for whole drives (`dirstats-ntfs`, done) |
+| Bulk enumeration | `getattrlistbulk` (dua-core) | `std::fs` via dua-core, which already uses `getdents64` + `statx`; an experimental walker with inode order, work stealing, io_uring and XFS bulkstat variants (`linux-fast`) is off until `examples/walkbench.rs` shows one winning | `FileIdBothDirectoryInfo` (dua-core); NTFS master file table for whole drives (`dirstats-ntfs`, done) |
 | Volume boundary | `st_dev` | `st_dev` / `statx` mount id | volume serial from `GetFileInformationByHandle` (planned) |
 | Hard links | `st_nlink` + inode set | `st_nlink` + inode set | file ID set; `nlink` via handle (planned) |
 | Allocated size | `st_blocks`; APFS clone accounting (planned) | `st_blocks`; cap inflated NTFS mounts (done) | allocation size from enumeration; compressed and sparse (planned) |

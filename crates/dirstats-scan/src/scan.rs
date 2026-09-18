@@ -24,6 +24,16 @@ use std::time::SystemTime;
 #[cfg(all(target_os = "linux", feature = "linux-fast"))]
 mod linux;
 
+/// Whether this kernel lets the process create an io_uring (it can be
+/// disabled by sysctl or a seccomp filter); the walker falls back without one.
+#[doc(hidden)]
+pub fn linux_io_uring_available() -> bool {
+    #[cfg(all(target_os = "linux", feature = "linux-fast"))]
+    return linux::io_uring_available();
+    #[allow(unreachable_code)]
+    false
+}
+
 #[derive(Clone, Debug)]
 pub struct ScanOptions {
     /// Worker threads for directory reads.
@@ -36,6 +46,57 @@ pub struct ScanOptions {
     /// Use this platform's filesystem fast path when one is compiled in and
     /// applies to the root; `false` always takes the generic walker.
     pub fast_path: bool,
+    /// Experimental Linux walker settings, compared by `examples/walkbench.rs`.
+    /// Off by default: none has yet beaten dua-core's `std::fs` walker.
+    #[doc(hidden)]
+    pub linux: LinuxWalker,
+}
+
+impl LinuxWalker {
+    /// The walker as first tried (#4): one locked queue, inode order.
+    pub fn original() -> Self {
+        Self { enabled: true, inode_order: true, ..Self::default() }
+    }
+
+    /// Every variant worth measuring, named for reports. The first is
+    /// dua-core's walker, the baseline.
+    pub fn variants() -> Vec<(&'static str, Self)> {
+        let steal = Self { enabled: true, work_stealing: true, ..Self::default() };
+        vec![
+            ("dua-core (std::fs)", Self::default()),
+            ("queue + inode order (#4)", Self::original()),
+            ("queue", Self { enabled: true, ..Self::default() }),
+            ("stealing", steal.clone()),
+            ("stealing + inode order", Self { inode_order: true, ..steal.clone() }),
+            ("stealing + io_uring", Self { io_uring: true, ..steal.clone() }),
+            ("stealing + io_uring + inode order", Self { io_uring: true, inode_order: true, ..steal.clone() }),
+            ("stealing + dont_sync", Self { dont_sync: true, ..steal.clone() }),
+            ("stealing + mount id", Self { mount_id: true, ..steal.clone() }),
+            ("stealing + xfs bulkstat", Self { xfs_bulkstat: true, ..steal }),
+        ]
+    }
+}
+
+/// Which variant of the experimental Linux walker to run. Ignored on other
+/// platforms and without the `linux-fast` feature.
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LinuxWalker {
+    /// Use the getdents64 + statx walker instead of dua-core's.
+    pub enabled: bool,
+    /// Stat each directory's entries in inode order rather than listing order.
+    pub inode_order: bool,
+    /// Share work through rayon's work-stealing pool instead of one locked queue.
+    pub work_stealing: bool,
+    /// Submit each directory's `statx` calls as one io_uring batch.
+    pub io_uring: bool,
+    /// Pass `AT_STATX_DONT_SYNC`: answer network and FUSE mounts from cached attributes.
+    pub dont_sync: bool,
+    /// Detect mount boundaries by mount id, so bind mounts are recognised.
+    pub mount_id: bool,
+    /// On XFS, as root, read every inode's attributes up front with
+    /// `XFS_IOC_BULKSTAT` and stat only directories while walking.
+    pub xfs_bulkstat: bool,
 }
 
 impl Default for ScanOptions {
@@ -46,6 +107,7 @@ impl Default for ScanOptions {
             count_hard_links_once: true,
             size_metric: SizeMetric::default(),
             fast_path: true,
+            linux: LinuxWalker::default(),
         }
     }
 }
@@ -73,6 +135,7 @@ pub fn scan_with(
     let root = root.as_ref();
     #[cfg(all(target_os = "linux", feature = "linux-fast"))]
     if options.fast_path
+        && options.linux.enabled
         && let Some(mut walk) = linux::Walk::start(root, options)
     {
         return build(root, options, cancel, progress, || walk.next(cancel));
@@ -687,20 +750,22 @@ mod tests {
 
         // Which of two links counts as the duplicate depends on arrival
         // order, which differs between walkers; compare with both counted.
-        let options = ScanOptions { threads: 3, count_hard_links_once: false, ..ScanOptions::default() };
-        assert!(linux::Walk::start(root, &options).is_some(), "the Linux walker runs here");
-        let links_once = ScanOptions { count_hard_links_once: true, ..options.clone() };
-        assert_eq!(scan(root, &links_once).unwrap().nodes().filter(|(_, n)| n.duplicate_link).count(), 1);
-        for metric in [SizeMetric::Apparent, SizeMetric::Allocated] {
-            let options = ScanOptions { size_metric: metric, ..options.clone() };
-            let describe = |tree: &Tree| {
-                tree.nodes()
-                    .map(|(id, n)| (tree.path(id), (n.kind, tree.size(id), n.file_count, n.dir_count, n.error, n.modified)))
-                    .collect::<BTreeMap<_, _>>()
-            };
-            let fast = scan(root, &options).unwrap();
-            let portable = walk_generic(root, &options, &AtomicBool::new(false), &Progress::default()).unwrap();
-            assert_eq!(describe(&fast), describe(&portable), "{metric:?}");
+        for (name, linux) in LinuxWalker::variants().into_iter().skip(1) {
+            let options = ScanOptions { threads: 3, count_hard_links_once: false, linux, ..ScanOptions::default() };
+            assert!(linux::Walk::start(root, &options).is_some(), "{name}: the Linux walker runs here");
+            let links_once = ScanOptions { count_hard_links_once: true, ..options.clone() };
+            assert_eq!(scan(root, &links_once).unwrap().nodes().filter(|(_, n)| n.duplicate_link).count(), 1, "{name}");
+            for metric in [SizeMetric::Apparent, SizeMetric::Allocated] {
+                let options = ScanOptions { size_metric: metric, ..options.clone() };
+                let describe = |tree: &Tree| {
+                    tree.nodes()
+                        .map(|(id, n)| (tree.path(id), (n.kind, tree.size(id), n.file_count, n.dir_count, n.error, n.modified)))
+                        .collect::<BTreeMap<_, _>>()
+                };
+                let fast = scan(root, &options).unwrap();
+                let portable = walk_generic(root, &options, &AtomicBool::new(false), &Progress::default()).unwrap();
+                assert_eq!(describe(&fast), describe(&portable), "{name}, {metric:?}");
+            }
         }
     }
 
@@ -711,12 +776,15 @@ mod tests {
         for i in 0..50 {
             fs::create_dir(dir.path().join(format!("d{i}"))).unwrap();
         }
-        let cancel = AtomicBool::new(false);
-        let mut walk = linux::Walk::start(dir.path(), &ScanOptions::default()).unwrap();
-        assert!(walk.next(&cancel).is_some(), "the root comes first");
-        cancel.store(true, Ordering::Relaxed);
-        assert!(walk.next(&cancel).is_none());
-        drop(walk); // joins the workers; hangs if one missed the stop
+        for (name, linux) in LinuxWalker::variants().into_iter().skip(1) {
+            let cancel = AtomicBool::new(false);
+            let options = ScanOptions { linux, ..ScanOptions::default() };
+            let mut walk = linux::Walk::start(dir.path(), &options).unwrap();
+            assert!(walk.next(&cancel).is_some(), "{name}: the root comes first");
+            cancel.store(true, Ordering::Relaxed);
+            assert!(walk.next(&cancel).is_none(), "{name}");
+            drop(walk); // joins the workers; hangs if one missed the stop
+        }
     }
 
     #[cfg(target_os = "macos")]

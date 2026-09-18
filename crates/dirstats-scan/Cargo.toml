@@ -10,8 +10,9 @@ categories = ["filesystem"]
 
 [features]
 default = ["linux-fast"]
-# Walk Linux with getdents64 and statx instead of std::fs; no effect elsewhere.
-linux-fast = ["dep:libc"]
+# Build the experimental getdents64 + statx Linux walker (off at run time
+# unless ScanOptions::linux enables it); no effect elsewhere.
+linux-fast = ["dep:libc", "dep:rayon", "dep:io-uring"]
 
 [dependencies]
 # Parallel native directory traversal (MIT, by Sebastian Thiel).
@@ -25,6 +26,9 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
+# io_uring bindings (MIT OR Apache-2.0, by quininer and contributors).
+io-uring = { version = "0.7", optional = true }
 
 [[bench]]
 name = "scan"

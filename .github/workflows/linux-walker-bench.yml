@@ -1,0 +1,91 @@
+name: Linux walker bench
+
+# Times each experimental Linux walker variant against dua-core's walker on
+# ext4, XFS and NFS, cold and warm, and writes the tables to the job summary.
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: Cold runs per variant
+        default: "3"
+  pull_request:
+    paths:
+      - crates/dirstats-scan/**
+      - .github/workflows/linux-walker-bench.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  REPS: ${{ inputs.reps || '3' }}
+
+jobs:
+  bench:
+    name: bench (${{ matrix.fs }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        fs: [ext4, xfs, nfs]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p dirstats-scan --example walkbench
+      - name: Machine
+        run: |
+          uname -r; nproc; free -h; df -hT / /usr
+          sysctl kernel.io_uring_disabled || true
+          sudo lsblk -o NAME,SIZE,ROTA,TYPE,MOUNTPOINT
+
+      # /usr/share has hundreds of thousands of files. XFS gets a copy
+      # without large files (the count is what costs time, and the runner's
+      # disk is small); NFS exports it as it is.
+      - name: Prepare ${{ matrix.fs }}
+        run: |
+          set -eux
+          case "${{ matrix.fs }}" in
+            ext4)
+              echo "ROOT=/usr" >> "$GITHUB_ENV"
+              echo "LABEL=ext4, runner disk, /usr" >> "$GITHUB_ENV"
+              echo "SKIP=xfs bulkstat" >> "$GITHUB_ENV"
+              ;;
+            xfs)
+              sudo apt-get install -y -qq xfsprogs
+              sudo truncate -s 40G /mnt/xfs.img
+              sudo mkfs.xfs -q /mnt/xfs.img
+              sudo mkdir -p /xfs && sudo mount -o loop /mnt/xfs.img /xfs
+              sudo rsync -a --max-size=256k /usr/share/ /xfs/
+              echo "ROOT=/xfs" >> "$GITHUB_ENV"
+              echo "LABEL=XFS, loop image on /mnt, copy of /usr/share without files over 256 KiB" >> "$GITHUB_ENV"
+              echo "SKIP=none" >> "$GITHUB_ENV"
+              ;;
+            nfs)
+              sudo apt-get install -y -qq nfs-kernel-server
+              sudo mkdir -p /nfs
+              echo "/usr/share localhost(ro,no_subtree_check,no_root_squash)" | sudo tee /etc/exports
+              sudo exportfs -ra
+              sudo mount -t nfs -o vers=4.2 localhost:/usr/share /nfs
+              echo "ROOT=/nfs" >> "$GITHUB_ENV"
+              echo "LABEL=NFS 4.2 over loopback, /usr/share" >> "$GITHUB_ENV"
+              echo "SKIP=xfs bulkstat" >> "$GITHUB_ENV"
+              ;;
+          esac
+
+      - name: Cold
+        run: |
+          sudo target/release/examples/walkbench --root "$ROOT" --label "$LABEL" --reps "$REPS" --cold --skip "$SKIP" | tee -a bench.md
+      - name: Warm
+        run: |
+          sudo target/release/examples/walkbench --root "$ROOT" --label "$LABEL" --reps 7 --skip "$SKIP" | tee -a bench.md
+      - name: Summary
+        if: always()
+        run: cat bench.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-${{ matrix.fs }}
+          path: bench.md
