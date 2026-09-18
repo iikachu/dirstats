@@ -52,7 +52,7 @@ for lack of a cross C compiler; note it and rely on CI for that crate.
 | feature and `cfg` combinations are consistent | behaviour that needs administrator rights or a real NTFS volume |
 
 Behaviour is proven by the CI run on `windows-latest`, including the
-`gui e2e` job that scans `C:\` through the real entry point. Say in the
+`disk scan` job that scans `C:\` through the real entry point. Say in the
 hand-over which of the two you have: "type-checks for Windows" is not
 "works on Windows".
 

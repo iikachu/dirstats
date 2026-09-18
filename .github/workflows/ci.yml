@@ -82,9 +82,9 @@ jobs:
       - name: Install lavapipe
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
-      # Includes the ignored tests: the one that scans the runner's whole
-      # system disk, and the one that moves a fixture file to its trash.
-      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash,delete --locked -- --include-ignored --nocapture
+      # Fixture tests only, including the ignored one that moves a fixture
+      # file to the trash. The whole-disk scan has its own job, disk-scan.
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash,delete --locked -- --include-ignored --skip real_disk_scan --nocapture
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -109,13 +109,46 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: e2e
-      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash,delete --locked -- --include-ignored --nocapture
+      # A container's disk is only the image, so there is no disk scan here.
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash,delete --locked -- --include-ignored --skip real_disk_scan --nocapture
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-screenshots-archlinux
           path: e2e-out/*.png
+
+  # The GUI scanning each runner's whole system disk through the real entry
+  # point: minutes, not seconds, so it runs beside the fixture tests rather
+  # than holding them up. Its screenshots differ on every run, so they are
+  # uploaded under a name the PR screenshots bot doesn't collect.
+  disk-scan:
+    name: disk scan (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      DIRSTATS_E2E_OUT: ${{ github.workspace }}/e2e-out
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      - name: Install lavapipe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts,trash,delete --locked -- --ignored --exact e2e::real_disk_scan --nocapture
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disk-scan-screenshots-${{ matrix.os }}
+          path: e2e-out/*.png
+          if-no-files-found: warn
 
   ntfs-elevated:
     name: ntfs tests (windows, elevated)
