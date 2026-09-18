@@ -17,7 +17,7 @@ a front end.
 | Persist | `dirstats-scan` (feature `serde`) | Apache-2.0 | Save and load scans |
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
 | Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
-| App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash) |
+| App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash; on Windows also gated permanent delete), persisted settings |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
 
@@ -38,9 +38,9 @@ separate, defaults chosen for the common case.
 
 ```toml
 [features]
-default = ["tui", "trash"]
-tui   = ["dep:dirstats-tui"]        # ratatui + crossterm front end
-gui   = ["dep:dirstats-gui"]        # egui window; --gui at run time
+default = ["gui", "trash"]
+gui   = ["dep:dirstats-gui"]        # egui window
+tui   = ["dep:dirstats-tui"]        # ratatui + crossterm front end; --tui at run time
 trash = ["dirstats-app/trash"]      # move-to-trash action
 serde = ["dirstats-scan/serde"]     # save/load scans
 ```
@@ -53,8 +53,9 @@ Per-crate features:
 - `dirstats-treemap`: `parallel` (rayon cushion rendering), `png`
   (example output).
 
-`cargo build` gives the TUI binary. `cargo build --no-default-features`
-gives only the library. `cargo build --features gui` adds the GUI.
+`cargo build` gives the GUI binary. `cargo build --no-default-features`
+gives only the library. `cargo build --features tui` adds the terminal
+front end.
 
 ## Platform and filesystem support
 
@@ -81,7 +82,11 @@ the right strategy without per-entry cost.
   treemap from `dirstats-treemap::render` is uploaded as a texture and
   re-rendered only when the tree, directory, layout or panel size changes.
   Hover uses the grid hit-test index; click reveals, double-click zooms,
-  right-click opens or trashes.
+  right-click opens or trashes. On Windows the menu also offers permanent
+  deletion behind a one-time gate, done by the app's own bottom-up walker
+  (as WinDirStat does) rather than the shell, with its own confirmation,
+  progress and failure report; the Recycle Bin path stays with the trash
+  crate, which refuses rather than nukes items the bin cannot take.
 
 ## Roadmap
 

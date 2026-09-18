@@ -14,16 +14,17 @@ Inventory X behind one layered workspace; see [ARCHITECTURE.md](ARCHITECTURE.md)
 | [`dirstats`](crates/dirstats) | Library + binary; picks a front end by feature flag | GPL-3.0-or-later |
 
 ```sh
-cargo install --path crates/dirstats     # TUI with open and trash actions
-dirstats ~/Downloads                     # interactive
+cargo install --path crates/dirstats     # window, with open and trash actions
+dirstats                                 # pick home, a disk or root to scan
+dirstats ~/Downloads                     # scan a folder
 dirstats --summary ~/Downloads           # print the largest entries
-cargo run -p dirstats --features gui -- --gui ~/Downloads   # window
+cargo run -p dirstats --features tui -- --tui ~/Downloads   # terminal
 cargo run -p dirstats --features png -- --png map.png ~/Downloads   # --shading glow|flat
 ```
 
-Features of the `dirstats` crate: `tui` (default), `open` (default), `trash`
-(default), `png`, and `gui`. With both front ends built, `--gui` opens the
-window; a `gui`-only build always does. `--no-default-features` builds the
+Features of the `dirstats` crate: `gui` (default), `open` (default), `trash`
+(default), `png`, and `tui`. With both front ends built, `--tui` uses the
+terminal; a `tui`-only build always does. `--no-default-features` builds the
 library only.
 
 ## Library use

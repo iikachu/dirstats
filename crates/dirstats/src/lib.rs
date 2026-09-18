@@ -19,7 +19,7 @@ pub use dirstats_gui as gui;
 
 use clap::{Parser, ValueEnum};
 use dirstats_scan::{ScanOptions, SizeMetric};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 pub enum Metric {
@@ -58,9 +58,9 @@ pub enum ShadingStyle {
 #[derive(Debug, Parser)]
 #[command(name = "dirstats", version, about)]
 pub struct Cli {
-    /// Directory to scan.
-    #[arg(default_value = ".")]
-    pub path: PathBuf,
+    /// Directory to scan. Defaults to the current directory; the graphical
+    /// interface instead offers the home folder, disks and root to pick from.
+    pub path: Option<PathBuf>,
     /// Which size to sort and draw by.
     #[arg(short, long, value_enum, default_value_t)]
     pub metric: Metric,
@@ -76,10 +76,10 @@ pub struct Cli {
     /// Print the largest entries instead of opening an interface.
     #[arg(long)]
     pub summary: bool,
-    /// Open the graphical interface instead of the terminal one.
-    #[cfg(feature = "gui")]
+    /// Use the terminal interface instead of opening a window.
+    #[cfg(feature = "tui")]
     #[arg(long)]
-    pub gui: bool,
+    pub tui: bool,
     /// Write a cushion treemap PNG to this file and exit.
     #[cfg(feature = "png")]
     #[arg(long, value_name = "FILE")]
@@ -108,12 +108,42 @@ impl Cli {
         }
         options
     }
+
+    /// The directory to scan as an absolute, normalized path; the current
+    /// directory when none was given.
+    ///
+    /// The scan root's name becomes the tree's root name and is shown in
+    /// titles, breadcrumbs and messages, so a relative argument such as
+    /// `.`, `../x` or `x/` is resolved against the working directory and
+    /// cleaned of `.`, `..` and trailing separators first. Symlinks are
+    /// left alone so the user sees the path they typed, not its target.
+    pub fn scan_root(&self) -> std::io::Result<PathBuf> {
+        Ok(normalize(&std::path::absolute(self.path.as_deref().unwrap_or(Path::new(".")))?))
+    }
+}
+
+/// Remove `.` and resolve `..` components lexically in an absolute path.
+fn normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Never pop past the root (or drive prefix on Windows).
+                if !matches!(out.components().next_back(), None | Some(Component::RootDir | Component::Prefix(_))) {
+                    out.pop();
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Scan synchronously and print the largest entries under the root.
 pub fn print_summary(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
-    let tree = dirstats_scan::scan(&cli.path, &cli.scan_options())?;
+    let tree = dirstats_scan::scan(cli.scan_root()?, &cli.scan_options())?;
     let root = tree.root();
     println!(
         "{} entries, {} files, {} in {:.2?}",
@@ -134,7 +164,7 @@ pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::er
     use dirstats_treemap::render::{ExtensionColors, render};
     use dirstats_treemap::{Shading, Style, TreemapOptions};
 
-    let tree = dirstats_scan::scan(&cli.path, &cli.scan_options())?;
+    let tree = dirstats_scan::scan(cli.scan_root()?, &cli.scan_options())?;
     let style = match cli.layout {
         LayoutStyle::Rows => Style::Rows,
         LayoutStyle::Squarified => Style::Squarified,
@@ -161,7 +191,9 @@ pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::er
 #[cfg(feature = "gui")]
 pub fn run_gui(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = dirstats_app::App::new(cli.scan_options());
-    app.start_scan(&cli.path);
+    if cli.path.is_some() {
+        app.start_scan(cli.scan_root()?);
+    }
     dirstats_gui::run(app).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -170,6 +202,24 @@ pub fn run_gui(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "tui")]
 pub fn run_tui(cli: &Cli) -> std::io::Result<()> {
     let mut app = dirstats_app::App::new(cli.scan_options());
-    app.start_scan(&cli.path);
+    app.start_scan(cli.scan_root()?);
     dirstats_tui::run(&mut app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_cleans_dot_and_dotdot() {
+        let cwd = std::env::current_dir().unwrap();
+        let cli = |p: &str| Cli::parse_from(["dirstats", p]);
+        assert_eq!(cli(".").scan_root().unwrap(), cwd);
+        assert_eq!(cli("./sub/").scan_root().unwrap(), cwd.join("sub"));
+        assert_eq!(cli("..").scan_root().unwrap(), cwd.parent().unwrap());
+        assert_eq!(cli("a/../b").scan_root().unwrap(), cwd.join("b"));
+        assert_eq!(normalize(Path::new("/../x")), PathBuf::from("/x"));
+        assert!(cli("/tmp").scan_root().unwrap().is_absolute());
+        assert_eq!(Cli::parse_from(["dirstats"]).scan_root().unwrap(), cwd, "no path means the current directory");
+    }
 }
