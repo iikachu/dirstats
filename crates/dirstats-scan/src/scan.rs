@@ -62,13 +62,25 @@ pub fn scan_with(
     progress: &Progress,
 ) -> io::Result<Tree> {
     let root = root.as_ref();
+    platform::prepare_process();
     let root_device = platform::root_device(root)?;
     let same_filesystem = options.same_filesystem;
-    let descend = move |entry: &Entry| match (same_filesystem, root_device, &entry.metadata) {
-        (true, Some(root_device), Some(Ok(metadata))) => {
-            platform::device(metadata).is_none_or(|device| device == root_device)
+    // Directories that only repeat content reachable elsewhere under the
+    // root (macOS firmlink targets), never entered.
+    let duplicates = platform::duplicate_directories(root);
+    let descend = move |entry: &Entry| {
+        if !duplicates.is_empty()
+            && entry.file_type.is_dir()
+            && duplicates.iter().any(|d| d.parent() == Some(&*entry.parent_path) && d.file_name() == Some(&*entry.file_name))
+        {
+            return false;
         }
-        _ => true,
+        match (same_filesystem, root_device, &entry.metadata) {
+            (true, Some(root_device), Some(Ok(metadata))) => {
+                platform::device(metadata).is_none_or(|device| device == root_device)
+            }
+            _ => true,
+        }
     };
 
     let mut walk = dua_core::walk(
@@ -87,11 +99,19 @@ pub fn scan_with(
     // counts (Windows enumeration) are kept for the whole scan.
     let mut pending_links: HashMap<(u64, u64), u64> = HashMap::default();
 
+    // An error before any child of the root has arrived is most likely
+    // the root's own listing failing (permission denied, for instance).
+    // Kept so that a scan yielding nothing but the root can fail with it.
+    let mut root_error: Option<io::Error> = None;
+
     while let Some(item) = walk.next_cancellable(cancel) {
         let entry = match item {
             Ok(entry) => entry,
             Err(err) if tree.is_empty() => return Err(err),
-            Err(_) => {
+            Err(err) => {
+                if tree.len() == 1 && root_error.is_none() {
+                    root_error = Some(err);
+                }
                 progress.errors.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
@@ -182,6 +202,11 @@ pub fn scan_with(
     if tree.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "nothing scanned"));
     }
+    if tree.len() == 1
+        && let Some(err) = root_error
+    {
+        return Err(io::Error::new(err.kind(), format!("cannot read {}: {err}", root.display())));
+    }
     tree.finish(options.size_metric);
     Ok(tree)
 }
@@ -191,6 +216,14 @@ mod platform {
     use dua_core::Metadata;
     use std::os::unix::fs::MetadataExt;
     use std::{io, path::Path};
+
+    /// Nothing to prepare on this platform.
+    pub fn prepare_process() {}
+
+    /// No directory repeats another on this platform.
+    pub fn duplicate_directories(_root: &Path) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
 
     pub fn root_device(root: &Path) -> io::Result<Option<u64>> {
         Ok(Some(std::fs::symlink_metadata(root)?.dev()))
@@ -235,12 +268,73 @@ mod platform {
     use std::os::unix::fs::MetadataExt;
     use std::{io, path::Path};
 
+    // From <sys/resource.h>; not in the libc crate this project pins.
+    const IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES: std::ffi::c_int = 3;
+    const IOPOL_SCOPE_PROCESS: std::ffi::c_int = 0;
+    const IOPOL_MATERIALIZE_DATALESS_FILES_OFF: std::ffi::c_int = 1;
+
+    unsafe extern "C" {
+        fn setiopolicy_np(iotype: std::ffi::c_int, scope: std::ffi::c_int, policy: std::ffi::c_int) -> std::ffi::c_int;
+    }
+
+    /// Never download evicted iCloud Drive (or other file-provider) items.
+    ///
+    /// By default macOS materialises a "dataless" file or folder when
+    /// something reads it, so a scan that walks into an evicted folder
+    /// blocks for the download and the download itself inflates the disk
+    /// usage being measured. With materialisation off, such reads fail
+    /// with `EDEADLK` and are counted as errors; the entry's attributes
+    /// still come back, with zero blocks allocated, which is the honest
+    /// on-disk figure. Process scope, so every worker thread is covered.
+    pub fn prepare_process() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| unsafe {
+            // Failure only means the policy is unsupported; nothing to do.
+            let _ = setiopolicy_np(
+                IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES,
+                IOPOL_SCOPE_PROCESS,
+                IOPOL_MATERIALIZE_DATALESS_FILES_OFF,
+            );
+        });
+    }
+
     pub fn root_device(root: &Path) -> io::Result<Option<u64>> {
         Ok(Some(std::fs::symlink_metadata(root)?.dev()))
     }
 
     pub fn device(metadata: &Metadata) -> Option<u64> {
         Some(metadata.dev())
+    }
+
+    /// Firmlink targets on the Data volume that a scan above them would
+    /// count a second time.
+    ///
+    /// Since Catalina the boot disk is a volume group: the sealed system
+    /// volume at `/` and the Data volume at `/System/Volumes/Data`, with
+    /// firmlinks grafting Data folders into the system tree (`/Users` is
+    /// `/System/Volumes/Data/Users`). Both share one device id, so the
+    /// same-filesystem test cannot separate them, and a scan of `/`
+    /// would see every user file twice. The system's own table names
+    /// every firmlink, so exactly those targets are left out.
+    pub fn duplicate_directories(root: &Path) -> Vec<std::path::PathBuf> {
+        let table = std::fs::read_to_string("/usr/share/firmlinks").unwrap_or_default();
+        firmlink_duplicates(&table, root)
+    }
+
+    pub(super) fn firmlink_duplicates(table: &str, root: &Path) -> Vec<std::path::PathBuf> {
+        let data = Path::new("/System/Volumes/Data");
+        table
+            .lines()
+            .filter_map(|line| {
+                let mut columns = line.split('\t');
+                Some((Path::new(columns.next()?), data.join(columns.next()?.trim_start_matches('/'))))
+            })
+            // A target is a duplicate only when its firmlink is inside the
+            // scan too. Scanning the Data volume itself, or the target or
+            // something within it, must still count it.
+            .filter(|(source, target)| source.starts_with(root) && !root.starts_with(target))
+            .map(|(_, target)| target)
+            .collect()
     }
 
     pub fn len(metadata: &Metadata) -> u64 {
@@ -261,6 +355,14 @@ mod platform {
 mod platform {
     use dua_core::Metadata;
     use std::{io, path::Path};
+
+    /// Nothing to prepare on this platform.
+    pub fn prepare_process() {}
+
+    /// No directory repeats another on this platform.
+    pub fn duplicate_directories(_root: &Path) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
 
     pub fn root_device(root: &Path) -> io::Result<Option<u64>> {
         std::fs::symlink_metadata(root)?;
@@ -454,5 +556,44 @@ mod tests {
             counted_twice.size(counted_twice.root()) - tree.size(tree.root()),
             50_000
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_root_is_an_error() {
+        use std::os::unix::fs::PermissionsExt;
+        if unsafe { libc_geteuid() } == 0 {
+            return; // root ignores permission bits
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        fs::write(locked.join("f"), b"x").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        let result = scan(&locked, &ScanOptions::default());
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        let err = result.expect_err("an unreadable root fails the scan");
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+        assert!(err.to_string().contains("locked"), "{err}");
+    }
+
+    #[cfg(unix)]
+    unsafe extern "C" {
+        #[link_name = "geteuid"]
+        fn libc_geteuid() -> u32;
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn firmlink_targets_are_skipped_only_from_above() {
+        use std::path::PathBuf;
+        let table = "/Users\tUsers\n/usr/local\tusr/local\n";
+        let data = |s: &str| PathBuf::from("/System/Volumes/Data").join(s);
+        assert_eq!(platform::firmlink_duplicates(table, Path::new("/")), vec![data("Users"), data("usr/local")]);
+        assert!(platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data/Users/me")).is_empty(), "no firmlink below a Data folder");
+        assert_eq!(platform::firmlink_duplicates(table, Path::new("/Users/me")), Vec::<PathBuf>::new(), "no firmlink inside a home scan");
+        assert_eq!(platform::firmlink_duplicates(table, Path::new("/usr")), vec![data("usr/local")]);
+        assert!(platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data")).is_empty(), "the Data volume counts everything");
+        assert!(platform::firmlink_duplicates("", Path::new("/")).is_empty());
     }
 }
