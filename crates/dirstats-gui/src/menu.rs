@@ -29,15 +29,16 @@ pub(super) enum NodeAction {
     #[cfg(feature = "icloud")]
     Evict,
     /// Windows: delete without the Recycle Bin, after the gate and a confirmation.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     DeletePermanently,
     /// Windows: open the gate dialog, then delete if it is accepted.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     EnablePermanentDelete,
 }
 
 /// What the platform calls its trash in menu labels.
-#[cfg(any(feature = "trash", test))]
+/// Permanent delete names it too, to say it is skipped.
+#[cfg(any(feature = "trash", all(any(windows, target_os = "linux"), feature = "delete"), test))]
 pub(super) const TRASH_NAME: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
 
 /// Whether the permanent-delete item is offered and how it reads.
@@ -120,7 +121,9 @@ pub(super) fn node_menu(
     }
     #[cfg(not(feature = "icloud"))]
     let _ = cloud;
-    #[cfg(feature = "trash")]
+    // Trash and permanent delete are separate features; the section shows
+    // when either can offer something here.
+    #[cfg(any(feature = "trash", all(any(windows, target_os = "linux"), feature = "delete")))]
     {
         menu_separator(ui);
         match trashed {
@@ -129,12 +132,14 @@ pub(super) fn node_menu(
                 if backup && dirstats_app::backup::BLOCKS_TRASH {
                     // Shown but disabled, with the note saying where to go
                     // instead, so the missing action does not read as a bug.
+                    #[cfg(feature = "trash")]
                     ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), false));
                 } else {
+                    #[cfg(feature = "trash")]
                     if menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), true).clicked() {
                         action = Some(NodeAction::Trash);
                     }
-                    #[cfg(any(windows, target_os = "linux"))]
+                    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
                     match permanent {
                         Permanent::Unavailable => {}
                         Permanent::Locked => {
@@ -157,12 +162,15 @@ pub(super) fn node_menu(
                     ui.add_space(4.0);
                 }
             }
+            // Only reachable with the trash feature: nothing else trashes.
             TrashState::CanPutBack => {
+                #[cfg(feature = "trash")]
                 if menu_item(ui, Some(icons::Glyph::Undo), "Put Back", false).clicked() {
                     action = Some(NodeAction::PutBack);
                 }
             }
             TrashState::Trashed => {
+                #[cfg(feature = "trash")]
                 ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), &format!("In {TRASH_NAME}"), false));
             }
             TrashState::Deleted => {
@@ -170,8 +178,10 @@ pub(super) fn node_menu(
             }
         }
     }
-    #[cfg(not(all(any(windows, target_os = "linux"), feature = "trash")))]
-    let _ = (trashed, permanent);
+    #[cfg(not(all(any(windows, target_os = "linux"), feature = "delete")))]
+    let _ = permanent;
+    #[cfg(not(any(feature = "trash", all(any(windows, target_os = "linux"), feature = "delete"))))]
+    let _ = trashed;
     if action.is_some() {
         ui.close();
     }
@@ -436,6 +446,11 @@ mod tests {
             assert!(labels(Path::new(PATH), with(TrashState::Deleted)).iter().any(|t| t == "Deleted"));
             assert!(click("Deleted", with(TrashState::Deleted)).is_empty());
         }
+    }
+
+    #[cfg(feature = "delete")]
+    mod permanent {
+        use super::*;
 
         #[cfg(target_os = "macos")]
         #[test]
@@ -467,6 +482,15 @@ mod tests {
         fn permanent_delete_only_for_present_items() {
             let args = Args { permanent: Permanent::Enabled, trashed: TrashState::Deleted, ..Args::default() };
             assert!(!labels(Path::new(PATH), args).iter().any(|t| t == "Delete Permanently"));
+        }
+
+        /// Permanent delete does not need the trash feature.
+        #[cfg(all(any(windows, target_os = "linux"), not(feature = "trash")))]
+        #[test]
+        fn offered_without_the_trash() {
+            let text = labels(Path::new(PATH), Args { permanent: Permanent::Enabled, ..Args::default() });
+            assert!(text.iter().any(|t| t == "Delete Permanently"));
+            assert!(!text.iter().any(|t| t.contains(TRASH_NAME)));
         }
     }
 

@@ -10,6 +10,9 @@ description = "Front-end-agnostic application state for dirstats"
 default = []
 # Move-to-trash action.
 trash = ["dep:trash", "dep:objc2-foundation"]
+# Permanent delete, bypassing the trash (Windows and Linux, behind a
+# per-run gate; nothing on macOS).
+delete = []
 # Open and reveal actions via the desktop.
 open = ["dep:open"]
 # iCloud Drive status and "Remove Download" (macOS; a no-op elsewhere).

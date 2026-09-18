@@ -7,7 +7,7 @@
 // (at your option) any later version.
 
 
-//! Windows permanent-delete modals: the gate, the confirmation, progress and the report.
+//! Permanent-delete modals (Windows and Linux): the gate, the confirmation, progress and the report.
 
 use dirstats_app::{NodeId, format};
 use eframe::egui;
@@ -23,6 +23,7 @@ const WHEN: &str = if cfg!(windows) {
 };
 
 /// Why the trash refused an item.
+#[cfg(feature = "trash")]
 const TRASH_REFUSED: &str = if cfg!(windows) {
     "The item may be too large to recycle, or the drive has no Recycle Bin."
 } else {
@@ -30,7 +31,7 @@ const TRASH_REFUSED: &str = if cfg!(windows) {
 };
 
 /// A modal in front of the window; at most one at a time.
-#[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 #[derive(Debug)]
 pub(super) enum Dialog {
     /// The permanent-delete gate. `then` is the node whose deletion was
@@ -39,6 +40,7 @@ pub(super) enum Dialog {
     /// Confirm deleting `node` without the Recycle Bin.
     ConfirmDelete(NodeId),
     /// The Recycle Bin refused `node`; offer permanent deletion instead.
+    #[cfg(feature = "trash")]
     TrashFailed { node: NodeId, error: String },
     /// A finished deletion that did not remove everything.
     Report { path: std::path::PathBuf, outcome: dirstats_app::DeleteOutcome },
@@ -47,7 +49,7 @@ pub(super) enum Dialog {
 impl Gui {
     /// Open the confirmation for deleting `node` permanently, or explain
     /// why that is refused.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     pub(super) fn ask_delete(&mut self, node: NodeId) {
         match self.app.check_removable(node) {
             Ok(()) if self.app.delete.is_some() => self.app.message = Some("delete failed: a deletion is already running".into()),
@@ -58,7 +60,7 @@ impl Gui {
 
     /// Draw the running-deletion progress and whichever dialog is open.
     /// Both are modal: nothing behind them takes input.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     pub(super) fn dialogs(&mut self, ctx: &egui::Context) {
         use egui::{Modal, RichText};
         const WIDTH: f32 = 440.0;
@@ -140,6 +142,7 @@ impl Gui {
                         }
                     });
                 }
+                #[cfg(feature = "trash")]
                 Dialog::TrashFailed { node, error } => {
                     let path = self.app.path_of(*node).unwrap_or_default();
                     ui.heading(format!("Couldn't move to the {TRASH_NAME}"));

@@ -348,7 +348,7 @@ fn context_menu_moves_a_file_to_the_trash() {
 /// Windows and Linux offer permanent delete behind a gate that lasts for the
 /// run. The test cancels the gate, passes it, and cancels the confirmation
 /// it leads to; nothing is deleted.
-#[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 #[test]
 fn permanent_delete_gate_and_confirmation() {
     let root = menu_fixture("menu-permanent");

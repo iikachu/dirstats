@@ -17,7 +17,7 @@ use eframe::egui::{self, Key, TextureHandle};
 mod actions;
 mod chrome;
 mod columns;
-#[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 mod dialogs;
 #[cfg(all(test, feature = "e2e"))]
 mod e2e;
@@ -30,7 +30,7 @@ mod theme;
 mod treemap;
 
 use columns::{Columns, ShownColumns};
-#[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 use dialogs::Dialog;
 use theme::{MONO_STEP, apply_theme, system_fonts, system_text_sizes};
 
@@ -154,7 +154,7 @@ struct Gui {
     /// path for a while; failures stay until the next action.
     message_since: Option<(std::time::Instant, String)>,
     /// Modal in front of everything, if any.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     dialog: Option<Dialog>,
 }
 
@@ -185,7 +185,7 @@ impl Gui {
             menu_node: None,
             pending_copy: None,
             message_since: None,
-            #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+            #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
             dialog: None,
         }
     }
@@ -227,7 +227,7 @@ impl eframe::App for Gui {
         // Keep the panel's background fill but no margin, so the columns run edge to edge.
         let frame = egui::Frame::central_panel(&ctx.style()).inner_margin(0.0);
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| self.body(ui));
-        #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+        #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
         self.dialogs(ctx);
         if let Some(text) = self.pending_copy.take() {
             ctx.copy_text(text);
