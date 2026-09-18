@@ -109,7 +109,7 @@ impl Gui {
                     ));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button(RichText::new("Enable").strong()).clicked() {
-                            enable = Some((true, *then));
+                            enable = Some(*then);
                         }
                         if ui.button("Cancel").clicked() {
                             next = Some(None);
@@ -138,11 +138,6 @@ impl Gui {
                         if ui.button("Cancel").clicked() {
                             next = Some(None);
                         }
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            if ui.add(egui::Button::new(RichText::new("Disable permanent delete").weak()).frame(false)).clicked() {
-                                enable = Some((false, None));
-                            }
-                        });
                     });
                 }
                 Dialog::TrashFailed { node, error } => {
@@ -189,14 +184,11 @@ impl Gui {
                 }
             }
         });
-        if let Some((on, then)) = enable {
-            if let Err(err) = self.app.set_permanent_delete(on) {
+        if let Some(then) = enable {
+            if let Err(err) = self.app.set_permanent_delete(true) {
                 self.app.message = Some(format!("saving settings failed: {err}"));
             }
-            next = Some(match then {
-                Some(node) if on => Some(Dialog::ConfirmDelete(node)),
-                _ => None,
-            });
+            next = Some(then.map(Dialog::ConfirmDelete));
         }
         if let Some(node) = confirmed_delete {
             if let Err(err) = self.app.delete_node_permanently(node) {
