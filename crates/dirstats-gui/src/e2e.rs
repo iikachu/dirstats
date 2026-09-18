@@ -38,14 +38,21 @@ fn harness(root: &Path) -> Harness<'static, Gui> {
     })
 }
 
-/// A fresh fixture directory. On Unix it goes under `/tmp` rather than the
-/// per-user temp dir (`/var/folders/..` on macOS), so the path in the
-/// toolbar says nothing about the machine and screenshots can be shared.
-fn fixture_dir() -> tempfile::TempDir {
+/// A fresh fixture directory, `dirstats-e2e-<name>`. On Unix it goes under
+/// `/tmp` rather than the per-user temp dir (`/var/folders/..` on macOS), so
+/// the path in the toolbar says nothing about the machine and screenshots can
+/// be shared. The name has no random part, so the same test draws the same
+/// pixels on every run and CI can diff screenshots against `main`; each test
+/// needs its own `name`, since tests run in parallel.
+fn fixture_dir(name: &str) -> tempfile::TempDir {
     #[cfg(unix)]
-    return tempfile::Builder::new().prefix("dirstats-e2e-").tempdir_in("/tmp").unwrap();
+    let parent = PathBuf::from("/tmp");
     #[cfg(not(unix))]
-    return tempfile::Builder::new().prefix("dirstats-e2e-").tempdir().unwrap();
+    let parent = std::env::temp_dir();
+    let prefix = format!("dirstats-e2e-{name}");
+    // Left behind by a run that was killed before its TempDir dropped.
+    let _ = std::fs::remove_dir_all(parent.join(&prefix));
+    tempfile::Builder::new().prefix(&prefix).rand_bytes(0).tempdir_in(parent).unwrap()
 }
 
 /// Step frames until the scan is adopted, then a few more so the treemap
@@ -102,7 +109,7 @@ fn assert_scanned(harness: &Harness<'_, Gui>) {
 
 #[test]
 fn fixture_scan_lists_and_zooms() {
-    let root = fixture_dir();
+    let root = fixture_dir("fixture");
     std::fs::create_dir_all(root.path().join("big/nested")).unwrap();
     std::fs::create_dir(root.path().join("small")).unwrap();
     std::fs::write(root.path().join("big/movie.mkv"), vec![0_u8; 300_000]).unwrap();
@@ -174,8 +181,8 @@ fn real_disk_scan() {
 
 /// The fixture the context-menu tests share: `big/` (with `movie.mkv` and
 /// `nested/archive.zip`), `readme.md` and `small/notes.txt`, sizes well apart.
-fn menu_fixture() -> tempfile::TempDir {
-    let root = fixture_dir();
+fn menu_fixture(name: &str) -> tempfile::TempDir {
+    let root = fixture_dir(name);
     std::fs::create_dir_all(root.path().join("big/nested")).unwrap();
     std::fs::create_dir(root.path().join("small")).unwrap();
     std::fs::write(root.path().join("big/movie.mkv"), vec![0_u8; 600_000]).unwrap();
@@ -225,7 +232,7 @@ fn dir_name(harness: &Harness<'_, Gui>) -> String {
 
 #[test]
 fn context_menu_on_a_row_zooms_into_the_folder() {
-    let root = menu_fixture();
+    let root = menu_fixture("menu-row");
     let mut harness = harness(root.path());
     wait_for_scan(&mut harness, Duration::from_secs(30));
     assert_scanned(&harness);
@@ -249,7 +256,7 @@ fn context_menu_on_a_row_zooms_into_the_folder() {
 
 #[test]
 fn context_menu_copies_a_path_and_closes_on_escape() {
-    let root = menu_fixture();
+    let root = menu_fixture("menu-copy");
     let mut harness = harness(root.path());
     wait_for_scan(&mut harness, Duration::from_secs(30));
     assert_scanned(&harness);
@@ -275,7 +282,7 @@ fn context_menu_copies_a_path_and_closes_on_escape() {
 
 #[test]
 fn context_menu_on_the_treemap_zooms_to_the_containing_folder() {
-    let root = menu_fixture();
+    let root = menu_fixture("menu-treemap");
     let mut harness = harness(root.path());
     wait_for_scan(&mut harness, Duration::from_secs(30));
     assert_scanned(&harness);
@@ -307,7 +314,7 @@ fn context_menu_on_the_treemap_zooms_to_the_containing_folder() {
 fn context_menu_moves_a_file_to_the_trash() {
     use crate::menu::TRASH_NAME;
 
-    let root = menu_fixture();
+    let root = menu_fixture("menu-trash");
     let file = root.path().join("readme.md");
     let mut harness = harness(root.path());
     wait_for_scan(&mut harness, Duration::from_secs(30));
@@ -346,7 +353,7 @@ fn time_machine_backup_offers_no_trash() {
     use crate::menu::TRASH_NAME;
     use egui_kittest::kittest::NodeT;
 
-    let root = fixture_dir();
+    let root = fixture_dir("time-machine");
     let snapshot = root.path().join("Backups.backupdb/Mac/2026-09-01-120000/Macintosh HD/Users/me");
     std::fs::create_dir_all(&snapshot).unwrap();
     std::fs::write(snapshot.join("photos.zip"), vec![0_u8; 300_000]).unwrap();
