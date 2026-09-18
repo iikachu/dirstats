@@ -343,7 +343,11 @@ impl Gui {
             let head = ui.ctx().memory(|m| m.data.get_temp::<f32>(ui.id().with("tree-head"))).unwrap_or(step);
             let row_top = head + index as f32 * step;
             let current = ui.ctx().memory(|m| m.data.get_temp::<f32>(ui.id().with("tree-scroll"))).unwrap_or(0.0);
-            let offset = if row_top < current {
+            // The first entry brings the current-folder row above it into
+            // view too, so Home and arrowing up to it end at the very top.
+            let offset = if index == 0 {
+                (current > 0.0).then_some(0.0)
+            } else if row_top < current {
                 Some(row_top)
             } else if row_top + row_height > current + view {
                 Some(row_top + row_height - view)
