@@ -199,25 +199,30 @@ impl Gui {
                     rects.push(egui::Rect::from_min_size(min, piece.size()));
                     x += piece.size().x;
                 }
-                if !last {
-                    // One response per piece; the crumb reacts as a whole.
-                    let (mut hovered, mut pressed) = (false, false);
-                    for (n, rect) in rects.iter().enumerate() {
-                        let response = ui.interact(rect.expand2(egui::vec2(3.0, 1.0)), ui.id().with(("crumb", i, n)), Sense::click());
-                        hovered |= response.hovered();
-                        pressed |= response.is_pointer_button_down_on();
-                        if response.clicked() {
-                            target = Some(id);
-                        }
+                // One response per piece; the crumb reacts as a whole. The
+                // current folder lights up like the rest but goes nowhere:
+                // it senses hover only, so no press, hand or underline.
+                let sense = if last { Sense::hover() } else { Sense::click() };
+                let (mut hovered, mut pressed) = (false, false);
+                for (n, rect) in rects.iter().enumerate() {
+                    let response = ui.interact(rect.expand2(egui::vec2(3.0, 1.0)), ui.id().with(("crumb", i, n)), sense);
+                    hovered |= response.hovered();
+                    pressed |= response.is_pointer_button_down_on();
+                    if !last && response.clicked() {
+                        target = Some(id);
                     }
-                    if hovered {
+                }
+                if hovered {
+                    if !last {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        // A pill behind the crumb, darker while pressed, and
-                        // an underline as on a link.
-                        let visuals = ui.visuals();
-                        let fill = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), if pressed { 0.28 } else { 0.14 });
-                        for rect in &rects {
-                            painter.rect_filled(rect.expand2(egui::vec2(3.0, 1.0)), 4.0, fill);
+                    }
+                    // A pill behind the crumb, darker while pressed, and on
+                    // an ancestor an underline as on a link.
+                    let visuals = ui.visuals();
+                    let fill = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), if pressed { 0.28 } else { 0.14 });
+                    for rect in &rects {
+                        painter.rect_filled(rect.expand2(egui::vec2(3.0, 1.0)), 4.0, fill);
+                        if !last {
                             painter.hline(rect.x_range(), rect.max.y - 1.0, egui::Stroke::new(1.0_f32, text));
                         }
                     }
