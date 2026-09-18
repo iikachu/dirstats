@@ -184,6 +184,8 @@ pub(super) fn menu_item(ui: &mut egui::Ui, glyph: Option<icons::Glyph>, label: &
     const GAP: f32 = 10.0;
     let width = ui.available_width().max(180.0);
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, HEIGHT), Sense::click());
+    // Painted by hand, so name the row for screen readers (and tests).
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label));
     let visuals = ui.style().interact(&response);
     if response.hovered() || response.has_focus() {
         ui.painter().rect_filled(rect, 4.0, visuals.weak_bg_fill);
