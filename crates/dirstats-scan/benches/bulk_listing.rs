@@ -22,7 +22,9 @@
 //! file cache, which needs root. dua-core has no switch to turn bulk listing
 //! off, so the baseline is written here. Elsewhere the bench does nothing.
 
-use criterion::{Criterion, criterion_group, criterion_main};
+#[cfg(not(target_os = "macos"))]
+use criterion::Criterion;
+use criterion::{criterion_group, criterion_main};
 
 #[cfg(target_os = "macos")]
 mod macos {
