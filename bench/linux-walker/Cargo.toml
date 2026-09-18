@@ -1,13 +1,14 @@
 [package]
-name = "dirstats-archive-linux-walker"
+name = "dirstats-bench-linux-walker"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
 publish = false
-description = "Archived: the experimental getdents64 + statx Linux walker and its benchmark (dirstats #18)"
+description = "The shelved getdents64 + statx Linux walker, benchmarked nightly against dirstats-scan (dirstats #18)"
 
-# Its own workspace, so the main workspace (and so CI) never builds it.
+# Its own workspace, so the main workspace and PR CI never build it; the
+# nightly workflow does.
 [workspace]
 
 [dependencies]

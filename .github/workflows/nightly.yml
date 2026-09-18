@@ -1,0 +1,193 @@
+name: Nightly
+
+# Benches too slow for every PR. The listing and walker benches fail when
+# their scanners disagree on what they found, so a red run means wrong
+# results, not just slow ones; the MFT reader's agreement is tested on every
+# PR (ci.yml). Timings go to the job summary or a criterion report artifact.
+#
+# - ntfs bench: the NTFS MFT reader against the walker, warm and cold.
+# - windows listing: dua-core's listing against std::fs::read_dir and a
+#   direct FileIdBothDirectoryInfo walk, on NTFS, FAT32, exFAT and ReFS.
+# - linux walker: the shelved getdents64 + statx walker's variants against
+#   dirstats-scan, on ext4, XFS and NFS.
+#
+# The baseline in every bench is dirstats-scan, so a nightly run on an
+# unchanged bench still says whether main's scan got faster or slower.
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: Cold runs per Linux walker variant
+        default: "10"
+  # A PR that changes a bench runs it before it lands.
+  pull_request:
+    paths:
+      - bench/**
+      - crates/dirstats-ntfs/benches/**
+      - .github/workflows/nightly.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ntfs-bench:
+    name: ntfs bench (windows, elevated)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+      # Hosted Windows runners run as an administrator, which reading the
+      # MFT needs; fail loudly if that ever changes.
+      - name: Check elevation
+        shell: pwsh
+        run: |
+          $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+          if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw "not elevated" }
+      # D:\ holds only the checkout and build output, so add a generated tree;
+      # C:\ takes about 12 minutes warm and far longer cold.
+      - run: cargo bench -p dirstats-ntfs --bench mft --locked
+        env:
+          DIRSTATS_BENCH_ROOT: 'D:\'
+          DIRSTATS_BENCH_FIXTURE_FILES: '100000'
+      - name: Upload criterion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ntfs-bench
+          path: target/criterion
+          if-no-files-found: warn
+
+  windows-listing:
+    name: windows listing (ntfs folder, fat32, exfat, refs)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-windows-listing
+          workspaces: bench/windows-listing
+      # One virtual disk per filesystem, so each can be dismounted before a
+      # cold scan (the NTFS one holds a folder, which the MFT reader does not
+      # take). Needs an elevated runner, which hosted Windows runners are.
+      - name: Create NTFS, FAT32, exFAT and ReFS volumes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\vhd | Out-Null
+          foreach ($v in @(@{fs='ntfs'; letter='N'; mb=4096}, @{fs='fat32'; letter='F'; mb=4096}, @{fs='exfat'; letter='G'; mb=4096}, @{fs='refs'; letter='R'; mb=8192})) {
+            $file = "C:\vhd\$($v.fs).vhdx"
+            @(
+              "create vdisk file=`"$file`" maximum=$($v.mb) type=expandable",
+              "select vdisk file=`"$file`"",
+              "attach vdisk",
+              "convert mbr",
+              "create partition primary",
+              "format fs=$($v.fs) quick label=$($v.fs)",
+              "assign letter=$($v.letter)"
+            ) | Set-Content -Encoding ascii "C:\vhd\$($v.fs).txt"
+            diskpart /s "C:\vhd\$($v.fs).txt"
+            if ($LASTEXITCODE -ne 0) { throw "diskpart failed for $($v.fs)" }
+          }
+          Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter, FileSystem, Size
+      - run: cargo bench --bench listing --locked
+        working-directory: bench/windows-listing
+        env:
+          DIRSTATS_BENCH_ROOTS: 'ntfs-folder=N:\listing-bench;fat32=F:\;exfat=G:\;refs=R:\'
+          DIRSTATS_BENCH_FIXTURE_FILES: '50000'
+      - name: Upload criterion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-listing-bench
+          path: bench/windows-listing/target/criterion
+          if-no-files-found: warn
+
+  linux-walker:
+    name: linux walker (${{ matrix.fs }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        fs: [ext4, xfs, nfs]
+    env:
+      REPS: ${{ inputs.reps || '10' }}
+    # pipefail, so a walker that disagrees fails the step through `| tee`.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bench/linux-walker
+      - run: cargo build --release --locked --example walkbench
+        working-directory: bench/linux-walker
+      - run: cargo test --release --locked
+        working-directory: bench/linux-walker
+      - name: Machine
+        run: |
+          uname -r; nproc; free -h; df -hT / /usr
+          sysctl kernel.io_uring_disabled || true
+          sudo lsblk -o NAME,SIZE,ROTA,TYPE,MOUNTPOINT
+
+      # /usr/share has hundreds of thousands of files. XFS gets a copy
+      # without large files (the count is what costs time, and the runner's
+      # disk is small); NFS exports it as it is.
+      - name: Prepare ${{ matrix.fs }}
+        run: |
+          set -eux
+          case "${{ matrix.fs }}" in
+            ext4)
+              echo "ROOT=/usr" >> "$GITHUB_ENV"
+              echo "LABEL=ext4, runner disk, /usr" >> "$GITHUB_ENV"
+              echo "SKIP=xfs bulkstat" >> "$GITHUB_ENV"
+              ;;
+            xfs)
+              sudo apt-get install -y -qq xfsprogs
+              sudo truncate -s 40G /mnt/xfs.img
+              sudo mkfs.xfs -q /mnt/xfs.img
+              sudo mkdir -p /xfs && sudo mount -o loop /mnt/xfs.img /xfs
+              sudo rsync -a --max-size=256k /usr/share/ /xfs/
+              echo "ROOT=/xfs" >> "$GITHUB_ENV"
+              echo "LABEL=XFS, loop image on /mnt, copy of /usr/share without files over 256 KiB" >> "$GITHUB_ENV"
+              echo "SKIP=none" >> "$GITHUB_ENV"
+              ;;
+            nfs)
+              sudo apt-get install -y -qq nfs-kernel-server
+              sudo mkdir -p /nfs
+              echo "/usr/share localhost(ro,no_subtree_check,no_root_squash)" | sudo tee /etc/exports
+              sudo exportfs -ra
+              sudo mount -t nfs -o vers=4.2 localhost:/usr/share /nfs
+              echo "ROOT=/nfs" >> "$GITHUB_ENV"
+              echo "LABEL=NFS 4.2 over loopback, /usr/share" >> "$GITHUB_ENV"
+              echo "SKIP=xfs bulkstat" >> "$GITHUB_ENV"
+              ;;
+          esac
+
+      - name: Cold
+        run: |
+          sudo bench/linux-walker/target/release/examples/walkbench --root "$ROOT" --label "$LABEL" --reps "$REPS" --cold --skip "$SKIP" | tee -a bench.md
+      - name: Warm
+        run: |
+          sudo bench/linux-walker/target/release/examples/walkbench --root "$ROOT" --label "$LABEL" --reps 7 --skip "$SKIP" | tee -a bench.md
+      - name: Summary
+        if: always()
+        run: cat bench.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-walker-bench-${{ matrix.fs }}
+          path: bench.md

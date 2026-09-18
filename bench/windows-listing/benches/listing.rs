@@ -32,7 +32,7 @@
 //! ```text
 //! set DIRSTATS_BENCH_ROOTS=ntfs-folder=N:\bench;fat32=F:\;exfat=G:\;refs=R:\
 //! set DIRSTATS_BENCH_FIXTURE_FILES=50000
-//! cd archive/windows-listing && cargo bench --bench listing
+//! cd bench/windows-listing && cargo bench --bench listing
 //! ```
 //!
 //! `DIRSTATS_BENCH_ROOTS` is a `;`-separated list of `label=path` (default:

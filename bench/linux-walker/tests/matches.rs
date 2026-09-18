@@ -4,7 +4,7 @@
 //! Every variant must build the same tree as dirstats-scan.
 #![cfg(target_os = "linux")]
 
-use dirstats_archive_linux_walker::{LinuxWalker, Options, scan};
+use dirstats_bench_linux_walker::{LinuxWalker, Options, scan};
 use dirstats_scan::{ScanOptions, SizeMetric, Tree};
 use std::collections::BTreeMap;
 use std::fs;

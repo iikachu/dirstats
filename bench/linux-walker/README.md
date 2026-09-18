@@ -1,13 +1,17 @@
-# Archived: Linux getdents64 + statx walker
+# Linux getdents64 + statx walker (shelved, benched nightly)
 
 A Linux walker that lists directories with `getdents64` and stats each entry
 with `statx` relative to the open directory. Every idea for making it beat
 dua-core's `std::fs` walker is kept as a switch. It was tried in
 #4–#6 and #8, measured in #18, and shelved because nothing won on local disks.
+dirstats doesn't use it.
 
-This directory is its own Cargo workspace, so the main workspace and CI never
-build it. `ci/linux-walker-bench.yml` is the benchmark workflow, kept outside
-`.github/workflows` so it doesn't run.
+This directory is its own Cargo workspace, so the main workspace and PR CI
+never build it. The `linux walker` jobs in `.github/workflows/nightly.yml` run
+its tests and the bench every night on ext4, XFS and NFS, 10 cold rounds. A
+walker that disagrees with dua-core on file count, directory count or size
+fails the run. Because dua-core (through dirstats-scan) is the baseline, the
+tables also show whether main's scan got faster or slower.
 
 ## Why it lost
 
@@ -54,16 +58,17 @@ Linux only. The walker is compiled only for Linux, and elsewhere `scan`
 returns `Unsupported`.
 
 ```bash
-cd archive/linux-walker && cargo test --release
+cd bench/linux-walker && cargo test --release
 ```
 
 ```bash
-cd archive/linux-walker && cargo build --release --example walkbench && sudo target/release/examples/walkbench --root /usr --reps 10 --cold
+cd bench/linux-walker && cargo build --release --example walkbench && sudo target/release/examples/walkbench --root /usr --reps 10 --cold
 ```
 
-To run it in CI, copy `ci/linux-walker-bench.yml` to `.github/workflows/`
-and start it from the Actions tab. The default is 10 cold rounds.
+To run it in CI outside the schedule, start the `Nightly` workflow from the
+Actions tab; `reps` sets the cold rounds. A PR that changes anything under
+`bench/` runs it too.
 
 The crate depends on `dirstats-scan` by path and builds its trees with the
-public `TreeBuilder`, so as long as that API holds it should still compile.
-If it doesn't, fix the crate before trusting any numbers.
+public `TreeBuilder`. A change to that API that breaks this crate turns the
+nightly run red; fix the crate before trusting any numbers.
