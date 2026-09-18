@@ -40,19 +40,21 @@ separate, defaults chosen for the common case.
 
 ```toml
 [features]
-default    = ["gui", "tui", "open", "trash", "delete", "icloud"]
+default    = ["gui", "tui", "open", "trash", "delete", "icloud", "ntfs-mft"]
 gui        = ["dep:dirstats-gui"]  # egui window
 tui        = ["dep:dirstats-tui"]  # ratatui + crossterm; --tui, or chosen when there is no desktop
 open       = [...]                 # open and reveal via the desktop
 trash      = [...]                 # move-to-trash action
 delete     = [...]                 # gated permanent delete (Windows, Linux); independent of trash
+ntfs-mft   = [...]                 # NTFS volumes from the master file table (Windows, admin)
 icloud     = [...]                 # iCloud "Remove Download" (macOS; no-op elsewhere)
 png        = ["dep:png"]           # --png writes a cushion treemap image
 egui-fonts = [...]                 # egui's bundled fonts, for comparison
 ```
 
-`open`, `trash`, `delete` and `icloud` are owned by `dirstats-app` and forwarded to
-whichever front ends are built with `dep?/feature`.
+`open`, `trash`, `delete`, `icloud` and `ntfs-mft` are owned by
+`dirstats-app`; the actions among them are forwarded to whichever front
+ends are built, with `dep?/feature`.
 
 With both front ends built the binary picks one at run time
 (`dirstats::session`): `--tui` or `--gui` decide outright; otherwise it
@@ -63,7 +65,9 @@ uses the terminal when it does not, and falls back to the terminal if the
 window fails to open (except on Windows, where the error is reported). With no terminal either, it prints the summary.
 
 Per-crate features:
-- `dirstats-app`: `open`, `trash`, `delete`, `icloud`; none by default.
+- `dirstats-app`: `open`, `trash`, `delete`, `icloud`, `ntfs-mft`; none by
+  default. `ntfs-mft` pulls in `dirstats-ntfs`; without it Windows walks
+  directories like every other platform.
   `trash` and `delete` are independent; `delete` only does anything on
   Windows and Linux, so a macOS build without `trash` cannot remove files.
 - `dirstats-gui`: forwards those, plus `egui-fonts` and `e2e` (headless

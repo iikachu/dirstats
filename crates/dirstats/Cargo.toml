@@ -15,7 +15,7 @@ name = "dirstats"
 path = "src/main.rs"
 
 [features]
-default = ["gui", "tui", "open", "trash", "delete", "icloud"]
+default = ["gui", "tui", "open", "trash", "delete", "icloud", "ntfs-mft"]
 # Graphical front end (egui).
 gui = ["dep:dirstats-gui"]
 # Terminal front end (ratatui + crossterm). Chosen with --tui, or on its own
@@ -30,14 +30,17 @@ trash = ["dirstats-app/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
 # Permanent delete in the GUI, independent of the trash (Windows and Linux).
 delete = ["dirstats-app/delete", "dirstats-gui?/delete"]
 # iCloud Drive "Remove Download" action (macOS; does nothing elsewhere).
+# Only the GUI offers it; forward to dirstats-tui too if the TUI gains it.
 icloud = ["dirstats-app/icloud", "dirstats-gui?/icloud"]
+# Scan whole NTFS volumes from the master file table (Windows, as
+# administrator); without it, or when it cannot, dirstats walks directories.
+ntfs-mft = ["dirstats-app/ntfs-mft"]
 # Write a cushion treemap PNG with `--png`.
 png = ["dep:png"]
 
 [dependencies]
 dirstats-app.workspace = true
 dirstats-scan.workspace = true
-dirstats-ntfs.workspace = true
 dirstats-treemap.workspace = true
 dirstats-tui = { workspace = true, optional = true }
 dirstats-gui = { workspace = true, optional = true }

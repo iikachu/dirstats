@@ -8,11 +8,15 @@ description = "Front-end-agnostic application state for dirstats"
 
 [features]
 default = []
-# Move-to-trash action.
+# Move-to-trash action. On macOS it also uses NSFileManager (objc2-foundation)
+# to learn where an item went, for Put Back.
 trash = ["dep:trash", "dep:objc2-foundation"]
 # Permanent delete, bypassing the trash (Windows and Linux, behind a
 # per-run gate; nothing on macOS).
 delete = []
+# Scan whole NTFS volumes from the master file table (Windows, needs
+# administrator rights; the directory walker is used otherwise).
+ntfs-mft = ["dep:dirstats-ntfs"]
 # Open and reveal actions via the desktop.
 open = ["dep:open"]
 # iCloud Drive status and "Remove Download" (macOS; a no-op elsewhere).
@@ -21,7 +25,7 @@ icloud = ["dep:objc2-foundation", "dep:objc2"]
 [dependencies]
 dirstats-scan.workspace = true
 # Reads the master file table of NTFS volumes on Windows; walks elsewhere.
-dirstats-ntfs.workspace = true
+dirstats-ntfs = { workspace = true, optional = true }
 foldhash.workspace = true
 trash = { workspace = true, optional = true }
 open = { workspace = true, optional = true }

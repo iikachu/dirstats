@@ -1118,7 +1118,6 @@ dependencies = [
  "clap",
  "dirstats-app",
  "dirstats-gui",
- "dirstats-ntfs",
  "dirstats-scan",
  "dirstats-treemap",
  "dirstats-tui",

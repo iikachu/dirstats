@@ -3,7 +3,10 @@
 
 //! Background scan handle.
 
+#[cfg(feature = "ntfs-mft")]
 use dirstats_ntfs::scan_with;
+#[cfg(not(feature = "ntfs-mft"))]
+use dirstats_scan::scan_with;
 use dirstats_scan::{Progress, ScanOptions, Tree};
 use std::io;
 use std::path::PathBuf;
@@ -11,6 +14,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::Arc;
 use std::time::Instant;
+
+/// Scan `root` on the calling thread, through the same fast paths as
+/// [`RunningScan`].
+pub fn scan(root: impl AsRef<std::path::Path>, options: &ScanOptions) -> io::Result<Tree> {
+    scan_with(root, options, &AtomicBool::new(false), &Progress::default())
+}
 
 pub enum ScanStatus {
     Running,
