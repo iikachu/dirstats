@@ -5,7 +5,7 @@
 //! front ends can point at Time Machine instead of offering the trash.
 //!
 //! Backups are managed by Time Machine itself (its settings, or
-//! `tmutil delete`); moving pieces of one to the trash either fails or
+//! `tmutil`); moving pieces of one to the trash either fails or
 //! leaves a backup that no longer restores. The checks run on any
 //! platform, since a backup disk can be read from anywhere, but only the
 //! volume probe touches the disk.
@@ -14,7 +14,7 @@ use std::path::{Component, Path};
 
 /// Where Time Machine is managed, for messages.
 pub const MANAGED_ELSEWHERE: &str =
-    "Managed by Time Machine. Remove old backups in Time Machine settings or with `tmutil delete`.";
+    "Managed by Time Machine. Remove old backups in Time Machine settings or with `tmutil`.";
 
 /// Whether `path` is inside a Time Machine backup, from its components
 /// alone: the HFS+ backup store (`Backups.backupdb`) or the mount point
