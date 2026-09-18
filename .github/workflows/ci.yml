@@ -29,6 +29,20 @@ jobs:
       - run: cargo build --workspace --all-targets --locked
       - run: cargo test --workspace --locked
 
+  # No hosted Arch runner exists, so run in the official container. Catches
+  # breakage from Arch's rolling toolchain/libc ahead of Ubuntu LTS.
+  test-arch:
+    name: build + test (archlinux)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm --needed base-devel git rustup
+      - uses: actions/checkout@v4
+      - run: rustup default stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-targets --locked
+      - run: cargo test --workspace --locked
+
   e2e:
     name: gui e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -57,5 +71,30 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-screenshots-${{ matrix.os }}
+          path: e2e-out/*.png
+          if-no-files-found: warn
+
+  e2e-arch:
+    name: gui e2e (archlinux)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 45
+    steps:
+      # In containers ${{ github.workspace }} is the host path; use the env var.
+      - run: echo "DIRSTATS_E2E_OUT=$GITHUB_WORKSPACE/e2e-out" >> "$GITHUB_ENV"
+      # vulkan-swrast is Arch's lavapipe package. Rendering is offscreen, so
+      # no compositor (Wayland/X11) is needed.
+      - run: pacman -Syu --noconfirm --needed base-devel git rustup vulkan-icd-loader vulkan-swrast
+      - uses: actions/checkout@v4
+      - run: rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+      - run: cargo test -p dirstats-gui --features e2e,egui-fonts --locked -- --include-ignored --nocapture
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots-archlinux
           path: e2e-out/*.png
           if-no-files-found: warn
