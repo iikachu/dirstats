@@ -1342,8 +1342,10 @@ impl Gui {
                 }
                 let stroke = if response.dragged() { ui.visuals().selection.stroke } else { ui.visuals().widgets.noninteractive.bg_stroke };
                 // Guide lines run the full height only between regions; inside
-                // the file list the header tick is enough.
-                let range = if i == MAP - 1 || i == MAP { full.y_range() } else { header.y_range() };
+                // the file list the header tick is enough. The tree's last
+                // visible column may not be the one right before the map.
+                let before_map = i < MAP && widths[i + 1..MAP].iter().all(|&w| w <= 0.0);
+                let range = if before_map || i == MAP { full.y_range() } else { header.y_range() };
                 ui.painter().vline(x, range, stroke);
                 let delta = response.drag_delta().x;
                 if delta != 0.0 {
