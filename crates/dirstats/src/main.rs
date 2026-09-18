@@ -45,7 +45,9 @@ fn front_end(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         return dirstats::print_summary(cli);
     }
     match dirstats::run_gui(cli) {
-        Err(err) if !cli.gui && terminal => {
+        // Windows always has a desktop, so a failure there is a real error
+        // to report, not a sign the session is text-only.
+        Err(err) if !cli.gui && terminal && !cfg!(windows) => {
             eprintln!("dirstats: could not open a window ({err}); using the terminal interface");
             Ok(dirstats::run_tui(cli)?)
         }
