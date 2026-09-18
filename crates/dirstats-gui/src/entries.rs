@@ -140,7 +140,9 @@ impl Gui {
         // longer than the name column. Laid out by hand on a fixed line
         // pitch: every piece of text gets a rect exactly its own size, so
         // hover pills are the same height on every line and never overlap.
-        const GAP: f32 = 2.0;
+        // Room on either side of a separating slash: wide enough that it
+        // reads as a divider between crumbs, not a character of a name.
+        const GAP: f32 = 6.0;
         let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
         let mut target = None;
         let mut crumbs_height = 0.0;
