@@ -1,0 +1,29 @@
+[package]
+name = "dirstats-archive-windows-listing"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+publish = false
+description = "Archived: Windows directory listing bench, dua-core against std::fs::read_dir and a direct FileIdBothDirectoryInfo walk (dirstats #16)"
+
+# Its own workspace, so the main workspace (and so CI) never builds it.
+[workspace]
+
+[dev-dependencies]
+dirstats-scan = { path = "../../crates/dirstats-scan" }
+dua-core = "4.1"
+# Benchmark harness (Apache-2.0 OR MIT, by Brook Heisler and Jorge Aparicio).
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+# Baseline walker.
+rayon = "1.10"
+tempfile = "3"
+
+[target.'cfg(windows)'.dev-dependencies]
+# Dismounting volumes and emptying the standby list for cold runs, and the
+# direct listing.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Threading"] }
+
+[[bench]]
+name = "listing"
+harness = false

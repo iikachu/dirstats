@@ -1,0 +1,59 @@
+name: Windows listing bench
+
+# Archived and inactive: GitHub only runs workflows in .github/workflows.
+# To run it again, copy this file there and start it from the Actions tab.
+#
+# Times dua-core's listing against std::fs::read_dir and a direct
+# FileIdBothDirectoryInfo walk on NTFS, FAT32, exFAT and ReFS virtual disks,
+# warm and cold (volume dismounted before every cold sample).
+on:
+  workflow_dispatch:
+
+jobs:
+  bench:
+    name: listing bench (windows, ntfs folder + fat32/exfat/refs)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-windows-listing
+          workspaces: archive/windows-listing
+      # One virtual disk per filesystem, so each can be dismounted before a
+      # cold scan (the NTFS one holds a folder, which the MFT reader does not
+      # take). Needs an elevated runner, which hosted Windows runners are.
+      - name: Create NTFS, FAT32, exFAT and ReFS volumes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\vhd | Out-Null
+          foreach ($v in @(@{fs='ntfs'; letter='N'; mb=4096}, @{fs='fat32'; letter='F'; mb=4096}, @{fs='exfat'; letter='G'; mb=4096}, @{fs='refs'; letter='R'; mb=8192})) {
+            $file = "C:\vhd\$($v.fs).vhdx"
+            @(
+              "create vdisk file=`"$file`" maximum=$($v.mb) type=expandable",
+              "select vdisk file=`"$file`"",
+              "attach vdisk",
+              "convert mbr",
+              "create partition primary",
+              "format fs=$($v.fs) quick label=$($v.fs)",
+              "assign letter=$($v.letter)"
+            ) | Set-Content -Encoding ascii "C:\vhd\$($v.fs).txt"
+            diskpart /s "C:\vhd\$($v.fs).txt"
+            if ($LASTEXITCODE -ne 0) { throw "diskpart failed for $($v.fs)" }
+          }
+          Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter, FileSystem, Size
+      # dua-core's FileIdBothDirectoryInfo listing against std::fs::read_dir
+      # and a direct call, warm and cold (volume dismounted), on each.
+      - run: cargo bench --bench listing --locked
+        working-directory: archive/windows-listing
+        env:
+          DIRSTATS_BENCH_ROOTS: 'ntfs-folder=N:\listing-bench;fat32=F:\;exfat=G:\;refs=R:\'
+          DIRSTATS_BENCH_FIXTURE_FILES: '50000'
+      - name: Upload criterion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: listing-bench
+          path: archive/windows-listing/target/criterion
+          if-no-files-found: warn
