@@ -300,7 +300,7 @@ fn context_menu_on_the_treemap_zooms_to_the_containing_folder() {
 }
 
 /// Moves a file from the test's own tempdir to the system trash, and puts it
-/// back where the platform allows.
+/// back.
 #[cfg(feature = "trash")]
 #[test]
 #[ignore = "moves a file to the system trash"]
@@ -329,17 +329,12 @@ fn context_menu_moves_a_file_to_the_trash() {
     right_click(&mut harness, "readme.md");
     assert!(harness.query_by_label(&format!("Move to {TRASH_NAME}")).is_none());
     screenshot(&mut harness, "context-menu-trashed");
-    // macOS and Windows report where the item went; Linux does not.
-    if cfg!(any(target_os = "macos", windows)) {
-        click(&mut harness, "Put Back");
-        harness.step();
-        assert!(file.exists(), "not put back: {:?}", harness.state().app.message);
-        right_click(&mut harness, "readme.md");
-        harness.get_by_label(&format!("Move to {TRASH_NAME}"));
-        screenshot(&mut harness, "context-menu-put-back");
-    } else {
-        harness.get_by_label(&format!("In {TRASH_NAME}"));
-    }
+    click(&mut harness, "Put Back");
+    harness.step();
+    assert!(file.exists(), "not put back: {:?}", harness.state().app.message);
+    right_click(&mut harness, "readme.md");
+    harness.get_by_label(&format!("Move to {TRASH_NAME}"));
+    screenshot(&mut harness, "context-menu-put-back");
 }
 
 /// Inside a Time Machine backup the menu carries a note. On macOS the trash
