@@ -10,6 +10,8 @@ description = "Terminal front end for dirstats"
 default = []
 trash = ["dirstats-app/trash"]
 open = ["dirstats-app/open"]
+# Scan whole NTFS volumes from the master file table (Windows, as administrator).
+ntfs-mft = ["dirstats-app/ntfs-mft"]
 
 [dependencies]
 dirstats-app.workspace = true

@@ -12,6 +12,8 @@ trash = ["dirstats-app/trash"]
 delete = ["dirstats-app/delete"]
 icloud = ["dirstats-app/icloud"]
 open = ["dirstats-app/open"]
+# Scan whole NTFS volumes from the master file table (Windows, as administrator).
+ntfs-mft = ["dirstats-app/ntfs-mft"]
 # Keep egui's bundled fonts and text sizes instead of the platform's own.
 egui-fonts = []
 # End-to-end tests that drive the whole GUI headlessly (CI only; pulls in wgpu).
