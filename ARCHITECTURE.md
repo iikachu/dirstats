@@ -74,6 +74,10 @@ Per-crate features:
   end-to-end tests, CI only).
 - `dirstats-tui`: forwards `open`, `trash` and `ntfs-mft`.
 - `dirstats-treemap`: `parallel` (rayon cushion rendering), on by default.
+  `dirstats` keeps it on and does not forward it: every target dirstats
+  ships for has threads, and a single-threaded or WebAssembly build is not
+  planned. Library users can still depend on `dirstats-treemap` with
+  `default-features = false`.
 - `dirstats-scan`: none yet. Fast paths are chosen by `cfg` per platform;
   `serde` for saved scans is planned.
 
