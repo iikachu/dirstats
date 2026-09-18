@@ -1415,6 +1415,14 @@ impl Gui {
         let ext_edges = [starts[9], starts[10], starts[11], full.max.x];
         self.legend(&mut ext_ui, ext_edges, row_height);
 
+        // Before the first scan the location picker floats over the middle of
+        // the whole body rather than sitting in the treemap column.
+        if self.app.scan.is_none() && self.app.tree.is_none() {
+            ui.painter().rect_filled(body, 0.0, ui.visuals().panel_fill.gamma_multiply(0.85));
+            let mut overlay = ui.new_child(egui::UiBuilder::new().max_rect(body).id_salt("location-picker"));
+            self.location_picker(&mut overlay);
+        }
+
         // The treemap is drawn before the legend, so hover takes effect next frame.
         if self.hovered_highlight != self.next_highlight {
             self.hovered_highlight = self.next_highlight.take();
@@ -2104,9 +2112,9 @@ impl Gui {
     }
 
     /// Centred scan status shown in the treemap area until a tree arrives.
+    /// Before any scan the location picker overlays the whole body instead.
     fn scan_progress(&mut self, ui: &mut egui::Ui) {
         if self.app.scan.is_none() && self.app.tree.is_none() {
-            self.location_picker(ui);
             return;
         }
         let rect = ui.available_rect_before_wrap();
