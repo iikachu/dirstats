@@ -278,6 +278,61 @@ impl ExtensionColors {
         self.colors.get(&extension_of(node)).copied().unwrap_or(self.directory)
     }
 
+    /// Colour of the extension at `rank` in [`Self::entries`].
+    #[must_use]
+    pub fn color_at(&self, rank: usize) -> Oklch {
+        self.ranked.get(rank).map_or(self.directory, |(_, _, c)| *c)
+    }
+
+    /// Per-node breakdown of bytes by extension, for drawing size bars as
+    /// stacked colour segments.
+    ///
+    /// One bottom-up pass over the tree: every directory's tally is merged
+    /// into its parent's and then reduced to its `keep` largest extensions,
+    /// so the work is linear in the number of nodes times the extension
+    /// count and the result is a few entries per node. Nodes are stored
+    /// parent-first, so walking indices in reverse visits children before
+    /// their parents.
+    #[must_use]
+    pub fn mix(&self, tree: &Tree, keep: usize) -> ExtensionMix {
+        let rank_of: foldhash::HashMap<&Option<String>, u32> =
+            self.ranked.iter().enumerate().map(|(i, (ext, _, _))| (ext, i as u32)).collect();
+        let n = tree.len();
+        let mut tallies: Vec<Option<foldhash::HashMap<u32, u64>>> = (0..n).map(|_| None).collect();
+        let mut segments: Vec<Vec<(u32, u64)>> = (0..n).map(|_| Vec::new()).collect();
+        let ids: Vec<NodeId> = tree.nodes().map(|(id, _)| id).collect();
+        for &id in ids.iter().rev() {
+            let index = id.index();
+            let node = tree.node(id);
+            let mut tally = tallies[index].take().unwrap_or_default();
+            if node.kind != Kind::Directory {
+                let size = tree.size(id);
+                if size > 0 {
+                    let rank = rank_of.get(&extension_of(node)).copied().unwrap_or(u32::MAX);
+                    *tally.entry(rank).or_default() += size;
+                }
+            }
+            if !tally.is_empty() {
+                let mut top: Vec<(u32, u64)> = tally.iter().map(|(&r, &b)| (r, b)).collect();
+                top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+                top.truncate(keep);
+                segments[index] = top;
+            }
+            if let Some(parent) = node.parent {
+                debug_assert!(parent.index() < index, "nodes are stored parent-first");
+                match &mut tallies[parent.index()] {
+                    None => tallies[parent.index()] = Some(tally),
+                    Some(into) => {
+                        for (rank, bytes) in tally {
+                            *into.entry(rank).or_default() += bytes;
+                        }
+                    }
+                }
+            }
+        }
+        ExtensionMix { segments }
+    }
+
     /// Number of distinct extensions ranked.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -287,6 +342,22 @@ impl ExtensionColors {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.colors.is_empty()
+    }
+}
+
+/// The largest extensions below each node with their bytes, computed by
+/// [`ExtensionColors::mix`]. Ranks index [`ExtensionColors::entries`].
+#[derive(Clone, Debug)]
+pub struct ExtensionMix {
+    segments: Vec<Vec<(u32, u64)>>,
+}
+
+impl ExtensionMix {
+    /// `(rank, bytes)` pairs for `id`, largest first. Bytes not covered by
+    /// the returned pairs belong to smaller extensions.
+    #[must_use]
+    pub fn segments(&self, id: NodeId) -> &[(u32, u64)] {
+        self.segments.get(id.index()).map_or(&[], Vec::as_slice)
     }
 }
 
@@ -627,5 +698,32 @@ mod tests {
             let base = &map.pixels[((leaf.top * 64 + leaf.left) * 4) as usize..][..3];
             assert_ne!(&overlay[((leaf.top * 64 + leaf.left) * 4) as usize..][..3], base, "overlay uses the given colour");
         }
+    }
+}
+
+#[cfg(test)]
+mod mix_tests {
+    use super::*;
+
+    #[test]
+    fn mix_aggregates_bytes_per_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("a.rs"), vec![0u8; 30_000]).unwrap();
+        std::fs::write(dir.path().join("sub/b.rs"), vec![0u8; 20_000]).unwrap();
+        std::fs::write(dir.path().join("sub/c.png"), vec![0u8; 10_000]).unwrap();
+        let options = dirstats_scan::ScanOptions { size_metric: dirstats_scan::SizeMetric::Apparent, ..Default::default() };
+        let tree = dirstats_scan::scan(dir.path(), &options).unwrap();
+        let colors = ExtensionColors::rank(&tree);
+        let mix = colors.mix(&tree, 8);
+        let root = tree.root();
+        let rs = colors.entries().iter().position(|(e, _, _)| e.as_deref() == Some("rs")).unwrap() as u32;
+        let png = colors.entries().iter().position(|(e, _, _)| e.as_deref() == Some("png")).unwrap() as u32;
+        assert_eq!(mix.segments(root), &[(rs, 50_000), (png, 10_000)]);
+        let sub = tree.children(root).iter().copied().find(|&id| tree.node(id).name.as_ref() == "sub").unwrap();
+        assert_eq!(mix.segments(sub), &[(rs, 20_000), (png, 10_000)]);
+        let a = tree.children(root).iter().copied().find(|&id| tree.node(id).name.as_ref() == "a.rs").unwrap();
+        assert_eq!(mix.segments(a), &[(rs, 30_000)]);
+        assert_eq!(colors.mix(&tree, 1).segments(root), &[(rs, 50_000)]);
     }
 }
