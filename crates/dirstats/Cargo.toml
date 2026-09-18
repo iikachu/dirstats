@@ -15,7 +15,7 @@ name = "dirstats"
 path = "src/main.rs"
 
 [features]
-default = ["gui", "tui", "open", "trash", "icloud"]
+default = ["gui", "tui", "open", "trash", "delete", "icloud"]
 # Graphical front end (egui).
 gui = ["dep:dirstats-gui"]
 # Terminal front end (ratatui + crossterm). Chosen with --tui, or on its own
@@ -27,6 +27,8 @@ egui-fonts = ["dirstats-gui?/egui-fonts"]
 open = ["dirstats-app/open", "dirstats-tui?/open", "dirstats-gui?/open"]
 # Move-to-trash action.
 trash = ["dirstats-app/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
+# Permanent delete in the GUI, independent of the trash (Windows and Linux).
+delete = ["dirstats-app/delete", "dirstats-gui?/delete"]
 # iCloud Drive "Remove Download" action (macOS; does nothing elsewhere).
 icloud = ["dirstats-app/icloud", "dirstats-gui?/icloud"]
 # Write a cushion treemap PNG with `--png`.

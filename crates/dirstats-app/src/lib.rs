@@ -14,13 +14,13 @@
 
 pub mod backup;
 pub mod cloud;
-#[cfg(feature = "trash")]
+#[cfg(feature = "delete")]
 pub mod delete;
 pub mod format;
 pub mod locations;
 pub mod scanner;
 
-#[cfg(feature = "trash")]
+#[cfg(feature = "delete")]
 pub use delete::{DeleteFailure, DeleteOutcome, DeleteStatus, RunningDelete};
 pub use dirstats_scan::{self as scan, NodeId, ScanOptions, SizeMetric, Tree};
 pub use scanner::{RunningScan, ScanStatus};
@@ -66,7 +66,7 @@ pub struct App {
     pub evicted: foldhash::HashSet<NodeId>,
     /// Permanent deletion in progress, if any. Front ends call
     /// [`App::poll_delete`] each tick to adopt the outcome.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     pub delete: Option<RunningDelete>,
     /// Set by the permanent-delete gate for this run only; never saved.
     permanent_delete: bool,
@@ -443,7 +443,7 @@ impl App {
     /// Recycle Bin. Refused unless [`App::permanent_delete`] is on. Only
     /// one deletion runs at a time. The front end is expected to have
     /// confirmed with the user; nothing here asks.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     pub fn delete_node_permanently(&mut self, id: NodeId) -> io::Result<()> {
         if !self.permanent_delete() {
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, "permanent delete is not enabled"));
@@ -463,7 +463,7 @@ impl App {
     /// Adopt a finished deletion: the node counts as deleted when its path
     /// is gone, whatever happened underneath. Returns the path and outcome
     /// for the front end to report when a deletion has just finished.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
+    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     pub fn poll_delete(&mut self) -> Option<(PathBuf, DeleteOutcome)> {
         let running = self.delete.as_ref()?;
         let DeleteStatus::Done(outcome) = running.try_finish() else { return None };

@@ -9,6 +9,7 @@ description = "Graphical front end for dirstats (egui)"
 [features]
 default = []
 trash = ["dirstats-app/trash"]
+delete = ["dirstats-app/delete"]
 icloud = ["dirstats-app/icloud"]
 open = ["dirstats-app/open"]
 # Keep egui's bundled fonts and text sizes instead of the platform's own.
