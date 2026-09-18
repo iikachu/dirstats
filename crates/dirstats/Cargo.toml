@@ -15,10 +15,11 @@ name = "dirstats"
 path = "src/main.rs"
 
 [features]
-default = ["gui", "open", "trash", "icloud"]
+default = ["gui", "tui", "open", "trash", "icloud"]
 # Graphical front end (egui).
 gui = ["dep:dirstats-gui"]
-# Terminal front end (ratatui + crossterm). Pick it at run time with --tui.
+# Terminal front end (ratatui + crossterm). Chosen with --tui, or on its own
+# when no graphical session is available (a Linux console, SSH).
 tui = ["dep:dirstats-tui"]
 # Use egui's bundled fonts in the GUI instead of the platform's own, for comparison.
 egui-fonts = ["dirstats-gui?/egui-fonts"]
@@ -26,7 +27,7 @@ egui-fonts = ["dirstats-gui?/egui-fonts"]
 open = ["dirstats-app/open", "dirstats-tui?/open", "dirstats-gui?/open"]
 # Move-to-trash action.
 trash = ["dirstats-app/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
-# iCloud Drive "Remove Download" action (macOS).
+# iCloud Drive "Remove Download" action (macOS; does nothing elsewhere).
 icloud = ["dirstats-app/icloud", "dirstats-gui?/icloud"]
 # Write a cushion treemap PNG with `--png`.
 png = ["dep:png"]

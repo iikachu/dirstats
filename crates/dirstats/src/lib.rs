@@ -17,6 +17,8 @@ pub use dirstats_tui as tui;
 #[cfg(feature = "gui")]
 pub use dirstats_gui as gui;
 
+pub mod session;
+
 use clap::{Parser, ValueEnum};
 use dirstats_scan::{ScanOptions, SizeMetric};
 use std::path::{Component, Path, PathBuf};
@@ -76,10 +78,15 @@ pub struct Cli {
     /// Print the largest entries instead of opening an interface.
     #[arg(long)]
     pub summary: bool,
-    /// Use the terminal interface instead of opening a window.
+    /// Use the terminal interface instead of opening a window. Chosen on
+    /// its own when there is no graphical session (a Linux console, SSH).
     #[cfg(feature = "tui")]
-    #[arg(long)]
+    #[arg(long, conflicts_with = "gui")]
     pub tui: bool,
+    /// Open a window even when there seems to be no graphical session.
+    #[cfg(all(feature = "gui", feature = "tui"))]
+    #[arg(long)]
+    pub gui: bool,
     /// Write a cushion treemap PNG to this file and exit.
     #[cfg(feature = "png")]
     #[arg(long, value_name = "FILE")]
