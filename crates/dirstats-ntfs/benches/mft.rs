@@ -46,7 +46,13 @@ fn mft_vs_walk(c: &mut Criterion) {
 
     for cold in [true, false] {
         let mut group = c.benchmark_group(format!("ntfs/{}/{}", root.display(), if cold { "cold" } else { "warm" }));
-        group.sample_size(10);
+        if cold {
+            // Every scan starts from an emptied cache, so warming up only
+            // costs time; one sample is one scan of up to a second or so.
+            group.sample_size(10).warm_up_time(Duration::from_secs(1)).measurement_time(Duration::from_secs(10));
+        } else {
+            group.sample_size(20);
+        }
         for (name, scan) in scanners {
             group.bench_function(name, |b| {
                 b.iter_custom(|iters| {
