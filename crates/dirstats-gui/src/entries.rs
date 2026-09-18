@@ -137,70 +137,100 @@ impl Gui {
         let text = ui.visuals().text_color();
 
         // Crumbs from the left, wrapping onto more lines when the path is
-        // longer than the name column. The cell is one line tall: a wrapping
-        // layout takes its rect's height as the height of the first line and
-        // grows downward from there.
-        let inset = 3.0;
-        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y + inset), egui::pos2(edges[1] - pad, origin.y + row_height - inset));
+        // longer than the name column. Laid out by hand on a fixed line
+        // pitch: every piece of text gets a rect exactly its own size, so
+        // hover pills are the same height on every line and never overlap.
+        const MARKER: f32 = 12.0;
+        const GAP: f32 = 2.0;
+        let name_cell = egui::Rect::from_min_max(egui::pos2(edges[0] + pad, origin.y), egui::pos2(edges[1] - pad, origin.y + row_height));
         let mut target = None;
         let mut crumbs_height = 0.0;
         if name_cell.width() > 4.0 {
-            let layout = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
-            let mut crumb_ui = ui.new_child(egui::UiBuilder::new().max_rect(name_cell).layout(layout));
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            let strong = ui.visuals().strong_text_color();
+            let weak = ui.visuals().weak_text_color();
             let clip = ui.clip_rect();
             // Clip to the column, but leave the cell's padding for the hover
             // pill, which reaches a little past the text on either side.
             let clip_x = name_cell.x_range().expand(pad - 1.0).intersection(clip.x_range());
-            crumb_ui.set_clip_rect(egui::Rect::from_x_y_ranges(clip_x, clip.y_range()));
-            crumb_ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
+            let painter = ui.painter().with_clip_rect(egui::Rect::from_x_y_ranges(clip_x, clip.y_range()));
+            let line_height = painter.layout_no_wrap("Ag".to_owned(), font.clone(), text).size().y;
+            let pitch = line_height + 4.0;
+            // First line centred in a normal row, later lines a pitch apart.
+            let first_top = origin.y + (row_height - line_height) / 2.0;
+            let (left, full) = (name_cell.min.x, name_cell.width());
+            let (mut x, mut line) = (left, 0usize);
             let crumbs = self.app.breadcrumbs();
-            let body_font = egui::TextStyle::Body.resolve(crumb_ui.style());
             for (i, &id) in crumbs.iter().enumerate() {
+                let last = i + 1 == crumbs.len();
                 let mut name = tree.node(id).name.to_string_lossy().into_owned();
-                if i + 1 == crumbs.len() {
+                if last {
                     name.push('/');
                 }
-                // Start a new line here rather than let the label wrap itself:
-                // a label pushed whole onto the next line still claims an
-                // empty piece of this one, and its rect spans both.
-                // An ancestor's width includes the marker after it, so the two
-                // move to the next line together and no line starts with one.
-                const MARKER: f32 = 12.0;
-                let marker_room = if i + 1 == crumbs.len() { 0.0 } else { crumb_ui.spacing().item_spacing.x + MARKER };
-                let width = crumb_ui.painter().layout_no_wrap(name.clone(), body_font.clone(), text).size().x + marker_room;
-                let at_line_start = crumb_ui.cursor().min.x <= name_cell.min.x + 0.5;
-                if !at_line_start && width > crumb_ui.available_size_before_wrap().x {
-                    crumb_ui.end_row();
+                let color = if last { strong } else { text };
+                // An ancestor carries the marker after it, so the two move to
+                // the next line together and no line starts with a marker.
+                let marker_room = if last { 0.0 } else { GAP + MARKER };
+                let whole = painter.layout_no_wrap(name.clone(), font.clone(), color);
+                if x > left && x + whole.size().x + marker_room > left + full {
+                    x = left;
+                    line += 1;
                 }
-                if i + 1 == crumbs.len() {
-                    crumb_ui.add(egui::Label::new(egui::RichText::new(name).strong().color(text)).wrap().selectable(false));
+                // A name wider than the column is cut into one piece per line.
+                let pieces = if whole.size().x + marker_room <= full {
+                    vec![whole]
                 } else {
-                    // Held back so the hover fill can go beneath the text.
-                    let fill = crumb_ui.painter().add(egui::Shape::Noop);
-                    let link = crumb_ui.add(egui::Label::new(egui::RichText::new(name).color(text)).wrap().sense(Sense::click()).selectable(false));
-                    if link.hovered() {
-                        crumb_ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    let wrapped = painter.layout(name, font.clone(), color, (full - marker_room).max(1.0));
+                    wrapped.rows.iter().map(|row| painter.layout_no_wrap(row.text().trim_end().to_owned(), font.clone(), color)).collect()
+                };
+                let mut rects = Vec::with_capacity(pieces.len());
+                for (n, piece) in pieces.iter().enumerate() {
+                    if n > 0 {
+                        x = left;
+                        line += 1;
+                    }
+                    let min = egui::pos2(x, first_top + pitch * line as f32);
+                    rects.push(egui::Rect::from_min_size(min, piece.size()));
+                    x += piece.size().x;
+                }
+                if !last {
+                    // One response per piece; the crumb reacts as a whole.
+                    let (mut hovered, mut pressed) = (false, false);
+                    for (n, rect) in rects.iter().enumerate() {
+                        let response = ui.interact(rect.expand2(egui::vec2(3.0, 1.0)), ui.id().with(("crumb", i, n)), Sense::click());
+                        hovered |= response.hovered();
+                        pressed |= response.is_pointer_button_down_on();
+                        if response.clicked() {
+                            target = Some(id);
+                        }
+                    }
+                    if hovered {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         // A pill behind the crumb, darker while pressed, and
                         // an underline as on a link.
-                        let visuals = crumb_ui.visuals();
-                        let strength = if link.is_pointer_button_down_on() { 0.28 } else { 0.14 };
-                        let color = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), strength);
-                        let pill = link.rect.expand2(egui::vec2(3.0, 1.0));
-                        crumb_ui.painter().set(fill, egui::Shape::rect_filled(pill, 4.0, color));
-                        crumb_ui.painter().hline(link.rect.x_range(), link.rect.max.y - 1.0, egui::Stroke::new(1.0_f32, text));
+                        let visuals = ui.visuals();
+                        let fill = visuals.panel_fill.lerp_to_gamma(visuals.text_color(), if pressed { 0.28 } else { 0.14 });
+                        for rect in &rects {
+                            painter.rect_filled(rect.expand2(egui::vec2(3.0, 1.0)), 4.0, fill);
+                            painter.hline(rect.x_range(), rect.max.y - 1.0, egui::Stroke::new(1.0_f32, text));
+                        }
                     }
-                    if link.clicked() {
-                        target = Some(id);
-                    }
-                    let (rect, _) = crumb_ui.allocate_exact_size(egui::vec2(MARKER, MARKER), Sense::hover());
-                    icons::paint(crumb_ui.painter(), rect, icons::Glyph::ChevronRight, crumb_ui.visuals().weak_text_color());
+                }
+                for (piece, rect) in pieces.into_iter().zip(&rects) {
+                    painter.galley(rect.min, piece, color);
+                }
+                if !last {
+                    let centre = egui::pos2(x + GAP + MARKER / 2.0, first_top + pitch * line as f32 + line_height / 2.0);
+                    icons::paint(&painter, egui::Rect::from_center_size(centre, egui::vec2(MARKER, MARKER)), icons::Glyph::ChevronRight, weak);
+                    x += GAP + MARKER + GAP;
                 }
             }
-            crumbs_height = crumb_ui.min_rect().height();
+            // The margin above the first line, repeated below the last.
+            crumbs_height = 2.0 * (first_top - origin.y) + pitch * line as f32 + line_height;
         }
         // Never so tall that the list below is squeezed out.
         let limit = (ui.available_height() * 0.5).max(row_height);
-        let height = row_height.max(crumbs_height + 2.0 * inset).min(limit);
+        let height = row_height.max(crumbs_height).min(limit);
         let row_rect = egui::Rect::from_min_size(origin, egui::vec2(row_width, height));
         ui.allocate_rect(row_rect, Sense::hover());
         ui.painter().set(background, egui::Shape::rect_filled(row_rect, 0.0, ui.visuals().faint_bg_color));
