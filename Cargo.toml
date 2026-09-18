@@ -26,3 +26,4 @@ chrono = { version = "0.4", default-features = false, features = ["std", "clock"
 tempfile = "3"
 # Fast non-cryptographic hasher (Zlib, by Orson Peters).
 foldhash = "0.1"
+libc = "0.2"

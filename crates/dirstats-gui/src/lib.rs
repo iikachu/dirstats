@@ -10,7 +10,7 @@
 //! legend, driven entirely by [`dirstats_app::App`].
 
 use dirstats_app::{App, NodeId, format};
-use dirstats_treemap::render::{ExtensionColors, render};
+use dirstats_treemap::render::{ExtensionColors, ExtensionMix, render};
 use dirstats_treemap::{Style, Treemap, TreemapOptions};
 use eframe::egui::{self, Color32, ColorImage, Key, Sense, TextureHandle, TextureOptions};
 
@@ -48,11 +48,41 @@ enum NodeAction {
     Trash,
     #[cfg(feature = "trash")]
     PutBack,
+    /// macOS: drop the local copy of an iCloud item.
+    #[cfg(feature = "icloud")]
+    Evict,
+    /// Windows: delete without the Recycle Bin, after the gate and a confirmation.
+    #[cfg(all(windows, feature = "trash"))]
+    DeletePermanently,
+    /// Windows: open the gate dialog, then delete if it is accepted.
+    #[cfg(all(windows, feature = "trash"))]
+    EnablePermanentDelete,
+}
+
+/// What the platform calls its trash in menu labels.
+const TRASH_NAME: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
+
+/// Whether the permanent-delete item is offered and how it reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Permanent {
+    /// Not on this platform: only the trash is offered.
+    Unavailable,
+    /// Offered as "Enable Permanent Delete…", which opens the gate dialog.
+    Locked,
+    /// Gate passed: offered as "Delete Permanently".
+    Enabled,
 }
 
 /// Menu items for a node: the same in the tree and the treemap. `is_dir`
 /// decides whether "Zoom in" is offered. Returns the chosen action.
-fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool, trashed: TrashState) -> Option<NodeAction> {
+fn node_menu(
+    ui: &mut egui::Ui,
+    path: &std::path::Path,
+    is_dir: bool,
+    trashed: TrashState,
+    permanent: Permanent,
+    cloud: dirstats_app::cloud::CloudStatus,
+) -> Option<NodeAction> {
     let mut action = None;
     ui.set_max_width(320.0);
     ui.set_min_width(200.0);
@@ -85,13 +115,41 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool, trashed: T
     if menu_item(ui, Some(icons::Glyph::OpenInNew), "Open", false).clicked() {
         action = Some(NodeAction::Open);
     }
+    #[cfg(feature = "icloud")]
+    match cloud {
+        dirstats_app::cloud::CloudStatus::Local => {}
+        dirstats_app::cloud::CloudStatus::Downloaded => {
+            if menu_item(ui, Some(icons::Glyph::CloudOff), "Remove Download", false).clicked() {
+                action = Some(NodeAction::Evict);
+            }
+        }
+        dirstats_app::cloud::CloudStatus::Evicted => {
+            ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::CloudOff), "Not Downloaded", false));
+        }
+    }
+    #[cfg(not(feature = "icloud"))]
+    let _ = cloud;
     #[cfg(feature = "trash")]
     {
         menu_separator(ui);
         match trashed {
             TrashState::Present => {
-                if menu_item(ui, Some(icons::Glyph::Delete), "Move to Trash", true).clicked() {
+                if menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), true).clicked() {
                     action = Some(NodeAction::Trash);
+                }
+                #[cfg(windows)]
+                match permanent {
+                    Permanent::Unavailable => {}
+                    Permanent::Locked => {
+                        if menu_item(ui, None, "Enable Permanent Delete…", false).clicked() {
+                            action = Some(NodeAction::EnablePermanentDelete);
+                        }
+                    }
+                    Permanent::Enabled => {
+                        if menu_item(ui, None, "Delete Permanently", true).clicked() {
+                            action = Some(NodeAction::DeletePermanently);
+                        }
+                    }
                 }
             }
             TrashState::CanPutBack => {
@@ -100,12 +158,15 @@ fn node_menu(ui: &mut egui::Ui, path: &std::path::Path, is_dir: bool, trashed: T
                 }
             }
             TrashState::Trashed => {
-                ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), "In Trash", false));
+                ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), &format!("In {TRASH_NAME}"), false));
+            }
+            TrashState::Deleted => {
+                ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), "Deleted", false));
             }
         }
     }
-    #[cfg(not(feature = "trash"))]
-    let _ = trashed;
+    #[cfg(not(all(windows, feature = "trash")))]
+    let _ = (trashed, permanent);
     if action.is_some() {
         ui.close();
     }
@@ -120,6 +181,23 @@ enum TrashState {
     CanPutBack,
     /// Trashed, location unknown.
     Trashed,
+    /// Deleted permanently (Windows), or under something that was.
+    Deleted,
+}
+
+/// A modal in front of the window; at most one at a time.
+#[cfg(all(windows, feature = "trash"))]
+#[derive(Debug)]
+enum Dialog {
+    /// The permanent-delete gate. `then` is the node whose deletion was
+    /// asked for, confirmed next if the gate is accepted.
+    EnablePermanent { then: Option<NodeId> },
+    /// Confirm deleting `node` without the Recycle Bin.
+    ConfirmDelete(NodeId),
+    /// The Recycle Bin refused `node`; offer permanent deletion instead.
+    TrashFailed { node: NodeId, error: String },
+    /// A finished deletion that did not remove everything.
+    Report { path: std::path::PathBuf, outcome: dirstats_app::DeleteOutcome },
 }
 
 /// A menu row: optional leading icon in a fixed slot so labels line up,
@@ -160,6 +238,8 @@ fn format_time(time: std::time::SystemTime) -> String {
 
 /// Period of the highlight pulse.
 const PULSE_SECONDS: f64 = 2.4;
+/// Extensions drawn as coloured segments in a share bar; the rest is the plain bar.
+const BAR_SEGMENTS: usize = 6;
 
 /// How far toward the sRGB gamut edge a highlighted colour's chroma moves.
 /// Relative to the edge rather than a fixed factor, so every hue gets a
@@ -196,6 +276,13 @@ mod icons {
         Undo,
         /// Column picker.
         ViewColumn,
+        Home,
+        /// `storage`, a stack of drives.
+        Storage,
+        Folder,
+        /// `cloud_off`.
+        CloudOff,
+        Cloud,
     }
 
     impl Glyph {
@@ -207,6 +294,11 @@ mod icons {
                 Glyph::OpenInNew => "M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z",
                 Glyph::Delete => "M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z",
                 Glyph::ViewColumn => "M121-280v-400q0-33 23.5-56.5T201-760h559q33 0 56.5 23.5T840-680v400q0 33-23.5 56.5T760-200H201q-33 0-56.5-23.5T121-280Zm79 0h133v-400H200v400Zm213 0h133v-400H413v400Zm213 0h133v-400H626v400Z",
+                Glyph::Home => "M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z",
+                Glyph::Storage => "M120-160v-160h720v160H120Zm80-40h80v-80h-80v80Zm-80-440v-160h720v160H120Zm80-40h80v-80h-80v80Zm-80 280v-160h720v160H120Zm80-40h80v-80h-80v80Z",
+                Glyph::Folder => "M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z",
+                Glyph::CloudOff => "m792-56-88-88H260q-83 0-141.5-58.5T60-344q0-74 49-129t123-59q7-29 20.5-56t30.5-48L56-792l56-56 736 736-56 56ZM260-224h364L340-508q-2 12-3 24t-1 24h-76q-42 0-71 29t-29 71q0 42 29 71t71 29Zm527-2-57-57q13-14 21.5-30.5T760-350q0-42-29-71t-71-29h-60v-80q0-50-35-85t-85-35q-16 0-31.5 4T419-633l-58-58q28-19 60-29t65-10q83 0 141.5 58.5T686-530h14q62 0 108 41.5T854-370q0 32-12 61.5T787-226ZM590-462Zm-244 98Z",
+                Glyph::Cloud => "M260-160q-91 0-155.5-63T40-377q0-78 47-139t123-78q25-92 100-149t170-57q117 0 198.5 81.5T760-520q69 8 114.5 59.5T920-340q0 75-52.5 127.5T740-160H260Zm0-80h480q42 0 71-29t29-71q0-42-29-71t-71-29h-60v-80q0-83-58.5-141.5T480-720q-83 0-141.5 58.5T280-520h-20q-58 0-99 41t-41 99q0 58 41 99t99 41Zm220-240Z",
                 Glyph::Undo => "M280-200v-80h284q63 0 109.5-40T720-420q0-60-46.5-100T564-560H312l104 104-56 56-200-200 200-200 56 56-104 104h252q97 0 166.5 63T800-420q0 94-69.5 157T564-200H280Z",
             }
         }
@@ -591,6 +683,16 @@ fn apply_theme(ctx: &egui::Context) {
 struct Gui {
     app: App,
     colors: Option<ExtensionColors>,
+    /// Largest extensions below every node, for the share bar segments.
+    mix: Option<ExtensionMix>,
+    /// Places offered when nothing is being scanned, listed on first show.
+    locations: Option<Vec<dirstats_app::locations::Location>>,
+    /// Probed with the locations; `Some(false)` earns a hint in the picker
+    /// and on the scanning screen.
+    full_disk_access: Option<bool>,
+    /// iCloud status of nodes drawn so far; cleared with the tree and after
+    /// an eviction.
+    cloud: std::collections::HashMap<NodeId, dirstats_app::cloud::CloudStatus>,
     /// Bumped whenever a new tree arrives so cached renders are invalidated.
     tree_version: u64,
     map: Option<Treemap>,
@@ -627,6 +729,9 @@ struct Gui {
     /// When the current footer message appeared, so it outranks the hover
     /// path for a while; failures stay until the next action.
     message_since: Option<(std::time::Instant, String)>,
+    /// Modal in front of everything, if any.
+    #[cfg(all(windows, feature = "trash"))]
+    dialog: Option<Dialog>,
 }
 
 /// Which optional columns are shown. Name and Extension are always there.
@@ -727,6 +832,10 @@ impl Gui {
         Self {
             app,
             colors: None,
+            mix: None,
+            locations: None,
+            full_disk_access: dirstats_app::locations::full_disk_access(),
+            cloud: std::collections::HashMap::new(),
             tree_version: 0,
             map: None,
             map_key: None,
@@ -745,13 +854,20 @@ impl Gui {
             menu_node: None,
             pending_copy: None,
             message_since: None,
+            #[cfg(all(windows, feature = "trash"))]
+            dialog: None,
         }
     }
 
     fn tree_changed(&mut self) {
         self.tree_version += 1;
         self.selection = None;
+        self.cloud.clear();
         self.colors = self.app.tree.as_ref().map(ExtensionColors::rank);
+        self.mix = match (&self.app.tree, &self.colors) {
+            (Some(tree), Some(colors)) => Some(colors.mix(tree, BAR_SEGMENTS)),
+            _ => None,
+        };
         self.map = None;
         self.map_key = None;
     }
@@ -861,9 +977,39 @@ impl Gui {
             TrashState::CanPutBack
         } else if self.app.is_trashed(node) {
             TrashState::Trashed
+        } else if self.app.is_deleted(node) {
+            TrashState::Deleted
         } else {
             TrashState::Present
         }
+    }
+
+    fn permanent(&self) -> Permanent {
+        if !cfg!(windows) {
+            Permanent::Unavailable
+        } else if self.app.permanent_delete() {
+            Permanent::Enabled
+        } else {
+            Permanent::Locked
+        }
+    }
+
+    /// iCloud status of `node`, looked up once per tree. The lookups cost
+    /// microseconds and only displayed rows ask, so this stays cheap.
+    fn cloud_status(&mut self, node: NodeId) -> dirstats_app::cloud::CloudStatus {
+        use dirstats_app::cloud::{CloudStatus, status};
+        if self.app.is_evicted(node) {
+            return CloudStatus::Evicted;
+        }
+        if let Some(&status) = self.cloud.get(&node) {
+            return status;
+        }
+        let Some(tree) = &self.app.tree else { return CloudStatus::Local };
+        let entry = tree.node(node);
+        let is_dir = !tree.children(node).is_empty();
+        let status = status(&tree.path(node), is_dir, entry.apparent_size, entry.allocated_size);
+        self.cloud.insert(node, status);
+        status
     }
 
     /// Carry out a context-menu action on `node`.
@@ -887,16 +1033,202 @@ impl Gui {
             #[cfg(feature = "trash")]
             NodeAction::Trash => {
                 if let Err(err) = self.app.trash_node(node) {
-                    self.app.message = Some(format!("trash failed: {err}"));
+                    self.app.message = Some(format!("move to {TRASH_NAME} failed: {err}"));
+                    // On Windows the usual causes are an item too large for
+                    // the bin or a drive without one; offer the way past them.
+                    #[cfg(windows)]
+                    if self.app.check_removable(node).is_ok() {
+                        self.dialog = Some(Dialog::TrashFailed { node, error: err.to_string() });
+                    }
                 }
             }
+            #[cfg(all(windows, feature = "trash"))]
+            NodeAction::DeletePermanently => self.ask_delete(node),
+            #[cfg(all(windows, feature = "trash"))]
+            NodeAction::EnablePermanentDelete => match self.app.check_removable(node) {
+                Ok(()) => self.dialog = Some(Dialog::EnablePermanent { then: Some(node) }),
+                Err(err) => self.app.message = Some(format!("delete failed: {err}")),
+            },
             #[cfg(feature = "trash")]
             NodeAction::PutBack => {
                 if let Err(err) = self.app.put_back(node) {
                     self.app.message = Some(format!("put back failed: {err}"));
                 }
             }
+            #[cfg(feature = "icloud")]
+            NodeAction::Evict => {
+                if let Err(err) = self.app.evict_node(node) {
+                    self.app.message = Some(format!("remove download failed: {err}"));
+                }
+            }
         }
+    }
+
+    /// Open the confirmation for deleting `node` permanently, or explain
+    /// why that is refused.
+    #[cfg(all(windows, feature = "trash"))]
+    fn ask_delete(&mut self, node: NodeId) {
+        match self.app.check_removable(node) {
+            Ok(()) if self.app.delete.is_some() => self.app.message = Some("delete failed: a deletion is already running".into()),
+            Ok(()) => self.dialog = Some(Dialog::ConfirmDelete(node)),
+            Err(err) => self.app.message = Some(format!("delete failed: {err}")),
+        }
+    }
+
+    /// Draw the running-deletion progress and whichever dialog is open.
+    /// Both are modal: nothing behind them takes input.
+    #[cfg(all(windows, feature = "trash"))]
+    fn dialogs(&mut self, ctx: &egui::Context) {
+        use egui::{Modal, RichText};
+        const WIDTH: f32 = 440.0;
+
+        // A clean deletion only needs the footer message; anything else gets a report.
+        if let Some((path, outcome)) = self.app.poll_delete()
+            && (!outcome.failures.is_empty() || outcome.cancelled)
+        {
+            self.dialog = Some(Dialog::Report { path, outcome });
+        }
+
+        if let Some(running) = &self.app.delete {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            let (done, total) = (running.done(), running.total.max(1));
+            let path = running.path.display().to_string();
+            let mut cancel = false;
+            Modal::new(egui::Id::new("delete-progress")).show(ctx, |ui| {
+                ui.set_width(WIDTH);
+                ui.heading("Deleting permanently");
+                ui.add(egui::Label::new(RichText::new(path).weak()).truncate());
+                ui.add_space(8.0);
+                ui.add(egui::ProgressBar::new(done as f32 / total as f32).text(format!("{done} of {total} items")));
+                ui.add_space(8.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+            if cancel {
+                running.cancel();
+            }
+            return;
+        }
+
+        let Some(dialog) = self.dialog.take() else { return };
+        let mut next = None;
+        let mut confirmed_delete = None;
+        let mut enable = None;
+        let response = Modal::new(egui::Id::new("dialog")).show(ctx, |ui| {
+            ui.set_width(WIDTH);
+            ui.spacing_mut().item_spacing.y = 8.0;
+            match &dialog {
+                Dialog::EnablePermanent { then } => {
+                    ui.heading("Enable permanent delete?");
+                    ui.label(
+                        "Files deleted this way skip the Recycle Bin and cannot be recovered by dirstats or Windows. \
+                         Use it for items too large to recycle or on drives without a Recycle Bin. \
+                         You will be asked to confirm each deletion.",
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(RichText::new("Enable").strong()).clicked() {
+                            enable = Some((true, *then));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            next = Some(None);
+                        }
+                    });
+                }
+                Dialog::ConfirmDelete(node) => {
+                    let path = self.app.path_of(*node).unwrap_or_default();
+                    let tree = self.app.tree.as_ref();
+                    let is_dir = tree.is_some_and(|t| !t.children(*node).is_empty());
+                    let size = tree.map(|t| format::size(t.size(*node))).unwrap_or_default();
+                    ui.heading(if is_dir { "Delete this folder permanently?" } else { "Delete this file permanently?" });
+                    ui.add(egui::Label::new(RichText::new(path.display().to_string()).strong()).wrap());
+                    let count = tree.map(|t| t.node(*node).file_count).unwrap_or_default();
+                    ui.label(RichText::new(if is_dir { format!("{size}, {count} files") } else { size }).weak());
+                    ui.label(
+                        RichText::new("It will not go to the Recycle Bin and cannot be recovered. \
+                                       Links are removed without touching what they point at.")
+                            .color(ui.visuals().error_fg_color),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let delete = egui::Button::new(RichText::new("Delete Permanently").strong().color(ui.visuals().error_fg_color));
+                        if ui.add(delete).clicked() {
+                            confirmed_delete = Some(*node);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            next = Some(None);
+                        }
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            if ui.add(egui::Button::new(RichText::new("Disable permanent delete").weak()).frame(false)).clicked() {
+                                enable = Some((false, None));
+                            }
+                        });
+                    });
+                }
+                Dialog::TrashFailed { node, error } => {
+                    let path = self.app.path_of(*node).unwrap_or_default();
+                    ui.heading("Couldn't move to the Recycle Bin");
+                    ui.add(egui::Label::new(RichText::new(path.display().to_string()).strong()).wrap());
+                    ui.label("The item may be too large to recycle, or the drive has no Recycle Bin.");
+                    ui.label(RichText::new(error).weak().small());
+                    let enabled = self.app.permanent_delete();
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let label = if enabled { "Delete Permanently…" } else { "Enable Permanent Delete…" };
+                        if ui.button(RichText::new(label).strong()).clicked() {
+                            next = Some(Some(if enabled {
+                                Dialog::ConfirmDelete(*node)
+                            } else {
+                                Dialog::EnablePermanent { then: Some(*node) }
+                            }));
+                        }
+                        if ui.button("Cancel").clicked() {
+                            next = Some(None);
+                        }
+                    });
+                }
+                Dialog::Report { path, outcome } => {
+                    ui.heading(if outcome.cancelled { "Deletion cancelled" } else { "Some items were not deleted" });
+                    ui.add(egui::Label::new(RichText::new(path.display().to_string()).weak()).truncate());
+                    ui.label(format!("{} removed, {} failed.", outcome.removed, outcome.failures.len()));
+                    if !outcome.failures.is_empty() {
+                        ui.label(
+                            RichText::new("Files in use and files needing administrator rights cannot be removed here.").weak(),
+                        );
+                        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                            for failure in &outcome.failures {
+                                ui.add(egui::Label::new(RichText::new(failure.path.display().to_string()).monospace().small()).truncate());
+                                ui.add(egui::Label::new(RichText::new(failure.error.to_string()).weak().small()).truncate());
+                            }
+                        });
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("OK").clicked() {
+                            next = Some(None);
+                        }
+                    });
+                }
+            }
+        });
+        if let Some((on, then)) = enable {
+            if let Err(err) = self.app.set_permanent_delete(on) {
+                self.app.message = Some(format!("saving settings failed: {err}"));
+            }
+            next = Some(match then {
+                Some(node) if on => Some(Dialog::ConfirmDelete(node)),
+                _ => None,
+            });
+        }
+        if let Some(node) = confirmed_delete {
+            if let Err(err) = self.app.delete_node_permanently(node) {
+                self.app.message = Some(format!("delete failed: {err}"));
+            }
+            next = Some(None);
+        }
+        self.dialog = match next {
+            Some(dialog) => dialog,
+            // Clicking the backdrop or pressing Escape dismisses without acting.
+            None if response.should_close() => None,
+            None => Some(dialog),
+        };
     }
 
     /// Zoom into `id`, or its parent when it is a file.
@@ -934,6 +1266,8 @@ impl eframe::App for Gui {
         // Keep the panel's background fill but no margin, so the columns run edge to edge.
         let frame = egui::Frame::central_panel(&ctx.style()).inner_margin(0.0);
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| self.body(ui));
+        #[cfg(all(windows, feature = "trash"))]
+        self.dialogs(ctx);
         if let Some(text) = self.pending_copy.take() {
             ctx.copy_text(text);
         }
@@ -1454,7 +1788,10 @@ impl Gui {
         }
         let mut rows = self.app.tree_rows();
         self.keyboard_navigation(ui, &mut rows, row_height + ui.spacing().item_spacing.y);
+        // Computed before borrowing the tree, since the lookup caches into self.
+        let cloud_states: Vec<dirstats_app::cloud::CloudStatus> = rows.iter().map(|&(id, _)| self.cloud_status(id)).collect();
         let tree = self.app.tree.as_ref().expect("checked above");
+        let (mix, colors) = (self.mix.as_ref(), self.colors.as_ref());
         let selected = self.selected_node();
         let indent = 16.0;
         let pad = 6.0;
@@ -1462,7 +1799,9 @@ impl Gui {
 
         // Computed before the row closure, which cannot borrow the app mutably.
         let trashed_rows: Vec<bool> = rows.iter().map(|&(id, _)| self.app.is_trashed(id)).collect();
+        let evicted_rows: Vec<bool> = rows.iter().map(|&(id, _)| self.app.is_evicted(id)).collect();
         let trash_states: Vec<TrashState> = rows.iter().map(|&(id, _)| self.trash_state(id)).collect();
+        let permanent = self.permanent();
         let mut select = None;
         let mut toggle = None;
         let mut menu_action: Option<(NodeId, NodeAction)> = None;
@@ -1538,23 +1877,61 @@ impl Gui {
                     name.push_str("  !");
                 }
                 let label_rect = egui::Rect::from_min_max(egui::pos2(expander_rect.max.x + 2.0, top), egui::pos2(name_cell.max.x - pad, bottom));
-                if label_rect.width() > 4.0 {
-                    let mut name_ui = ui.new_child(egui::UiBuilder::new().max_rect(label_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-                    name_ui.set_clip_rect(label_rect.intersect(ui.clip_rect()));
+                // A small cloud after the name for iCloud items, crossed out
+                // when only a placeholder is on disk. The truncating label
+                // would take the whole cell, so its room is held back first.
+                let glyph = match cloud_states[row_index] {
+                    dirstats_app::cloud::CloudStatus::Local => None,
+                    dirstats_app::cloud::CloudStatus::Downloaded => Some(icons::Glyph::Cloud),
+                    dirstats_app::cloud::CloudStatus::Evicted => Some(icons::Glyph::CloudOff),
+                };
+                let icon_room = if glyph.is_some() { 18.0 } else { 0.0 };
+                let text_rect = egui::Rect::from_min_max(label_rect.min, egui::pos2(label_rect.max.x - icon_room, bottom));
+                if text_rect.width() > 4.0 {
+                    let mut name_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                    name_ui.set_clip_rect(text_rect.intersect(ui.clip_rect()));
                     let mut rich = egui::RichText::new(name).color(text);
                     if trashed {
                         rich = rich.strikethrough();
                     }
-                    name_ui.add(egui::Label::new(rich).truncate().selectable(false));
+                    let label = name_ui.add(egui::Label::new(rich).truncate().selectable(false));
+                    if let Some(glyph) = glyph {
+                        let x = (label.rect.max.x + 4.0).min(label_rect.max.x - 14.0);
+                        let icon = egui::Rect::from_min_size(egui::pos2(x, row_rect.center().y - 7.0), egui::vec2(14.0, 14.0));
+                        // Lighter than text, a hint beside the name; but an
+                        // eviction done here is a change worth noticing, so it
+                        // takes the accent colour until the next scan.
+                        let color = if evicted_rows[row_index] {
+                            ui.visuals().hyperlink_color
+                        } else {
+                            ui.visuals().weak_text_color().gamma_multiply(0.5)
+                        };
+                        icons::paint(&ui.painter().with_clip_rect(name_cell), icon, glyph, color);
+                    }
                 }
 
-                // Bar column.
+                // Bar column: the row's share of its parent, split into the
+                // largest extensions below it in their treemap colours. The
+                // tail of smaller extensions stays in the plain bar colour.
                 let bar = cell(edges[1], edges[2]).shrink2(egui::vec2(pad, 5.0));
                 if edges[2] - edges[1] > 0.0 && bar.width() > 0.0 {
                     ui.painter().rect_filled(bar, 2.0, ui.visuals().faint_bg_color);
                     let mut filled = bar;
                     filled.set_width(bar.width() * (share / 100.0) as f32);
                     ui.painter().rect_filled(filled, 2.0, ui.visuals().weak_text_color());
+                    if let (Some(mix), Some(colors)) = (mix, colors)
+                        && size > 0
+                    {
+                        let painter = ui.painter().with_clip_rect(filled);
+                        let mut x = filled.min.x;
+                        for &(rank, bytes) in mix.segments(id) {
+                            let width = filled.width() * (bytes as f64 / size as f64) as f32;
+                            let segment = egui::Rect::from_min_max(egui::pos2(x, filled.min.y), egui::pos2(x + width, filled.max.y));
+                            let [r, g, b] = colors.color_at(rank as usize).to_srgb();
+                            painter.rect_filled(segment, 0.0, Color32::from_rgb(r, g, b));
+                            x += width;
+                        }
+                    }
                 }
 
                 // Share and size: right-aligned monospace, clipped to their cells.
@@ -1591,8 +1968,9 @@ impl Gui {
                 }
                 let path = tree.path(id);
                 let trash_state = trash_states[row_index];
+                let cloud = cloud_states[row_index];
                 row.context_menu(|ui| {
-                    if let Some(action) = node_menu(ui, &path, is_dir, trash_state) {
+                    if let Some(action) = node_menu(ui, &path, is_dir, trash_state, permanent, cloud) {
                         menu_action = Some((id, action));
                     }
                 });
@@ -1625,8 +2003,110 @@ impl Gui {
         }
     }
 
+    /// Home, disks and root to choose from, shown in the treemap area when
+    /// nothing has been scanned. Clicking one starts its scan.
+    fn location_picker(&mut self, ui: &mut egui::Ui) {
+        if self.locations.is_none() {
+            self.full_disk_access = dirstats_app::locations::full_disk_access();
+        }
+        let locations = self.locations.get_or_insert_with(dirstats_app::locations::list);
+        let rect = ui.available_rect_before_wrap();
+        let width = rect.width().min(560.0);
+        let row_height = 48.0;
+        let height = 44.0
+            + if self.app.message.is_some() { 22.0 } else { 0.0 }
+            + if self.full_disk_access == Some(false) { 70.0 } else { 0.0 }
+            + row_height * locations.len() as f32;
+        let top = (rect.center().y - height / 2.0).max(rect.min.y + 16.0);
+        let panel = egui::Rect::from_min_size(egui::pos2(rect.center().x - width / 2.0, top), egui::vec2(width, height));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(panel).layout(egui::Layout::top_down(egui::Align::Min)));
+        child.label(egui::RichText::new("Choose a location to scan").heading().strong().size(22.0));
+        if let Some(message) = &self.app.message {
+            child.add_space(4.0);
+            child.add(egui::Label::new(egui::RichText::new(message).color(child.visuals().error_fg_color)).truncate());
+        }
+        if self.full_disk_access == Some(false) {
+            child.add_space(4.0);
+            child.horizontal_wrapped(|ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "Without Full Disk Access some folders are skipped, and macOS asks about Desktop, Documents, Downloads and external disks one dialog at a time; the count pauses until each is answered.",
+                    )
+                    .color(ui.visuals().weak_text_color()),
+                );
+                #[cfg(target_os = "macos")]
+                if ui.button("Open Privacy Settings…").clicked()
+                    && let Err(err) = dirstats_app::locations::open_full_disk_access_settings()
+                {
+                    self.app.message = Some(format!("could not open System Settings: {err}"));
+                }
+            });
+        }
+        child.add_space(10.0);
+        let mono = egui::TextStyle::Monospace.resolve(child.style());
+        let body = egui::TextStyle::Body.resolve(child.style());
+        let small = egui::TextStyle::Small.resolve(child.style());
+        let mut chosen = None;
+        for (i, location) in locations.iter().enumerate() {
+            let (row_rect, row) = child.allocate_exact_size(egui::vec2(width, row_height), Sense::click());
+            let painter = child.painter();
+            if row.hovered() {
+                painter.rect_filled(row_rect, 4.0, hover_fill(child.visuals()));
+            }
+            let text = child.visuals().text_color();
+            let weak = child.visuals().weak_text_color();
+            let glyph = match location.kind {
+                dirstats_app::locations::Kind::Home => icons::Glyph::Home,
+                dirstats_app::locations::Kind::Volume => icons::Glyph::Storage,
+                dirstats_app::locations::Kind::Root => icons::Glyph::Folder,
+            };
+            let icon_rect = egui::Rect::from_center_size(egui::pos2(row_rect.min.x + 22.0, row_rect.center().y), egui::vec2(22.0, 22.0));
+            icons::paint(painter, icon_rect, glyph, text);
+            let left = row_rect.min.x + 44.0;
+            painter.text(egui::pos2(left, row_rect.min.y + 8.0), egui::Align2::LEFT_TOP, &location.name, body.clone(), text);
+            painter.text(
+                egui::pos2(left, row_rect.max.y - 8.0),
+                egui::Align2::LEFT_BOTTOM,
+                location.path.display().to_string(),
+                small.clone(),
+                weak,
+            );
+            if let (Some(total), Some(free)) = (location.total, location.free) {
+                let used = total.saturating_sub(free);
+                let right = row_rect.max.x - 10.0;
+                painter.text(
+                    egui::pos2(right, row_rect.min.y + 8.0),
+                    egui::Align2::RIGHT_TOP,
+                    format!("{} free of {}", format::size(free), format::size(total)),
+                    mono.clone(),
+                    weak,
+                );
+                // Fill bar for used space, like a Finder or Explorer drive row.
+                let bar = egui::Rect::from_min_max(egui::pos2(right - 160.0, row_rect.max.y - 16.0), egui::pos2(right, row_rect.max.y - 10.0));
+                painter.rect_filled(bar, 2.0, child.visuals().faint_bg_color);
+                let mut filled = bar;
+                filled.set_width(bar.width() * (format::percent(used, total) / 100.0) as f32);
+                painter.rect_filled(filled, 2.0, weak);
+            }
+            if i + 1 < locations.len() {
+                painter.hline(row_rect.x_range(), row_rect.max.y, egui::Stroke::new(1.0_f32, child.visuals().faint_bg_color));
+            }
+            if row.clicked() {
+                chosen = Some(location.path.clone());
+            }
+        }
+        if let Some(path) = chosen {
+            self.app.start_scan(path);
+            self.locations = None;
+        }
+    }
+
     /// Centred scan status shown in the treemap area until a tree arrives.
     fn scan_progress(&mut self, ui: &mut egui::Ui) {
+        if self.app.scan.is_none() && self.app.tree.is_none() {
+            self.location_picker(ui);
+            return;
+        }
         let rect = ui.available_rect_before_wrap();
         let (title, root, detail) = match &self.app.scan {
             Some(scan) => (
@@ -1654,6 +2134,13 @@ impl Gui {
         }
         child.add_space(4.0);
         child.label(egui::RichText::new(detail).strong().size(16.0).color(child.visuals().weak_text_color()));
+        if self.app.scan.is_some() && self.full_disk_access == Some(false) {
+            child.add_space(12.0);
+            child.label(
+                egui::RichText::new("If the count stops, macOS is probably asking for permission in a dialog, possibly behind this window.")
+                    .color(child.visuals().weak_text_color()),
+            );
+        }
     }
 
     fn treemap(&mut self, ui: &mut egui::Ui) {
@@ -1701,13 +2188,14 @@ impl Gui {
                 self.next_highlight = Some(Highlight::Subtree(node));
             }
         }
-        // Trashed boxes are hollowed out: panel fill with a faint outline, so the
-        // space they took is visible but empty until the next rescan.
-        if !self.app.trashed.is_empty() {
+        // Trashed and evicted boxes are hollowed out: panel fill with a faint
+        // outline, so the space they took is visible but empty until the
+        // next rescan.
+        if !self.app.trashed.is_empty() || !self.app.evicted.is_empty() {
             let fill = ui.visuals().panel_fill;
             let edge = egui::Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color);
             for item in map.items.iter().filter(|item| item.leaf) {
-                if self.app.is_trashed(item.node) {
+                if self.app.is_trashed(item.node) || self.app.is_evicted(item.node) {
                     let r = to_screen(item.rect);
                     painter.rect_filled(r, 0.0, fill);
                     painter.rect_stroke(r, 0.0, edge, egui::StrokeKind::Inside);
@@ -1752,8 +2240,10 @@ impl Gui {
                 None => (std::path::PathBuf::new(), false),
             };
             let trash_state = self.trash_state(node);
+            let permanent = self.permanent();
             let mut action = None;
-            let menu = response.context_menu(|ui| action = node_menu(ui, &path, is_dir, trash_state));
+            let cloud = self.cloud_status(node);
+            let menu = response.context_menu(|ui| action = node_menu(ui, &path, is_dir, trash_state, permanent, cloud));
             if menu.is_none() {
                 self.menu_node = None;
             }

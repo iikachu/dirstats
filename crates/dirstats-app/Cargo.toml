@@ -12,16 +12,28 @@ default = []
 trash = ["dep:trash", "dep:objc2-foundation"]
 # Open and reveal actions via the desktop.
 open = ["dep:open"]
+# iCloud Drive status and "Remove Download" (macOS; a no-op elsewhere).
+icloud = ["dep:objc2-foundation", "dep:objc2"]
 
 [dependencies]
 dirstats-scan.workspace = true
 foldhash.workspace = true
 trash = { workspace = true, optional = true }
+open = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+# Mount tables and filesystem sizes for the location picker.
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Drive enumeration; attribute clearing and delete-on-close for permanent deletion.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_WindowsProgramming"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Direct NSFileManager access for trashing with a Put Back location.
-objc2-foundation = { version = "0.3", optional = true, default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL"] }
-open = { workspace = true, optional = true }
+# Direct NSFileManager access for trashing with a Put Back location, and
+# NSURL resource values for iCloud status.
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL", "NSValue", "NSObject"] }
+objc2 = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

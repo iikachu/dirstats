@@ -701,10 +701,13 @@ version = "0.1.0"
 dependencies = [
  "dirstats-scan",
  "foldhash 0.1.5",
+ "libc",
+ "objc2 0.6.4",
  "objc2-foundation 0.3.2",
  "open",
  "tempfile",
  "trash",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
