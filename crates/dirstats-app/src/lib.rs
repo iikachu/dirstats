@@ -57,7 +57,7 @@ pub struct App {
     pub expanded: foldhash::HashSet<NodeId>,
     /// Nodes moved to the trash since the last scan, with where they went
     /// when known, which is what [`App::put_back`] needs: the trashed item's
-    /// path on macOS, its Recycle Bin id on Windows. Their
+    /// path on macOS, its trash entry's id elsewhere. Their
     /// descendants count as trashed too.
     pub trashed: foldhash::HashMap<NodeId, Option<PathBuf>>,
     /// Nodes deleted permanently since the last scan (Windows). Their
@@ -565,12 +565,13 @@ fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
     Ok(resulting.and_then(|url| url.path()).map(|p| PathBuf::from(p.to_string())))
 }
 
-/// On Windows the Recycle Bin entry is looked up after the move, the most
-/// recent one from `path`, and its id kept for Put Back.
-#[cfg(all(feature = "trash", windows))]
+/// Elsewhere (the Windows Recycle Bin, the freedesktop trash on Linux and
+/// BSD) the trash entry is looked up after the move, the most recent one
+/// from `path`, and its id kept for Put Back.
+#[cfg(all(feature = "trash", not(target_os = "macos")))]
 fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
     // Paths are compared canonical, as the scan may name the folder by
-    // its short (8.3) name and the Recycle Bin by the long one.
+    // its short (8.3) name or a symlink and the trash by the real one.
     let parent = path.parent().and_then(|p| p.canonicalize().ok());
     trash::delete(path).map_err(io::Error::other)?;
     let (Some(parent), Some(name)) = (parent, path.file_name()) else { return Ok(None) };
@@ -583,22 +584,16 @@ fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
         .map(|item| PathBuf::from(item.id)))
 }
 
-#[cfg(all(feature = "trash", not(any(target_os = "macos", windows))))]
-fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
-    trash::delete(path).map_err(io::Error::other)?;
-    Ok(None)
-}
-
 /// Move a trashed item from `location`, as [`platform_trash`] reported it,
 /// back to `original`.
-#[cfg(all(feature = "trash", not(windows)))]
+#[cfg(all(feature = "trash", target_os = "macos"))]
 fn platform_put_back(location: &Path, original: &Path) -> io::Result<()> {
     std::fs::rename(location, original)
 }
 
-/// Restored through the shell rather than renamed, so the Recycle Bin's
-/// record of the item goes with it.
-#[cfg(all(feature = "trash", windows))]
+/// Restored through the trash rather than renamed, so its record of the
+/// item (the Recycle Bin's `$I` file, the `.trashinfo`) goes with it.
+#[cfg(all(feature = "trash", not(target_os = "macos")))]
 fn platform_put_back(location: &Path, original: &Path) -> io::Result<()> {
     let items = trash::os_limited::list().map_err(io::Error::other)?;
     let Some(item) = items.into_iter().find(|item| Path::new(&item.id) == location) else {
@@ -657,8 +652,7 @@ mod tests {
         assert_eq!(app.tree_rows().len(), 2);
     }
 
-    /// Moves a real temporary file to the system trash, and back where the
-    /// platform allows; run explicitly with
+    /// Moves a real temporary file to the system trash, and back again; run explicitly with
     /// `cargo test -p dirstats-app --features trash -- --ignored`.
     #[cfg(feature = "trash")]
     #[test]
@@ -672,12 +666,10 @@ mod tests {
         assert!(!path.exists(), "file should have moved to the trash");
         assert!(app.is_trashed(small));
         assert!(app.message.as_deref().unwrap().starts_with("moved to "));
-        if cfg!(any(target_os = "macos", windows)) {
-            assert!(app.can_put_back(small), "trash location not found");
-            app.put_back(small).unwrap();
-            assert!(path.exists(), "file should be back");
-            assert!(!app.is_trashed(small));
-        }
+        assert!(app.can_put_back(small), "trash location not found");
+        app.put_back(small).unwrap();
+        assert!(path.exists(), "file should be back");
+        assert!(!app.is_trashed(small));
     }
 
     #[test]
