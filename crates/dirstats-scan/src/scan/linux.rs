@@ -48,7 +48,14 @@ const MASK: u32 = libc::STATX_TYPE
     | libc::STATX_MNT_ID;
 /// Never follow the last component, and never trigger an automount: an
 /// unmounted autofs point is reported as it is, as `stat` would.
-const FLAGS: libc::c_int = libc::AT_SYMLINK_NOFOLLOW | libc::AT_NO_AUTOMOUNT;
+///
+/// Take attributes the kernel already holds rather than asking the server
+/// again. On NFS, SMB, Ceph and FUSE (sshfs, rclone) a plain `stat` of an
+/// entry whose cached attributes have aged past the mount's timeout costs
+/// a round trip; a scan wants a snapshot, and one listed moments earlier
+/// is as good. An entry the kernel has not seen yet is still fetched, and
+/// local filesystems ignore the flag, so no filesystem needs detecting.
+const FLAGS: libc::c_int = libc::AT_SYMLINK_NOFOLLOW | libc::AT_NO_AUTOMOUNT | libc::AT_STATX_DONT_SYNC;
 
 type Batch = Vec<io::Result<Walked>>;
 

@@ -74,7 +74,9 @@ accounting for each well-known filesystem. The scan layer exposes one
 | Filesystem quirks | firmlinks, packages (from Disk Inventory X) | bind mounts not entered, btrfs subvolumes included (done, by mount id) | reparse points, junctions, OneDrive placeholders |
 
 Detection of the filesystem type is done once per volume so the scan picks
-the right strategy without per-entry cost.
+the right strategy without per-entry cost. On Linux none is needed yet:
+`statx` is called with `AT_STATX_DONT_SYNC`, which network and FUSE mounts
+honour by answering from cached attributes and local filesystems ignore.
 
 ## Front ends
 
