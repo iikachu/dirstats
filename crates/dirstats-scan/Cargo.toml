@@ -15,3 +15,15 @@ foldhash.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Benchmark harness (Apache-2.0 OR MIT, by Brook Heisler and Jorge Aparicio).
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+# Baseline walker in the listing bench.
+rayon.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+# Emptying the standby list for cold-cache benches.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
+
+[[bench]]
+name = "listing"
+harness = false

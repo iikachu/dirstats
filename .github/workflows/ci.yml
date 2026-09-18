@@ -99,3 +99,48 @@ jobs:
           name: e2e-screenshots-archlinux
           path: e2e-out/*.png
           if-no-files-found: warn
+
+  bench-listing:
+    name: listing bench (windows, ntfs folder + fat32/exfat/refs)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-listing
+      # One virtual disk per filesystem the MFT reader cannot handle. Needs
+      # an elevated runner, which hosted Windows runners are.
+      - name: Create FAT32, exFAT and ReFS volumes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\vhd | Out-Null
+          foreach ($v in @(@{fs='fat32'; letter='F'; mb=4096}, @{fs='exfat'; letter='G'; mb=4096}, @{fs='refs'; letter='R'; mb=8192})) {
+            $file = "C:\vhd\$($v.fs).vhdx"
+            @(
+              "create vdisk file=`"$file`" maximum=$($v.mb) type=expandable",
+              "select vdisk file=`"$file`"",
+              "attach vdisk",
+              "convert mbr",
+              "create partition primary",
+              "format fs=$($v.fs) quick label=$($v.fs)",
+              "assign letter=$($v.letter)"
+            ) | Set-Content -Encoding ascii "C:\vhd\$($v.fs).txt"
+            diskpart /s "C:\vhd\$($v.fs).txt"
+            if ($LASTEXITCODE -ne 0) { throw "diskpart failed for $($v.fs)" }
+          }
+          Get-Volume | Where-Object DriveLetter | Format-Table DriveLetter, FileSystem, Size
+      # dua-core's FileIdBothDirectoryInfo listing against std::fs::read_dir,
+      # warm and cold, on each filesystem.
+      - run: cargo bench -p dirstats-scan --bench listing --locked
+        env:
+          DIRSTATS_BENCH_ROOTS: 'ntfs-folder=D:\listing-bench;fat32=F:\;exfat=G:\;refs=R:\'
+          DIRSTATS_BENCH_FIXTURE_FILES: '50000'
+      - name: Upload criterion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: listing-bench
+          path: target/criterion
+          if-no-files-found: warn
