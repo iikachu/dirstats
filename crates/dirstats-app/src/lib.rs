@@ -408,8 +408,7 @@ impl App {
         Ok(())
     }
 
-    /// Whether `id` is part of a Time Machine backup, which only Time
-    /// Machine should remove; see [`backup::MANAGED_ELSEWHERE`].
+    /// Whether `id` is part of a Time Machine backup; see [`backup::NOTE`].
     #[must_use]
     pub fn is_time_machine(&self, id: NodeId) -> bool {
         // By ancestor names rather than `tree.path`, which allocates, since
@@ -436,8 +435,8 @@ impl App {
         if home.is_some_and(|home| home == path) {
             return refuse("the home folder is not removable");
         }
-        if self.is_time_machine(id) {
-            return refuse(backup::MANAGED_ELSEWHERE);
+        if backup::BLOCKS_TRASH && self.is_time_machine(id) {
+            return refuse(backup::NOTE);
         }
         Ok(())
     }

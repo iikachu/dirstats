@@ -123,23 +123,37 @@ pub(super) fn node_menu(
     {
         menu_separator(ui);
         match trashed {
-            TrashState::Present => {
-                if menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), true).clicked() {
-                    action = Some(NodeAction::Trash);
+            TrashState::Present | TrashState::TimeMachine => {
+                let backup = trashed == TrashState::TimeMachine;
+                if backup && dirstats_app::backup::BLOCKS_TRASH {
+                    // Shown but disabled, with the note saying where to go
+                    // instead, so the missing action does not read as a bug.
+                    ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), false));
+                } else {
+                    if menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), true).clicked() {
+                        action = Some(NodeAction::Trash);
+                    }
+                    #[cfg(windows)]
+                    match permanent {
+                        Permanent::Unavailable => {}
+                        Permanent::Locked => {
+                            if menu_item(ui, None, "Enable Permanent Delete…", false).clicked() {
+                                action = Some(NodeAction::EnablePermanentDelete);
+                            }
+                        }
+                        Permanent::Enabled => {
+                            if menu_item(ui, None, "Delete Permanently", true).clicked() {
+                                action = Some(NodeAction::DeletePermanently);
+                            }
+                        }
+                    }
                 }
-                #[cfg(windows)]
-                match permanent {
-                    Permanent::Unavailable => {}
-                    Permanent::Locked => {
-                        if menu_item(ui, None, "Enable Permanent Delete…", false).clicked() {
-                            action = Some(NodeAction::EnablePermanentDelete);
-                        }
-                    }
-                    Permanent::Enabled => {
-                        if menu_item(ui, None, "Delete Permanently", true).clicked() {
-                            action = Some(NodeAction::DeletePermanently);
-                        }
-                    }
+                if backup {
+                    ui.horizontal(|ui| {
+                        ui.add_space(10.0);
+                        ui.add(egui::Label::new(egui::RichText::new(dirstats_app::backup::NOTE).weak().small()).wrap().selectable(false));
+                    });
+                    ui.add_space(4.0);
                 }
             }
             TrashState::CanPutBack => {
@@ -152,16 +166,6 @@ pub(super) fn node_menu(
             }
             TrashState::Deleted => {
                 ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), "Deleted", false));
-            }
-            TrashState::TimeMachine => {
-                // Shown but disabled, with where to go instead, so the
-                // missing action does not read as a bug.
-                ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::Delete), &format!("Move to {TRASH_NAME}"), false));
-                ui.horizontal(|ui| {
-                    ui.add_space(10.0);
-                    ui.add(egui::Label::new(egui::RichText::new(dirstats_app::backup::MANAGED_ELSEWHERE).weak().small()).wrap().selectable(false));
-                });
-                ui.add_space(4.0);
             }
         }
     }
@@ -183,7 +187,8 @@ pub(super) enum TrashState {
     Trashed,
     /// Deleted permanently (Windows), or under something that was.
     Deleted,
-    /// Part of a Time Machine backup: removed from Time Machine, not here.
+    /// Part of a Time Machine backup: noted in the menu, and on macOS not
+    /// offered for the trash, since Time Machine removes its own backups.
     TimeMachine,
 }
 

@@ -4,17 +4,25 @@
 //! Time Machine backups on macOS: whether a path lies inside one, so
 //! front ends can point at Time Machine instead of offering the trash.
 //!
-//! Backups are managed by Time Machine itself (its settings, or
-//! `tmutil`); moving pieces of one to the trash either fails or
-//! leaves a backup that no longer restores. The checks run on any
-//! platform, since a backup disk can be read from anywhere, but only the
+//! On macOS backups are managed by Time Machine itself (its settings, or
+//! `tmutil`); moving pieces of one to the trash either fails or leaves a
+//! backup that no longer restores, so the trash is refused there. A
+//! backup disk plugged into another system is just files to that system:
+//! it is labelled as a macOS backup, and nothing is refused. Only the
 //! volume probe touches the disk.
 
 use std::path::{Component, Path};
 
-/// Where Time Machine is managed, for messages.
-pub const MANAGED_ELSEWHERE: &str =
-    "Managed by Time Machine. Remove old backups in Time Machine settings or with `tmutil`.";
+/// Whether items in a backup are kept out of the trash: only where Time
+/// Machine manages them.
+pub const BLOCKS_TRASH: bool = cfg!(target_os = "macos");
+
+/// What front ends show next to an item in a backup.
+pub const NOTE: &str = if BLOCKS_TRASH {
+    "Managed by Time Machine. Remove old backups in Time Machine settings or with `tmutil`."
+} else {
+    "Part of a macOS Time Machine backup."
+};
 
 /// Whether `path` is inside a Time Machine backup, from its components
 /// alone: the HFS+ backup store (`Backups.backupdb`) or the mount point
