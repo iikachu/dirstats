@@ -56,7 +56,8 @@ whichever front ends are built with `dep?/feature`.
 With both front ends built the binary picks one at run time
 (`dirstats::session`): `--tui` or `--gui` decide outright; otherwise it
 opens a window when the session looks graphical (`WAYLAND_DISPLAY` or
-`DISPLAY` on Linux and the BSDs, not an SSH session on macOS and Windows),
+`DISPLAY` on Linux and the BSDs, not an SSH session on macOS, always on
+Windows),
 uses the terminal when it does not, and falls back to the terminal if the
 window fails to open. With no terminal either, it prints the summary.
 
