@@ -1,38 +1,70 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // by dirstats contributors
 
-//! Reading the master file table against walking the same NTFS volume.
+//! Reading the master file table against walking the same NTFS volume, each
+//! cold (standby list emptied before every scan, like a first scan) and warm
+//! (a rescan).
 //!
 //! ```text
-//! # Elevated prompt on Windows; the root defaults to C:\.
+//! # Elevated prompt on Windows.
 //! set DIRSTATS_BENCH_ROOT=D:\
+//! set DIRSTATS_BENCH_FIXTURE_FILES=100000
 //! cargo bench -p dirstats-ntfs --bench mft
 //! ```
 //!
-//! The table is read with `FILE_FLAG_NO_BUFFERING`, so every MFT scan goes to
-//! disk, while the walker hits a warm cache after the first scan: these are
-//! cold-table against warm-walk numbers. Elsewhere the bench does nothing.
+//! `DIRSTATS_BENCH_ROOT` defaults to `C:\`. `DIRSTATS_BENCH_FIXTURE_FILES`
+//! first adds a generated tree of that many files to the volume, so a nearly
+//! empty one still has something to scan. Elsewhere the bench does nothing.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 
 #[cfg(windows)]
+#[path = "../tests/support/mod.rs"]
+mod support;
+
+#[cfg(windows)]
 fn mft_vs_walk(c: &mut Criterion) {
-    use dirstats_scan::ScanOptions;
+    use dirstats_scan::{ScanOptions, Tree};
     use std::hint::black_box;
-    use std::path::PathBuf;
+    use std::io;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
 
     let root = std::env::var_os("DIRSTATS_BENCH_ROOT").map_or_else(|| PathBuf::from(r"C:\"), PathBuf::from);
+    if let Some(files) = std::env::var("DIRSTATS_BENCH_FIXTURE_FILES").ok().and_then(|n| n.parse().ok()) {
+        support::fixture(&root, files);
+    }
     let options = ScanOptions::default();
     // Fail up front rather than time a walk under the table's name.
     if let Err(err) = dirstats_ntfs::scan_mft(&root, &options) {
         panic!("cannot read the MFT of {} (NTFS drive root, elevated?): {err}", root.display());
     }
 
-    let mut group = c.benchmark_group(format!("ntfs/{}", root.display()));
-    group.sample_size(10);
-    group.bench_function("mft", |b| b.iter(|| black_box(dirstats_ntfs::scan_mft(&root, &options).unwrap())));
-    group.bench_function("walk", |b| b.iter(|| black_box(dirstats_scan::scan(&root, &options).unwrap())));
-    group.finish();
+    type Scan = fn(&Path, &ScanOptions) -> io::Result<Tree>;
+    let scanners: [(&str, Scan); 2] =
+        [("mft", |r, o| dirstats_ntfs::scan_mft(r, o)), ("walk", |r, o| dirstats_scan::scan(r, o))];
+
+    for cold in [true, false] {
+        let mut group = c.benchmark_group(format!("ntfs/{}/{}", root.display(), if cold { "cold" } else { "warm" }));
+        group.sample_size(10);
+        for (name, scan) in scanners {
+            group.bench_function(name, |b| {
+                b.iter_custom(|iters| {
+                    let mut total = Duration::ZERO;
+                    for _ in 0..iters {
+                        if cold {
+                            support::purge_standby_list();
+                        }
+                        let start = Instant::now();
+                        black_box(scan(&root, &options).unwrap());
+                        total += start.elapsed();
+                    }
+                    total
+                });
+            });
+        }
+        group.finish();
+    }
 }
 
 #[cfg(not(windows))]

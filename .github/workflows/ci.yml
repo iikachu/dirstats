@@ -100,7 +100,7 @@ jobs:
           path: e2e-out/*.png
 
   bench-ntfs:
-    name: ntfs bench (windows, elevated)
+    name: ntfs tests + bench (windows, elevated)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -116,10 +116,16 @@ jobs:
         run: |
           $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw "not elevated" }
-      # D:\ holds only the checkout and build output; C:\ takes about 12 minutes.
+      # Elevated-only tests: the MFT reader agrees with the walker, warm and cold.
+      - run: cargo test -p dirstats-ntfs --test mft_vs_walk --locked -- --ignored --test-threads=1
+        env:
+          DIRSTATS_TEST_VOLUME: 'D:\'
+      # D:\ holds only the checkout and build output, so add a generated tree;
+      # C:\ takes about 12 minutes warm and far longer cold.
       - run: cargo bench -p dirstats-ntfs --bench mft --locked
         env:
           DIRSTATS_BENCH_ROOT: 'D:\'
+          DIRSTATS_BENCH_FIXTURE_FILES: '100000'
       - name: Upload criterion report
         if: always()
         uses: actions/upload-artifact@v4
