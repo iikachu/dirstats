@@ -85,6 +85,8 @@ remote() {
     local watchdog=$!
     wait "$pid" || status=$?
     kill "$watchdog" 2>/dev/null || true
+    # Reap it quietly; bash otherwise reports the kill as "Terminated".
+    wait "$watchdog" 2>/dev/null || true
     return "$status"
 }
 
