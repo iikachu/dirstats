@@ -33,6 +33,9 @@ pub struct ScanOptions {
     /// Count data reachable through several hard links only once.
     pub count_hard_links_once: bool,
     pub size_metric: SizeMetric,
+    /// Use this platform's filesystem fast path when one is compiled in and
+    /// applies to the root; `false` always takes the generic walker.
+    pub fast_path: bool,
 }
 
 impl Default for ScanOptions {
@@ -42,6 +45,7 @@ impl Default for ScanOptions {
             same_filesystem: true,
             count_hard_links_once: true,
             size_metric: SizeMetric::default(),
+            fast_path: true,
         }
     }
 }
@@ -68,7 +72,9 @@ pub fn scan_with(
 ) -> io::Result<Tree> {
     let root = root.as_ref();
     #[cfg(all(target_os = "linux", feature = "linux-fast"))]
-    if let Some(mut walk) = linux::Walk::start(root, options) {
+    if options.fast_path
+        && let Some(mut walk) = linux::Walk::start(root, options)
+    {
         return build(root, options, cancel, progress, || walk.next(cancel));
     }
     walk_generic(root, options, cancel, progress)
