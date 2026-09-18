@@ -98,4 +98,38 @@ jobs:
         with:
           name: e2e-screenshots-archlinux
           path: e2e-out/*.png
+
+  bench-ntfs:
+    name: ntfs tests + bench (windows, elevated)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+      # Hosted Windows runners run as an administrator, which reading the
+      # MFT needs; fail loudly if that ever changes.
+      - name: Check elevation
+        shell: pwsh
+        run: |
+          $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+          if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw "not elevated" }
+      # Elevated-only tests: the MFT reader agrees with the walker, warm and cold.
+      - run: cargo test -p dirstats-ntfs --test mft_vs_walk --locked -- --ignored --test-threads=1
+        env:
+          DIRSTATS_TEST_VOLUME: 'D:\'
+      # D:\ holds only the checkout and build output, so add a generated tree;
+      # C:\ takes about 12 minutes warm and far longer cold.
+      - run: cargo bench -p dirstats-ntfs --bench mft --locked
+        env:
+          DIRSTATS_BENCH_ROOT: 'D:\'
+          DIRSTATS_BENCH_FIXTURE_FILES: '100000'
+      - name: Upload criterion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ntfs-bench
+          path: target/criterion
           if-no-files-found: warn
