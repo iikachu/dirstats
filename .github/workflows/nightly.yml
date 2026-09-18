@@ -5,11 +5,11 @@ name: Nightly
 # wrong results, not just slow ones. Timings go to the job summary or a
 # criterion report artifact.
 #
-# - ntfs bench: the elevated tests that the NTFS MFT reader agrees with the
+# - bench ntfs: the elevated tests that the NTFS MFT reader agrees with the
 #   walker, then the MFT bench against the walker, warm and cold.
-# - windows listing bench: dua-core's listing against std::fs::read_dir and
+# - bench windows listing: dua-core's listing against std::fs::read_dir and
 #   a direct FileIdBothDirectoryInfo walk, on NTFS, FAT32, exFAT and ReFS.
-# - linux walker bench: the shelved getdents64 + statx walker's variants
+# - bench linux walker: the shelved getdents64 + statx walker's variants
 #   against dirstats-scan, on ext4, XFS and NFS.
 #
 # The baseline in every bench is dirstats-scan, so a nightly run on an
@@ -37,8 +37,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  ntfs-bench:
-    name: ntfs bench (windows, elevated)
+  bench-ntfs:
+    name: bench ntfs (windows, elevated)
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -70,12 +70,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ntfs-bench
+          name: bench-ntfs
           path: target/criterion
           if-no-files-found: warn
 
-  windows-listing-bench:
-    name: windows listing bench (ntfs folder, fat32, exfat, refs)
+  bench-windows-listing:
+    name: bench windows listing (ntfs folder, fat32, exfat, refs)
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -116,12 +116,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-listing-bench
+          name: bench-windows-listing
           path: bench/windows-listing/target/criterion
           if-no-files-found: warn
 
-  linux-walker-bench:
-    name: linux walker bench (${{ matrix.fs }})
+  bench-linux-walker:
+    name: bench linux walker (${{ matrix.fs }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -196,5 +196,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: linux-walker-bench-${{ matrix.fs }}
+          name: bench-linux-walker-${{ matrix.fs }}
           path: bench.md

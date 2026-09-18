@@ -7,7 +7,7 @@ dua-core's `std::fs` walker is kept as a switch. It was tried in
 dirstats doesn't use it.
 
 This directory is its own Cargo workspace, so the main workspace and PR CI
-never build it. The `linux walker bench` jobs in
+never build it. The `bench linux walker` jobs in
 `.github/workflows/nightly.yml` run its tests and the bench every night on
 ext4, XFS and NFS, 10 cold rounds. A
 walker that disagrees with dua-core on file count, directory count or size
