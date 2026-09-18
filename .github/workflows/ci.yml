@@ -28,6 +28,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets --locked
       - run: cargo test --workspace --locked
+      # Over SSH to this runner, as from a text console: the binary must
+      # pick the terminal interface by itself. Windows keeps its window.
+      - name: text console over ssh
+        if: runner.os != 'Windows'
+        run: .github/scripts/ssh_tui.sh target/debug/dirstats
 
   # Each feature on its own, with defaults off, so a cfg gate that only
   # compiles with the defaults (or a warning it leaves) is caught.
