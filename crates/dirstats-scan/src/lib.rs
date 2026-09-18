@@ -12,4 +12,4 @@ pub mod scan;
 pub mod tree;
 
 pub use scan::{Progress, ScanOptions, scan, scan_with};
-pub use tree::{Kind, Node, NodeId, SizeMetric, Tree};
+pub use tree::{Kind, Node, NodeId, SizeMetric, Tree, TreeBuilder};

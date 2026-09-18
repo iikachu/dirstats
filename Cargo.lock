@@ -698,6 +698,7 @@ dependencies = [
  "clap",
  "dirstats-app",
  "dirstats-gui",
+ "dirstats-ntfs",
  "dirstats-scan",
  "dirstats-treemap",
  "dirstats-tui",
@@ -708,6 +709,7 @@ dependencies = [
 name = "dirstats-app"
 version = "0.1.0"
 dependencies = [
+ "dirstats-ntfs",
  "dirstats-scan",
  "foldhash 0.1.5",
  "libc",
@@ -728,6 +730,15 @@ dependencies = [
  "dirstats-treemap",
  "eframe",
  "rfd",
+]
+
+[[package]]
+name = "dirstats-ntfs"
+version = "0.1.0"
+dependencies = [
+ "dirstats-scan",
+ "foldhash 0.1.5",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

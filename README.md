@@ -9,7 +9,9 @@ terminal.
 
 ## Why dirstats
 
-- **Fast.** Scans in parallel on all your cores.
+- **Fast.** Scans in parallel on all your cores. On Windows, run it as
+  administrator and whole NTFS drives are read straight from the master file
+  table.
 - **Visual.** A softly shaded treemap beside a size-sorted list. Hover to see
   what a block is, click to select it, zoom into any folder.
 - **Colour by file type.** The largest file types get their own hue, with a
@@ -98,7 +100,7 @@ Run `dirstats --help` for the full list.
 
 ## Roadmap
 
-Even faster scans on NTFS and Linux, APFS clone accounting, Hilbert/Moore
+Even faster scans on Linux, APFS clone accounting, Hilbert/Moore
 layouts, saving and loading scans, and ready-to-run app downloads.
 
 ## For developers

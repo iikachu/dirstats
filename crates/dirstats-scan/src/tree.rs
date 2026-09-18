@@ -73,6 +73,45 @@ pub struct Tree {
     child_ids: Vec<NodeId>,
 }
 
+/// Builds a [`Tree`] from entries gathered by another scanner, such as a
+/// filesystem-specific fast path living in its own crate.
+#[derive(Debug)]
+pub struct TreeBuilder(Tree);
+
+impl Default for TreeBuilder {
+    fn default() -> Self {
+        Self(Tree::new())
+    }
+}
+
+impl TreeBuilder {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a node. The first node is the root and has no parent; every
+    /// other node names a parent pushed before it. Directory sizes and
+    /// counts start at zero and are rolled up by [`TreeBuilder::finish`].
+    ///
+    /// # Panics
+    /// If the parent rule above is broken.
+    pub fn push(&mut self, node: Node) -> NodeId {
+        match node.parent {
+            None => assert!(self.0.is_empty(), "only the root has no parent"),
+            Some(parent) => assert!(parent.index() < self.0.len(), "parent pushed after child"),
+        }
+        self.0.push(node)
+    }
+
+    /// Roll sizes up into directories and sort children by `metric`.
+    #[must_use]
+    pub fn finish(mut self, metric: SizeMetric) -> Tree {
+        self.0.finish(metric);
+        self.0
+    }
+}
+
 impl Tree {
     pub(crate) fn new() -> Self {
         Self {

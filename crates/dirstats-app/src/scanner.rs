@@ -3,7 +3,8 @@
 
 //! Background scan handle.
 
-use dirstats_scan::{Progress, ScanOptions, Tree, scan_with};
+use dirstats_ntfs::scan_with;
+use dirstats_scan::{Progress, ScanOptions, Tree};
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};

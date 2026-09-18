@@ -34,6 +34,7 @@ png = ["dep:png"]
 [dependencies]
 dirstats-app.workspace = true
 dirstats-scan.workspace = true
+dirstats-ntfs.workspace = true
 dirstats-treemap.workspace = true
 dirstats-tui = { workspace = true, optional = true }
 dirstats-gui = { workspace = true, optional = true }
