@@ -185,9 +185,7 @@ impl Gui {
             }
         });
         if let Some(then) = enable {
-            if let Err(err) = self.app.set_permanent_delete(true) {
-                self.app.message = Some(format!("saving settings failed: {err}"));
-            }
+            self.app.enable_permanent_delete();
             next = Some(then.map(Dialog::ConfirmDelete));
         }
         if let Some(node) = confirmed_delete {

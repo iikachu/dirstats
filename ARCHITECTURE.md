@@ -18,7 +18,7 @@ a front end.
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
 | Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
 | NTFS | `dirstats-ntfs` | GPL-3.0-or-later | Whole-volume scan from the master file table (Windows, needs administrator rights); walks with `dirstats-scan` otherwise |
-| App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash; on Windows and Linux also gated permanent delete), persisted settings |
+| App | `dirstats-app` | GPL-3.0-or-later | Front-end-agnostic state: current scan, selection, zoom, sort, actions (open, reveal, trash; on Windows and Linux also gated permanent delete) |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
 
@@ -85,7 +85,8 @@ the right strategy without per-entry cost.
   re-rendered only when the tree, directory, layout or panel size changes.
   Hover uses the grid hit-test index; click reveals, double-click zooms,
   right-click opens or trashes. On Windows and Linux the menu also offers
-  permanent deletion behind a one-time gate, done by the app's own bottom-up
+  permanent deletion behind a gate that lasts until the app quits (nothing
+  is saved between runs), done by the app's own bottom-up
   walker (as WinDirStat does) rather than the shell, with its own
   confirmation, progress and failure report; the trash path stays with the
   trash crate, which refuses rather than nukes items the Recycle Bin or a

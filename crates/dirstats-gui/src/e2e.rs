@@ -344,9 +344,9 @@ fn context_menu_moves_a_file_to_the_trash() {
     screenshot(&mut harness, "context-menu-put-back");
 }
 
-/// Windows and Linux offer permanent delete behind a one-time gate. The test
-/// opens the gate and the confirmation and cancels both; nothing is deleted
-/// and the settings file is never written.
+/// Windows and Linux offer permanent delete behind a gate that lasts for the
+/// run. The test cancels the gate, passes it, and cancels the confirmation
+/// it leads to; nothing is deleted.
 #[cfg(all(any(windows, target_os = "linux"), feature = "trash"))]
 #[test]
 fn permanent_delete_gate_and_confirmation() {
@@ -368,10 +368,13 @@ fn permanent_delete_gate_and_confirmation() {
     assert!(harness.query_by_label("Enable permanent delete?").is_none());
     assert!(!harness.state().app.permanent_delete());
 
-    // Enabled in memory only: the gate's own button would save settings.
-    harness.state_mut().app.settings.permanent_delete = true;
     right_click(&mut harness, "readme.md");
-    click(&mut harness, "Delete Permanently");
+    click(&mut harness, "Enable Permanent Delete…");
+    harness.step();
+    harness.get_by_label("Enable").click();
+    harness.step();
+    harness.step();
+    assert!(harness.state().app.permanent_delete());
     harness.step();
     harness.get_by_label("Delete this file permanently?");
     screenshot(&mut harness, "permanent-delete-confirm");
