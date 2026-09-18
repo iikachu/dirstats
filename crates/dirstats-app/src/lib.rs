@@ -390,7 +390,7 @@ impl App {
     pub fn trash_node(&mut self, id: NodeId) -> io::Result<()> {
         let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
         self.check_removable(id)?;
-        let location = dataless::materialising(|| platform_trash(&path))?;
+        let location = dataless::materialising(|| trash_backend::trash(&path))?;
         self.trashed.insert(id, location);
         self.message = Some(format!("moved to {}: {}", TRASH_NAME, path.display()));
         Ok(())
@@ -498,7 +498,7 @@ impl App {
         if original.exists() {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "something else is at the original path"));
         }
-        dataless::materialising(|| platform_put_back(&location, &original))?;
+        dataless::materialising(|| trash_backend::put_back(&location, &original))?;
         self.trashed.remove(&id);
         self.message = Some(format!("put back: {}", original.display()));
         Ok(())
@@ -598,6 +598,75 @@ fn platform_put_back(location: &Path, original: &Path) -> io::Result<()> {
     };
     trash::os_limited::restore_all([item]).map_err(io::Error::other)?;
     if original.exists() { Ok(()) } else { Err(io::Error::other("restored somewhere else")) }
+}
+
+/// The platform trash, which tests swap for a folder of their own so the
+/// App's trash and Put Back bookkeeping runs without touching the real one.
+#[cfg(feature = "trash")]
+mod trash_backend {
+    use std::io;
+    use std::path::{Path, PathBuf};
+
+    #[cfg(test)]
+    pub use fake::Fake;
+
+    pub fn trash(path: &Path) -> io::Result<Option<PathBuf>> {
+        #[cfg(test)]
+        if let Some(result) = fake::trash(path) {
+            return result;
+        }
+        super::platform_trash(path)
+    }
+
+    pub fn put_back(location: &Path, original: &Path) -> io::Result<()> {
+        #[cfg(test)]
+        if let Some(result) = fake::put_back(location, original) {
+            return result;
+        }
+        super::platform_put_back(location, original)
+    }
+
+    #[cfg(test)]
+    mod fake {
+        use std::cell::RefCell;
+        use std::io;
+        use std::path::{Path, PathBuf};
+
+        /// A trash for the current thread: items are renamed into `dir`.
+        /// With `reports_location` off it behaves like a platform whose
+        /// trash cannot say where an item went.
+        pub struct Fake {
+            pub dir: tempfile::TempDir,
+            pub reports_location: bool,
+            count: usize,
+        }
+
+        thread_local!(static FAKE: RefCell<Option<Fake>> = const { RefCell::new(None) });
+
+        impl Fake {
+            /// Install a fake trash for this thread; tests run one per thread.
+            pub fn install(reports_location: bool) -> PathBuf {
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().to_path_buf();
+                FAKE.with(|f| *f.borrow_mut() = Some(Fake { dir, reports_location, count: 0 }));
+                path
+            }
+        }
+
+        pub fn trash(path: &Path) -> Option<io::Result<Option<PathBuf>>> {
+            FAKE.with(|f| {
+                let mut f = f.borrow_mut();
+                let fake = f.as_mut()?;
+                fake.count += 1;
+                let to = fake.dir.path().join(format!("{}-{}", fake.count, path.file_name().unwrap().to_string_lossy()));
+                Some(std::fs::rename(path, &to).map(|()| fake.reports_location.then_some(to)))
+            })
+        }
+
+        pub fn put_back(location: &Path, original: &Path) -> Option<io::Result<()>> {
+            FAKE.with(|f| f.borrow().as_ref().map(|_| std::fs::rename(location, original)))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -702,5 +771,114 @@ mod tests {
         assert_eq!(app.selected(), Some(big));
         assert!(app.back());
         assert_eq!(app.dir(), Some(app.tree.as_ref().unwrap().root()));
+    }
+
+    #[cfg(feature = "trash")]
+    mod put_back {
+        use super::*;
+        use crate::trash_backend::Fake;
+
+        fn named(app: &App, name: &str) -> NodeId {
+            app.entries().iter().copied().find(|&id| app.tree.as_ref().unwrap().node(id).name.to_string_lossy() == name).unwrap()
+        }
+
+        #[test]
+        fn trashes_and_puts_back_a_file() {
+            let trash = Fake::install(true);
+            let mut app = app_with_scan();
+            let small = named(&app, "small");
+            let path = app.path_of(small).unwrap();
+
+            app.trash_node(small).unwrap();
+            assert!(!path.exists());
+            assert!(app.is_trashed(small) && app.can_put_back(small));
+            assert_eq!(fs::read_dir(&trash).unwrap().count(), 1);
+            assert!(app.message.as_deref().unwrap().starts_with("moved to "));
+
+            app.put_back(small).unwrap();
+            assert_eq!(fs::read(&path).unwrap(), vec![0u8; 10]);
+            assert!(!app.is_trashed(small) && !app.can_put_back(small));
+            assert_eq!(fs::read_dir(&trash).unwrap().count(), 0);
+            assert_eq!(app.message.as_deref(), Some(&*format!("put back: {}", path.display())));
+        }
+
+        #[test]
+        fn trashes_and_puts_back_a_folder_with_its_contents() {
+            Fake::install(true);
+            let mut app = app_with_scan();
+            let sub = named(&app, "sub");
+            let big = app.tree.as_ref().unwrap().children(sub)[0];
+            let path = app.path_of(sub).unwrap();
+
+            app.trash_node(sub).unwrap();
+            assert!(!path.exists());
+            assert!(app.is_trashed(big), "descendants count as trashed");
+            assert!(!app.can_put_back(big), "only the trashed node itself goes back");
+
+            app.put_back(sub).unwrap();
+            assert_eq!(fs::read(path.join("big")).unwrap().len(), 5000);
+            assert!(!app.is_trashed(sub) && !app.is_trashed(big));
+        }
+
+        #[test]
+        fn refuses_when_the_original_path_is_taken() {
+            let trash = Fake::install(true);
+            let mut app = app_with_scan();
+            let small = named(&app, "small");
+            let path = app.path_of(small).unwrap();
+            app.trash_node(small).unwrap();
+            fs::write(&path, b"new").unwrap();
+
+            let err = app.put_back(small).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
+            assert_eq!(fs::read(&path).unwrap(), b"new", "the newcomer is left alone");
+            assert!(app.can_put_back(small), "still offered once the path is free");
+            assert_eq!(fs::read_dir(&trash).unwrap().count(), 1);
+        }
+
+        #[test]
+        fn unknown_location_is_trashed_but_not_put_back() {
+            Fake::install(false);
+            let mut app = app_with_scan();
+            let small = named(&app, "small");
+            app.trash_node(small).unwrap();
+            assert!(app.is_trashed(small));
+            assert!(!app.can_put_back(small));
+            assert_eq!(app.put_back(small).unwrap_err().kind(), io::ErrorKind::Unsupported);
+        }
+
+        #[test]
+        fn never_trashed_is_not_put_back() {
+            Fake::install(true);
+            let mut app = app_with_scan();
+            let small = named(&app, "small");
+            assert!(!app.can_put_back(small));
+            assert_eq!(app.put_back(small).unwrap_err().kind(), io::ErrorKind::Unsupported);
+            assert!(app.path_of(small).unwrap().exists());
+        }
+
+        #[test]
+        fn failed_put_back_keeps_the_item_trashed() {
+            let trash = Fake::install(true);
+            let mut app = app_with_scan();
+            let small = named(&app, "small");
+            app.trash_node(small).unwrap();
+            // Emptied from the trash behind the app's back.
+            for entry in fs::read_dir(&trash).unwrap() {
+                fs::remove_file(entry.unwrap().path()).unwrap();
+            }
+            assert!(app.put_back(small).is_err());
+            assert!(app.is_trashed(small));
+        }
+
+        #[test]
+        fn refuses_to_trash_the_scan_root() {
+            let trash = Fake::install(true);
+            let mut app = app_with_scan();
+            let root = app.tree.as_ref().unwrap().root();
+            assert_eq!(app.trash_node(root).unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+            assert!(!app.is_trashed(root));
+            assert_eq!(fs::read_dir(&trash).unwrap().count(), 0);
+        }
     }
 }
