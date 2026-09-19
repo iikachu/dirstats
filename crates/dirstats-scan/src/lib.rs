@@ -8,6 +8,13 @@
 //!
 //! See `CREDITS.md` in the repository for the projects this crate builds on.
 
+// docs.rs only allows https: images (its CSP is `img-src 'self' https:`), so
+// the logo is a link to the generated file, not a data URL.
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg"
+)]
+
 pub mod scan;
 pub mod tree;
 

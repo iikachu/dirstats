@@ -11,6 +11,13 @@
 
 //! Terminal user interface: a size-sorted entry list beside a cell treemap.
 
+// docs.rs only allows https: images (its CSP is `img-src 'self' https:`), so
+// the logo is a link to the generated file, not a data URL.
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg"
+)]
+
 mod treemap;
 
 use dirstats_core::App;

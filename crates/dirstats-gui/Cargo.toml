@@ -24,6 +24,12 @@ egui-fonts = []
 # End-to-end tests that drive the whole GUI headlessly (CI only; pulls in wgpu).
 e2e = ["dep:egui_kittest", "dep:tempfile"]
 
+# build.rs draws the window icon with build/icon.rs; nothing from these
+# build-dependencies is linked into the GUI.
+[build-dependencies]
+dirstats-scan.workspace = true
+dirstats-treemap.workspace = true
+
 [dependencies]
 dirstats-core.workspace = true
 eframe.workspace = true
@@ -31,3 +37,14 @@ rfd.workspace = true
 chrono.workspace = true
 egui_kittest = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
+
+# `cargo run -p dirstats-gui --example icon -- OUT_DIR` writes the icon files;
+# it shares build/icon.rs with build.rs, and its tests are the icon's tests.
+[[example]]
+name = "icon"
+test = true
+
+[dev-dependencies]
+dirstats-scan.workspace = true
+dirstats-treemap.workspace = true
+png.workspace = true

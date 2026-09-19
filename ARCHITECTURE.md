@@ -34,7 +34,12 @@ Rules:
 - Front ends and the binary depend on `dirstats-core` only, not on
   `dirstats-scan` or `dirstats-treemap`; they reach those through
   `dirstats_core::scan` and `dirstats_core::treemap`. TUI and GUI must be
-  swappable without touching scan or treemap code.
+  swappable without touching scan or treemap code. The one exception is
+  build time: `dirstats-gui`'s `build.rs` draws the app icon
+  (`build/icon.rs`) with `dirstats-treemap` and `dirstats-scan` as
+  build-dependencies, and only its pixels reach the app. The `icon` example
+  shares that file and writes the PNG, ICO and ICNS files, the README banner
+  and the docs logo.
 - Scanning never blocks a front end: `scan_with` runs on a worker thread and
   reports through `Progress` and a cancel flag.
 - `dirstats-scan` stays free of GPL-derived code (see
@@ -162,4 +167,4 @@ largest entries and, with `--trash`, moves them to the trash.
    rasterisation, GUI front end.
 5. Hilbert and Moore layouts; frames and labels.
 6. Save and load scans; benchmarks against dua, gdu, ncdu.
-7. App bundles and icons.
+7. App bundles. The icon is done (`dirstats-gui/build/icon.rs`).

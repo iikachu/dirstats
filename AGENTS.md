@@ -46,6 +46,13 @@ cargo run -- --tui PATH
 cargo check --workspace --all-targets --target x86_64-pc-windows-msvc
 ```
 
+After changing the icon, write its files and copy `dirstats-hero.svg` and
+`dirstats-logo.svg` into `assets/`:
+
+```bash
+cargo run -p dirstats-gui --example icon -- OUT_DIR
+```
+
 `rustfmt` is not enforced and the tree is not rustfmt-clean: do **not** run
 `cargo fmt` over files, it buries your change in noise. Match the
 surrounding style (long lines are normal here).
@@ -70,7 +77,9 @@ This project is permissive about how work gets done. Without asking, you may:
    contributors`. Write credits as "by <who>"; never "Copyright" or ©. Leave
    texts under `LICENSES/` verbatim.
 2. **Layers.** Front ends never scan, lay out or touch the filesystem; they
-   call `dirstats-core`, and depend on no other dirstats library crate. Scans run on a worker thread and never block a front
+   call `dirstats-core`, and depend on no other dirstats library crate
+   (build-dependencies aside: the GUI's `build.rs` draws the app icon with
+   `dirstats-treemap`). Scans run on a worker thread and never block a front
    end.
 3. **Real files.** Trash, permanent delete, open and iCloud eviction act on
    the user's system. Exercise them only on paths inside a temp directory the

@@ -13,6 +13,13 @@
 //! follow mount points) and the process may open the volume (which takes
 //! administrator rights), and walks otherwise.
 
+// docs.rs only allows https: images (its CSP is `img-src 'self' https:`), so
+// the logo is a link to the generated file, not a data URL.
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg"
+)]
+
 pub mod mft;
 #[cfg(windows)]
 mod volume;

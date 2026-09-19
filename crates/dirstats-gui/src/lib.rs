@@ -9,6 +9,13 @@
 //! Graphical front end: an entry list, a glow treemap and an extension
 //! legend, driven entirely by [`dirstats_core::App`].
 
+// docs.rs only allows https: images (its CSP is `img-src 'self' https:`), so
+// the logo is a link to the generated file, not a data URL.
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg"
+)]
+
 use dirstats_core::{App, NodeId};
 use dirstats_core::treemap::render::{ExtensionColors, ExtensionMix};
 use dirstats_core::treemap::{Style, Treemap};
@@ -71,7 +78,7 @@ const APP_NAME: &str = "dirstats";
 /// Open the window and run until it is closed.
 pub fn run(app: App) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_title(APP_NAME),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_title(APP_NAME).with_icon(app_icon()),
         ..Default::default()
     };
     eframe::run_native(
@@ -82,6 +89,14 @@ pub fn run(app: App) -> eframe::Result<()> {
             Ok(Box::new(Gui::new(app)))
         }),
     )
+}
+
+/// The treemap app icon for the window and, on macOS, the Dock: 256 × 256
+/// RGBA drawn by `build.rs`, with the margin Dock icons have on macOS.
+fn app_icon() -> egui::IconData {
+    const SIZE: u32 = 256;
+    let rgba = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
+    egui::IconData { rgba: rgba.to_vec(), width: SIZE, height: SIZE }
 }
 
 /// Fonts, text sizes and theme, set once before the first frame.

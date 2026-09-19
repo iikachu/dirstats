@@ -17,6 +17,13 @@
 //! front end or another program needs: [`scan`] builds the sized tree and
 //! [`treemap`] lays it out and renders it.
 
+// docs.rs only allows https: images (its CSP is `img-src 'self' https:`), so
+// the logo is a link to the generated file, not a data URL.
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg"
+)]
+
 pub mod backup;
 pub mod cloud;
 #[cfg(feature = "delete")]
