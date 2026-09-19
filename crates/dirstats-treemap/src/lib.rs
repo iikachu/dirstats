@@ -18,6 +18,6 @@ pub mod color;
 pub mod layout;
 pub mod render;
 
-pub use layout::{Rect, Style};
 pub use color::{Oklch, Rgb};
+pub use layout::{Rect, Style};
 pub use render::{ExtensionColors, Shading, Treemap, TreemapOptions, render};

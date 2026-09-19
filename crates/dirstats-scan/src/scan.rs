@@ -74,12 +74,7 @@ pub fn scan(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<Tree> {
 /// listing the root itself fails and nothing below it was read. Failures
 /// further down do not fail the scan; they are counted in
 /// [`Progress::errors`].
-pub fn scan_with(
-    root: impl AsRef<Path>,
-    options: &ScanOptions,
-    cancel: &AtomicBool,
-    progress: &Progress,
-) -> io::Result<Tree> {
+pub fn scan_with(root: impl AsRef<Path>, options: &ScanOptions, cancel: &AtomicBool, progress: &Progress) -> io::Result<Tree> {
     let root = root.as_ref();
     platform::prepare_process();
     let root_device = platform::root_device(root)?;
@@ -95,20 +90,12 @@ pub fn scan_with(
             return false;
         }
         match (same_filesystem, root_device, &entry.metadata) {
-            (true, Some(root_device), Some(Ok(metadata))) => {
-                platform::device(metadata).is_none_or(|device| device == root_device)
-            }
+            (true, Some(root_device), Some(Ok(metadata))) => platform::device(metadata).is_none_or(|device| device == root_device),
             _ => true,
         }
     };
 
-    let mut walk = dua_core::walk(
-        root,
-        options.threads,
-        Order::ParentFirst,
-        dua_core::Options::default(),
-        descend,
-    );
+    let mut walk = dua_core::walk(root, options.threads, Order::ParentFirst, dua_core::Options::default(), descend);
     let mut tree = Tree::new();
     // Maps dua-core's dense directory ids to tree nodes.
     let mut directory_nodes: Vec<Option<NodeId>> = Vec::new();
@@ -143,11 +130,7 @@ pub fn scan_with(
                 None => continue,
             },
         };
-        let name: Box<OsStr> = if parent.is_none() {
-            root.as_os_str().into()
-        } else {
-            entry.file_name.as_os_str().into()
-        };
+        let name: Box<OsStr> = if parent.is_none() { root.as_os_str().into() } else { entry.file_name.as_os_str().into() };
         let kind = if entry.file_type.is_dir() {
             Kind::Directory
         } else if entry.file_type.is_file() {
@@ -269,13 +252,8 @@ mod platform {
         let reported = metadata.blocks().saturating_mul(512);
         let io_block = metadata.blksize().max(1);
         let rounded_len = metadata.len().next_multiple_of(io_block);
-        let plausible_max =
-            rounded_len.saturating_add(io_block.saturating_mul(PLAUSIBLE_EXTRA_BLOCKS));
-        if reported <= plausible_max {
-            reported
-        } else {
-            rounded_len
-        }
+        let plausible_max = rounded_len.saturating_add(io_block.saturating_mul(PLAUSIBLE_EXTRA_BLOCKS));
+        if reported <= plausible_max { reported } else { rounded_len }
     }
 
     /// Identity of multiply-linked data and its total link count.
@@ -312,11 +290,7 @@ mod platform {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| unsafe {
             // Failure only means the policy is unsupported; nothing to do.
-            let _ = setiopolicy_np(
-                IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES,
-                IOPOL_SCOPE_PROCESS,
-                IOPOL_MATERIALIZE_DATALESS_FILES_OFF,
-            );
+            let _ = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_PROCESS, IOPOL_MATERIALIZE_DATALESS_FILES_OFF);
         });
     }
 
@@ -433,10 +407,7 @@ mod tests {
         fs::create_dir(dir.path().join("sub")).unwrap();
         fs::write(dir.path().join("sub/big"), vec![0u8; 100_000]).unwrap();
 
-        let options = ScanOptions {
-            size_metric: SizeMetric::Apparent,
-            ..ScanOptions::default()
-        };
+        let options = ScanOptions { size_metric: SizeMetric::Apparent, ..ScanOptions::default() };
         let tree = scan(dir.path(), &options).unwrap();
         let root = tree.root();
         assert_eq!(tree.node(root).file_count, 2);
@@ -457,10 +428,7 @@ mod tests {
         fs::write(dir.path().join("a"), vec![1u8; 50_000]).unwrap();
         fs::hard_link(dir.path().join("a"), dir.path().join("b")).unwrap();
 
-        let options = ScanOptions {
-            size_metric: SizeMetric::Apparent,
-            ..ScanOptions::default()
-        };
+        let options = ScanOptions { size_metric: SizeMetric::Apparent, ..ScanOptions::default() };
         let tree = scan(dir.path(), &options).unwrap();
         let duplicates = tree.nodes().filter(|(_, n)| n.duplicate_link).count();
         assert_eq!(duplicates, 1);
@@ -471,12 +439,7 @@ mod tests {
     fn cancelled_scan_errors() {
         let dir = tempfile::tempdir().unwrap();
         let cancel = AtomicBool::new(true);
-        let result = scan_with(
-            dir.path(),
-            &ScanOptions::default(),
-            &cancel,
-            &Progress::default(),
-        );
+        let result = scan_with(dir.path(), &ScanOptions::default(), &cancel, &Progress::default());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
     }
 
@@ -484,9 +447,7 @@ mod tests {
     // (Apache-2.0, by bootandy and contributors), rewritten against this API.
 
     fn find(tree: &Tree, name: &str) -> Option<NodeId> {
-        tree.nodes()
-            .find(|(_, n)| &*n.name == OsStr::new(name))
-            .map(|(id, _)| id)
+        tree.nodes().find(|(_, n)| &*n.name == OsStr::new(name)).map(|(id, _)| id)
     }
 
     #[test]
@@ -495,10 +456,7 @@ mod tests {
         fs::write(dir.path().join("a_file"), b"").unwrap();
         fs::write(dir.path().join("hello_file"), b"hello\n").unwrap();
 
-        let options = ScanOptions {
-            size_metric: SizeMetric::Apparent,
-            ..ScanOptions::default()
-        };
+        let options = ScanOptions { size_metric: SizeMetric::Apparent, ..ScanOptions::default() };
         let tree = scan(dir.path(), &options).unwrap();
         assert_eq!(tree.size(find(&tree, "a_file").unwrap()), 0);
         assert_eq!(tree.size(find(&tree, "hello_file").unwrap()), 6);
@@ -527,13 +485,9 @@ mod tests {
     fn symlink_to_file_is_not_followed() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("notes.txt"), vec![0u8; 10_000]).unwrap();
-        std::os::unix::fs::symlink(dir.path().join("notes.txt"), dir.path().join("the_link"))
-            .unwrap();
+        std::os::unix::fs::symlink(dir.path().join("notes.txt"), dir.path().join("the_link")).unwrap();
 
-        let options = ScanOptions {
-            size_metric: SizeMetric::Apparent,
-            ..ScanOptions::default()
-        };
+        let options = ScanOptions { size_metric: SizeMetric::Apparent, ..ScanOptions::default() };
         let tree = scan(dir.path(), &options).unwrap();
         let link = find(&tree, "the_link").unwrap();
         assert_eq!(tree.node(link).kind, Kind::Symlink);
@@ -561,33 +515,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("a/b")).unwrap();
         fs::write(dir.path().join("a/notes.txt"), vec![1u8; 50_000]).unwrap();
-        fs::hard_link(
-            dir.path().join("a/notes.txt"),
-            dir.path().join("a/b/the_link"),
-        )
-        .unwrap();
+        fs::hard_link(dir.path().join("a/notes.txt"), dir.path().join("a/b/the_link")).unwrap();
 
-        let options = ScanOptions {
-            size_metric: SizeMetric::Apparent,
-            ..ScanOptions::default()
-        };
+        let options = ScanOptions { size_metric: SizeMetric::Apparent, ..ScanOptions::default() };
         let tree = scan(dir.path(), &options).unwrap();
         let duplicates = tree.nodes().filter(|(_, n)| n.duplicate_link).count();
         assert_eq!(duplicates, 1);
 
-        let counted_twice = scan(
-            dir.path(),
-            &ScanOptions {
-                count_hard_links_once: false,
-                ..options
-            },
-        )
-        .unwrap();
+        let counted_twice = scan(dir.path(), &ScanOptions { count_hard_links_once: false, ..options }).unwrap();
         // Directory sizes vary by filesystem; the link must add exactly one more copy.
-        assert_eq!(
-            counted_twice.size(counted_twice.root()) - tree.size(tree.root()),
-            50_000
-        );
+        assert_eq!(counted_twice.size(counted_twice.root()) - tree.size(tree.root()), 50_000);
     }
 
     #[cfg(unix)]
@@ -622,7 +559,10 @@ mod tests {
         let table = "/Users\tUsers\n/usr/local\tusr/local\n";
         let data = |s: &str| PathBuf::from("/System/Volumes/Data").join(s);
         assert_eq!(platform::firmlink_duplicates(table, Path::new("/")), vec![data("Users"), data("usr/local")]);
-        assert!(platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data/Users/me")).is_empty(), "no firmlink below a Data folder");
+        assert!(
+            platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data/Users/me")).is_empty(),
+            "no firmlink below a Data folder"
+        );
         assert_eq!(platform::firmlink_duplicates(table, Path::new("/Users/me")), Vec::<PathBuf>::new(), "no firmlink inside a home scan");
         assert_eq!(platform::firmlink_duplicates(table, Path::new("/usr")), vec![data("usr/local")]);
         assert!(platform::firmlink_duplicates(table, Path::new("/System/Volumes/Data")).is_empty(), "the Data volume counts everything");

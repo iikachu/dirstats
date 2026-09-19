@@ -135,12 +135,7 @@ impl TreeBuilder {
 
 impl Tree {
     pub(crate) fn new() -> Self {
-        Self {
-            nodes: Vec::new(),
-            metric: SizeMetric::default(),
-            child_offsets: Vec::new(),
-            child_ids: Vec::new(),
-        }
+        Self { nodes: Vec::new(), metric: SizeMetric::default(), child_offsets: Vec::new(), child_ids: Vec::new() }
     }
 
     /// Nodes must be pushed after their parent.
@@ -159,11 +154,7 @@ impl Tree {
         for i in (1..self.nodes.len()).rev() {
             let node = &self.nodes[i];
             let Some(parent) = node.parent else { continue };
-            let (apparent, allocated) = if node.duplicate_link {
-                (0, 0)
-            } else {
-                (node.apparent_size, node.allocated_size)
-            };
+            let (apparent, allocated) = if node.duplicate_link { (0, 0) } else { (node.apparent_size, node.allocated_size) };
             let files = node.file_count;
             let dirs = node.dir_count + u64::from(node.kind == Kind::Directory);
             let modified = node.modified;

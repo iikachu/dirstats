@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! Fonts, text sizes and colours: the platform's own faces where they can
 //! be read, and both egui themes tuned for contrast.
 
@@ -35,10 +34,7 @@ pub(super) fn system_fonts() -> (egui::FontDefinitions, bool) {
             ],
         )
     } else if cfg!(target_os = "windows") {
-        (
-            &["C:\\Windows\\Fonts\\segoeui.ttf"],
-            &["C:\\Windows\\Fonts\\CascadiaMono.ttf", "C:\\Windows\\Fonts\\consola.ttf"],
-        )
+        (&["C:\\Windows\\Fonts\\segoeui.ttf"], &["C:\\Windows\\Fonts\\CascadiaMono.ttf", "C:\\Windows\\Fonts\\consola.ttf"])
     } else {
         (&[], &[])
     };

@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! The flat column header: widths, which columns show, the draggable
 //! dividers and the regions laid out beneath them.
 
@@ -37,7 +36,17 @@ pub(super) struct ShownColumns {
 
 impl Default for ShownColumns {
     fn default() -> Self {
-        Self { bar: true, share: true, size: true, items: false, files: false, dirs: false, modified: false, ext_share: true, ext_size: true }
+        Self {
+            bar: true,
+            share: true,
+            size: true,
+            items: false,
+            files: false,
+            dirs: false,
+            modified: false,
+            ext_share: true,
+            ext_size: true,
+        }
     }
 }
 

@@ -4,9 +4,9 @@
 //! Treemap drawn with terminal cells: one coloured cell per unit of area,
 //! laid out by `dirstats_core::treemap::layout`.
 
-use dirstats_core::{NodeId, Tree};
 use dirstats_core::treemap::layout::{self, Rect as MapRect, Style};
 use dirstats_core::treemap::{ExtensionColors, Oklch};
+use dirstats_core::{NodeId, Tree};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
@@ -19,14 +19,7 @@ const MAX_DEPTH: u32 = 6;
 /// Draw the subtree at `root` into `area` of `buffer`, one terminal cell per
 /// layout unit. A `selected` child of `root` is drawn as one box with a
 /// blinking outline.
-pub fn render(
-    buffer: &mut Buffer,
-    tree: &Tree,
-    colors: &ExtensionColors,
-    root: NodeId,
-    selected: Option<NodeId>,
-    area: Rect,
-) {
+pub fn render(buffer: &mut Buffer, tree: &Tree, colors: &ExtensionColors, root: NodeId, selected: Option<NodeId>, area: Rect) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -132,10 +125,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), vec![0u8; 3000]).unwrap();
         std::fs::write(dir.path().join("b.bin"), vec![0u8; 1000]).unwrap();
-        let options = dirstats_core::ScanOptions {
-            size_metric: dirstats_core::SizeMetric::Apparent,
-            ..Default::default()
-        };
+        let options = dirstats_core::ScanOptions { size_metric: dirstats_core::SizeMetric::Apparent, ..Default::default() };
         let tree = dirstats_core::scan::scan(dir.path(), &options).unwrap();
         let selected = tree.children(tree.root())[0];
         let area = Rect::new(0, 0, 40, 20);

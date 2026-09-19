@@ -114,11 +114,7 @@ fn header_line(app: &App) -> Line<'static> {
             spans.push(Span::styled(" › ", Style::default().fg(Color::DarkGray)));
         }
         let name = tree.node(id).name.to_string_lossy().into_owned();
-        let style = if i + 1 == crumbs.len() {
-            Style::default().add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
+        let style = if i + 1 == crumbs.len() { Style::default().add_modifier(Modifier::BOLD) } else { Style::default() };
         spans.push(Span::styled(name, style));
     }
     if let Some(&dir) = crumbs.last() {
@@ -206,9 +202,7 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
         .collect();
 
     let mut state = ListState::default().with_selected(Some(cursor.selected));
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+    let list = List::new(items).block(block).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(list, area, &mut state);
 }
 

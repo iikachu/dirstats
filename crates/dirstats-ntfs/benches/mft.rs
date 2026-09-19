@@ -16,9 +16,9 @@
 //! first adds a generated tree of that many files to the volume, so a nearly
 //! empty one still has something to scan. Elsewhere the bench does nothing.
 
-use criterion::{Criterion, criterion_group, criterion_main};
 #[cfg(windows)]
 use criterion::SamplingMode;
+use criterion::{Criterion, criterion_group, criterion_main};
 
 #[cfg(windows)]
 #[path = "../tests/support/mod.rs"]
@@ -43,8 +43,7 @@ fn mft_vs_walk(c: &mut Criterion) {
     }
 
     type Scan = fn(&Path, &ScanOptions) -> io::Result<Tree>;
-    let scanners: [(&str, Scan); 2] =
-        [("mft", |r, o| dirstats_ntfs::scan_mft(r, o)), ("walk", |r, o| dirstats_scan::scan(r, o))];
+    let scanners: [(&str, Scan); 2] = [("mft", |r, o| dirstats_ntfs::scan_mft(r, o)), ("walk", |r, o| dirstats_scan::scan(r, o))];
 
     for cold in [true, false] {
         let mut group = c.benchmark_group(format!("ntfs/{}/{}", root.display(), if cold { "cold" } else { "warm" }));

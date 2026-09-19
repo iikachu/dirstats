@@ -22,9 +22,9 @@
 use dirstats_scan::{Kind, NodeId, Tree};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
-use std::sync::Arc;
 use std::time::Instant;
 
 /// One path the worker could not remove, with the reason.
@@ -113,10 +113,7 @@ impl RunningDelete {
             Ok(outcome) => DeleteStatus::Done(outcome),
             Err(TryRecvError::Empty) => DeleteStatus::Running,
             Err(TryRecvError::Disconnected) => DeleteStatus::Done(DeleteOutcome {
-                failures: vec![DeleteFailure {
-                    path: self.path.clone(),
-                    error: io::Error::other("delete thread exited without a result"),
-                }],
+                failures: vec![DeleteFailure { path: self.path.clone(), error: io::Error::other("delete thread exited without a result") }],
                 ..DeleteOutcome::default()
             }),
         }
@@ -289,10 +286,9 @@ mod sys {
     use std::path::Path;
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileW, DELETE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_READONLY,
-        FILE_ATTRIBUTE_SYSTEM, FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ,
-        FILE_SHARE_WRITE, FileDispositionInfo, GetFileAttributesW, INVALID_FILE_ATTRIBUTES, OPEN_EXISTING,
-        SetFileAttributesW, SetFileInformationByHandle,
+        CreateFileW, DELETE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM,
+        FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileDispositionInfo,
+        GetFileAttributesW, INVALID_FILE_ATTRIBUTES, OPEN_EXISTING, SetFileAttributesW, SetFileInformationByHandle,
     };
 
     /// Wide, NUL-terminated form of `path` with the long-path prefix, so
@@ -427,8 +423,7 @@ mod tests {
         fs::create_dir(dir.path().join("victim")).unwrap();
         std::os::unix::fs::symlink(dir.path().join("target"), dir.path().join("victim/link")).unwrap();
         let tree = scan(dir.path(), &ScanOptions::default()).unwrap();
-        let victim =
-            tree.children(tree.root()).iter().copied().find(|&id| tree.node(id).name.as_ref() == "victim").unwrap();
+        let victim = tree.children(tree.root()).iter().copied().find(|&id| tree.node(id).name.as_ref() == "victim").unwrap();
         let outcome = wait(&RunningDelete::spawn(&tree, victim));
         assert!(outcome.failures.is_empty(), "{:?}", outcome.failures);
         assert!(!dir.path().join("victim").exists());

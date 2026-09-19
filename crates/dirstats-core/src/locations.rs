@@ -92,10 +92,7 @@ pub fn full_disk_access() -> Option<bool> {
 /// Open the system's privacy settings at the Full Disk Access list.
 #[cfg(target_os = "macos")]
 pub fn open_full_disk_access_settings() -> std::io::Result<()> {
-    std::process::Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
-        .spawn()
-        .map(drop)
+    std::process::Command::new("open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles").spawn().map(drop)
 }
 
 /// `USERPROFILE` or else `HOME`, when it names an existing directory.

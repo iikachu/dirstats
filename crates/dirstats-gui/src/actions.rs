@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! Selection, per-node state lookups and carrying out context-menu actions.
 
 use dirstats_core::NodeId;

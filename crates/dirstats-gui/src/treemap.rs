@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! The treemap pane: cached base render, the pulsing highlight overlay and pointer handling.
 
 use dirstats_core::treemap::TreemapOptions;
@@ -51,7 +50,8 @@ impl Gui {
             self.map = Some(map);
             self.map_key = Some(key);
             // Fresh, fully transparent overlay at the new size.
-            let clear = ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &vec![0; width as usize * height as usize * 4]);
+            let clear =
+                ColorImage::from_rgba_unmultiplied([width as usize, height as usize], &vec![0; width as usize * height as usize * 4]);
             match &mut self.highlight {
                 Some(texture) => texture.set(clear, TextureOptions::LINEAR),
                 None => self.highlight = Some(ctx.load_texture("treemap-highlight", clear, TextureOptions::LINEAR)),
@@ -127,10 +127,7 @@ impl Gui {
         let origin = response.rect.min;
         let painter = ui.painter_at(response.rect);
         let to_screen = |r: dirstats_core::treemap::Rect| {
-            egui::Rect::from_min_max(
-                origin + egui::vec2(r.left as f32, r.top as f32),
-                origin + egui::vec2(r.right as f32, r.bottom as f32),
-            )
+            egui::Rect::from_min_max(origin + egui::vec2(r.left as f32, r.top as f32), origin + egui::vec2(r.right as f32, r.bottom as f32))
         };
         // Pulse the vivid overlay over the base while something is hovered.
         if self.highlight_bounds.is_some()

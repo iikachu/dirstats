@@ -46,9 +46,9 @@ cargo run -- --tui PATH
 cargo check --workspace --all-targets --target x86_64-pc-windows-msvc
 ```
 
-`rustfmt` is not enforced and the tree is not rustfmt-clean: do **not** run
-`cargo fmt` over files, it buries your change in noise. Match the
-surrounding style (long lines are normal here).
+`rustfmt` is enforced, with the settings in `rustfmt.toml`: run
+`cargo fmt --all` before committing. CI fails on anything
+`cargo fmt --all --check` would change.
 
 ## You are free to
 

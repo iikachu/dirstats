@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! The extension legend to the right of the treemap.
 
 use dirstats_core::format;
@@ -60,33 +59,36 @@ impl Gui {
                     let k = 0.35 + 0.65 * phase;
                     let peak = vivid(*color);
                     // Same straight-line mix the treemap blend produces.
-                    dirstats_core::treemap::Oklch::new(
-                        color.l + (peak.l - color.l) * k,
-                        color.c + (peak.c - color.c) * k,
-                        color.h,
-                    )
+                    dirstats_core::treemap::Oklch::new(color.l + (peak.l - color.l) * k, color.c + (peak.c - color.c) * k, color.h)
                 } else {
                     *color
                 };
                 let [r, g, b] = swatch_color.to_srgb();
-                let swatch = egui::Rect::from_center_size(egui::pos2(name_cell.min.x + pad + 7.0, name_cell.center().y), egui::vec2(14.0, 14.0));
+                let swatch =
+                    egui::Rect::from_center_size(egui::pos2(name_cell.min.x + pad + 7.0, name_cell.center().y), egui::vec2(14.0, 14.0));
                 ui.painter().with_clip_rect(name_cell).rect_filled(swatch, 3.0, Color32::from_rgb(r, g, b));
                 let full = ext.as_deref().map_or("(none)".to_string(), |e| format!(".{e}"));
                 let label_rect = egui::Rect::from_min_max(egui::pos2(swatch.max.x + pad, top), egui::pos2(name_cell.max.x - pad, bottom));
                 if label_rect.width() > 4.0 {
-                    let mut name_ui = ui.new_child(egui::UiBuilder::new().max_rect(label_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                    let mut name_ui =
+                        ui.new_child(egui::UiBuilder::new().max_rect(label_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
                     name_ui.set_clip_rect(label_rect.intersect(ui.clip_rect()));
                     name_ui.add(egui::Label::new(&full).truncate().selectable(false)).on_hover_text(&full);
                 }
-                for (from, to, value) in [
-                    (edges[1], edges[2], format!("{:.1}", format::percent(*size, total))),
-                    (edges[2], edges[3], format::size(*size)),
-                ] {
+                for (from, to, value) in
+                    [(edges[1], edges[2], format!("{:.1}", format::percent(*size, total))), (edges[2], edges[3], format::size(*size))]
+                {
                     let c = cell(from, to);
                     if c.width() <= 0.0 {
                         continue;
                     }
-                    ui.painter().with_clip_rect(c).text(egui::pos2(c.max.x - pad, c.center().y), egui::Align2::RIGHT_CENTER, value, mono.clone(), text);
+                    ui.painter().with_clip_rect(c).text(
+                        egui::pos2(c.max.x - pad, c.center().y),
+                        egui::Align2::RIGHT_CENTER,
+                        value,
+                        mono.clone(),
+                        text,
+                    );
                 }
             }
         });

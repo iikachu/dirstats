@@ -44,10 +44,10 @@ cargo test --workspace
 ```
 
 CI runs both on Linux, macOS and Windows, so you do not need all three
-machines. If you can only test on one, say which. `rustfmt` is not enforced;
-match the code around your change rather than reformatting files. Clippy
-warnings in code you touched are worth fixing; existing ones are not your
-problem.
+machines. If you can only test on one, say which. Run `cargo fmt --all`
+before committing: CI checks the formatting, with the settings in
+`rustfmt.toml`. Clippy warnings in code you touched are worth fixing;
+existing ones are not your problem.
 
 **3. Keep the layers.** Front ends (`dirstats-gui`, `dirstats-tui`) only
 present and take input; state and actions live in `dirstats-core`; scanning
