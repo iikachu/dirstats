@@ -11,8 +11,8 @@ default = []
 # Move-to-trash action. On macOS it also uses NSFileManager (objc2-foundation)
 # to learn where an item went, for Put Back.
 trash = ["dep:trash", "dep:objc2-foundation"]
-# Permanent delete, bypassing the trash (Windows and Linux, behind a
-# per-run gate; nothing on macOS).
+# Permanent delete, bypassing the trash, behind a per-run gate (Windows,
+# Linux and macOS; the GUI only offers it on Windows and Linux).
 delete = []
 # Scan whole NTFS volumes from the master file table (Windows, needs
 # administrator rights; the directory walker is used otherwise). Does
