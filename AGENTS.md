@@ -18,7 +18,6 @@ reading before a non-trivial change.
 | `dirstats-core` | the library: state, worker threads, file actions; re-exports scan and treemap | GPL-3.0-or-later |
 | `dirstats-tui`, `dirstats-gui` | presentation and input only | GPL-3.0-or-later |
 | `dirstats` | CLI and binary; picks a front end | GPL-3.0-or-later |
-| `dirstats-icon` | the app icon; build time only, never linked into the app | GPL-3.0-or-later |
 
 `bench/` holds benches that are their own Cargo workspaces, outside the one
 above: the shelved Linux walker and the Windows listing bench. PR CI doesn't
@@ -51,7 +50,7 @@ After changing the icon, write its files and copy `dirstats-hero.svg` and
 `dirstats-logo.svg` into `assets/`:
 
 ```bash
-cargo run -p dirstats-icon --features cli -- OUT_DIR
+cargo run -p dirstats-gui --example icon -- OUT_DIR
 ```
 
 `rustfmt` is not enforced and the tree is not rustfmt-clean: do **not** run
@@ -79,7 +78,8 @@ This project is permissive about how work gets done. Without asking, you may:
    texts under `LICENSES/` verbatim.
 2. **Layers.** Front ends never scan, lay out or touch the filesystem; they
    call `dirstats-core`, and depend on no other dirstats library crate
-   (build-dependencies aside: the GUI's `build.rs` uses `dirstats-icon`). Scans run on a worker thread and never block a front
+   (build-dependencies aside: the GUI's `build.rs` draws the app icon with
+   `dirstats-treemap`). Scans run on a worker thread and never block a front
    end.
 3. **Real files.** Trash, permanent delete, open and iCloud eviction act on
    the user's system. Exercise them only on paths inside a temp directory the

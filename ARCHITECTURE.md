@@ -21,7 +21,6 @@ a front end.
 | Core | `dirstats-core` | GPL-3.0-or-later | The library front ends and other programs use: state (current scan, selection, zoom, sort), the worker threads for scans and permanent deletes, and file actions (open, reveal, trash, put back, iCloud evict; on Windows and Linux also gated permanent delete). Re-exports `dirstats-scan` as `scan` and `dirstats-treemap` as `treemap` |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
-| Build tool | `dirstats-icon` | GPL-3.0-or-later | The app icon, drawn as a treemap with `dirstats-treemap`. Never linked into the app: the GUI's `build.rs` embeds its pixels, and its `cli` program writes the PNG, ICO and ICNS files, the README banner and the docs logo |
 
 ```
 dirstats ─┬─ dirstats-gui ─┐
@@ -36,8 +35,11 @@ Rules:
   `dirstats-scan` or `dirstats-treemap`; they reach those through
   `dirstats_core::scan` and `dirstats_core::treemap`. TUI and GUI must be
   swappable without touching scan or treemap code. The one exception is
-  `dirstats-gui`'s build-dependency on `dirstats-icon`, which only runs at
-  build time.
+  build time: `dirstats-gui`'s `build.rs` draws the app icon
+  (`build/icon.rs`) with `dirstats-treemap` and `dirstats-scan` as
+  build-dependencies, and only its pixels reach the app. The `icon` example
+  shares that file and writes the PNG, ICO and ICNS files, the README banner
+  and the docs logo.
 - Scanning never blocks a front end: `scan_with` runs on a worker thread and
   reports through `Progress` and a cancel flag.
 - `dirstats-scan` stays free of GPL-derived code (see
@@ -165,4 +167,4 @@ largest entries and, with `--trash`, moves them to the trash.
    rasterisation, GUI front end.
 5. Hilbert and Moore layouts; frames and labels.
 6. Save and load scans; benchmarks against dua, gdu, ncdu.
-7. App bundles. The icon is done (`dirstats-icon`).
+7. App bundles. The icon is done (`dirstats-gui/build/icon.rs`).
