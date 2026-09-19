@@ -71,7 +71,7 @@ const APP_NAME: &str = "dirstats";
 /// Open the window and run until it is closed.
 pub fn run(app: App) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_title(APP_NAME),
+        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 800.0]).with_title(APP_NAME).with_icon(app_icon()),
         ..Default::default()
     };
     eframe::run_native(
@@ -82,6 +82,16 @@ pub fn run(app: App) -> eframe::Result<()> {
             Ok(Box::new(Gui::new(app)))
         }),
     )
+}
+
+/// The treemap app icon for the window and, on macOS, the Dock. Drawn at
+/// start-up (a few milliseconds) rather than shipped as an image; macOS gets
+/// the margin its Dock icons have.
+fn app_icon() -> egui::IconData {
+    use dirstats_core::treemap::icon::{Shape, icon};
+    const SIZE: u32 = 256;
+    let shape = if cfg!(target_os = "macos") { Shape::Macos } else { Shape::Square };
+    egui::IconData { rgba: icon(SIZE, shape), width: SIZE, height: SIZE }
 }
 
 /// Fonts, text sizes and theme, set once before the first frame.
