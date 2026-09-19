@@ -45,12 +45,12 @@ impl Shape {
 const SUPERSAMPLE: u32 = 4;
 /// Frame colour around the treemap: the app's dark panel.
 const FRAME: Oklch = Oklch::grey(0.24);
-/// Colour of the lines between tiles: lighter than the frame, so they part
-/// the tiles without drawing a heavy outline.
-const GRID: Oklch = Oklch::grey(0.42);
-/// Subpixels per treemap pixel. The grid line is one treemap pixel, so at 2
-/// of the 4 subpixels it comes out half a pixel wide.
-const MAP_SCALE: u32 = 2;
+/// Colour of the lines between tiles: a light grey, so they only hint at the
+/// tile edges instead of outlining them.
+const GRID: Oklch = Oklch::grey(0.55);
+/// Subpixels per treemap pixel. The grid line is one treemap pixel, so at 1
+/// of the 4 subpixels it comes out a quarter of a pixel wide.
+const MAP_SCALE: u32 = 1;
 /// Frame width as a fraction of the body.
 const FRAME_WIDTH: f64 = 0.04;
 /// Below this many pixels the tree is cut to its top levels, so the tiles
@@ -69,8 +69,8 @@ pub fn icon(size: u32, shape: Shape) -> Vec<u8> {
     let frame = (body.side * FRAME_WIDTH).round();
     let inner = body.inset(frame);
 
-    // The treemap is drawn coarser than the subpixel grid so its grid lines
-    // come out a thin, even half pixel, then sampled per subpixel. Tiny icons
+    // The treemap is drawn at subpixel resolution so its grid lines come out
+    // a faint quarter pixel once averaged. Tiny icons
     // skip the grid, which would eat the tiles.
     let map_side = (inner.side / f64::from(MAP_SCALE)).ceil() as u32;
     let options = TreemapOptions {
