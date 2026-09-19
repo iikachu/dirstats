@@ -13,9 +13,8 @@
 //! - `dirstats.icns` for macOS, on Apple's icon grid, 16 to 1024 including @2x,
 //! - `dirstats-hero.svg`, the README banner: the macOS icon on a gradient
 //!   with the name and tagline. It is checked in as `assets/dirstats-hero.svg`,
-//! - `dirstats-logo.svg`, the square icon as a small vector SVG, and
-//!   `dirstats-logo.url`, the same as a data URL: the logo and favicon of
-//!   the API docs, pasted into `html_logo_url` in every crate root.
+//! - `dirstats-logo.svg`, the square icon as a small vector SVG: the logo
+//!   and favicon of the API docs, checked in as `assets/dirstats-logo.svg`.
 //!
 //! ```text
 //! cargo run -p dirstats-treemap --example icon -- OUT_DIR
@@ -79,32 +78,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write(&out.join("dirstats.icns"), &icns)?;
 
     write(&out.join("dirstats-hero.svg"), hero(&png(HERO_ICON, Shape::Macos)?).as_bytes())?;
-    let logo = dirstats_treemap::icon::svg();
-    write(&out.join("dirstats-logo.svg"), logo.as_bytes())?;
-    write(&out.join("dirstats-logo.url"), data_url(&logo).as_bytes())?;
+    write(&out.join("dirstats-logo.svg"), dirstats_treemap::icon::svg().as_bytes())?;
     Ok(())
 }
 
 /// Pixel size of the icon embedded in the banner: shown at 280 points, so
 /// sharp on a 2× screen without making the SVG large.
 const HERO_ICON: u32 = 512;
-
-/// `data:` URL for an SVG: only the characters a URL or a Rust string
-/// cannot hold as they are get percent-encoded, so it stays short.
-fn data_url(svg: &str) -> String {
-    let mut out = String::from("data:image/svg+xml,");
-    for c in svg.chars() {
-        match c {
-            '%' => out.push_str("%25"),
-            '#' => out.push_str("%23"),
-            '<' => out.push_str("%3C"),
-            '>' => out.push_str("%3E"),
-            '"' => out.push_str("%22"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
 
 /// The README banner. It carries its own background, so it reads the same
 /// on GitHub's light and dark themes.

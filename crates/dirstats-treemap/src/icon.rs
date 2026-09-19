@@ -129,13 +129,13 @@ pub fn icon(size: u32, shape: Shape) -> Vec<u8> {
 }
 
 /// The [`Shape::Square`] icon as a small vector SVG, for places that want
-/// text rather than pixels, such as the data-URL logo of the API docs.
+/// text rather than pixels, such as the logo of the API docs.
 ///
 /// Same layout, colours, frame and grid as [`icon()`] at a large size, but
 /// the cushions are one radial gradient per tile rather than per-pixel
 /// shading, and the corners are circular (a smaller radius, which reads
 /// about the same as the superellipse). Attributes use single quotes so
-/// the result can go in a Rust string or a data URL unescaped.
+/// the result can go in a Rust string unescaped.
 #[must_use]
 pub fn svg() -> String {
     use std::fmt::Write;
