@@ -13,6 +13,11 @@
 //! follow mount points) and the process may open the volume (which takes
 //! administrator rights), and walks otherwise.
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg"
+)]
+
 pub mod mft;
 #[cfg(windows)]
 mod volume;

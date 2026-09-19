@@ -17,6 +17,11 @@
 //! front end or another program needs: [`scan`] builds the sized tree and
 //! [`treemap`] lays it out and renders it.
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg"
+)]
+
 pub mod backup;
 pub mod cloud;
 #[cfg(feature = "delete")]

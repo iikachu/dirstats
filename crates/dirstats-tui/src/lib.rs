@@ -11,6 +11,11 @@
 
 //! Terminal user interface: a size-sorted entry list beside a cell treemap.
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg"
+)]
+
 mod treemap;
 
 use dirstats_core::App;

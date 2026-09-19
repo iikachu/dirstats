@@ -9,6 +9,11 @@
 //! dirstats as a library: command-line options and the entry points each
 //! front end is started from. The `dirstats` binary is a thin wrapper.
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg"
+)]
+
 pub use dirstats_core as core;
 pub use dirstats_core::{scan, treemap};
 #[cfg(feature = "tui")]

@@ -15,6 +15,11 @@
 //!
 //! See `CREDITS.md` in the repository for the projects this crate builds on.
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg"
+)]
+
 pub mod color;
 pub mod icon;
 pub mod layout;

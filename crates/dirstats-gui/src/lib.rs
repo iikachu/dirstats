@@ -9,6 +9,11 @@
 //! Graphical front end: an entry list, a glow treemap and an extension
 //! legend, driven entirely by [`dirstats_core::App`].
 
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/main/assets/dirstats-logo.svg"
+)]
+
 use dirstats_core::{App, NodeId};
 use dirstats_core::treemap::render::{ExtensionColors, ExtensionMix};
 use dirstats_core::treemap::{Style, Treemap};
