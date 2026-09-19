@@ -18,22 +18,22 @@ a front end.
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
 | Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
 | NTFS | `dirstats-ntfs` | GPL-3.0-or-later | Whole-volume scan from the master file table (Windows, needs administrator rights); walks with `dirstats-scan` otherwise |
-| App | `dirstats-app` | GPL-3.0-or-later | The library front ends and other programs use: state (current scan, selection, zoom, sort), the worker threads for scans and permanent deletes, and file actions (open, reveal, trash, put back, iCloud evict; on Windows and Linux also gated permanent delete). Re-exports `dirstats-scan` as `scan` and `dirstats-treemap` as `treemap` |
+| Core | `dirstats-core` | GPL-3.0-or-later | The library front ends and other programs use: state (current scan, selection, zoom, sort), the worker threads for scans and permanent deletes, and file actions (open, reveal, trash, put back, iCloud evict; on Windows and Linux also gated permanent delete). Re-exports `dirstats-scan` as `scan` and `dirstats-treemap` as `treemap` |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
 
 ```
 dirstats ─┬─ dirstats-gui ─┐
           ├─ dirstats-tui ─┤
-          └────────────────┴─ dirstats-app ─┬─ dirstats-treemap ─ dirstats-scan
-                                            ├─ dirstats-scan
-                                            └─ dirstats-ntfs (Windows) ─ dirstats-scan
+          └────────────────┴─ dirstats-core ─┬─ dirstats-treemap ─ dirstats-scan
+                                             ├─ dirstats-scan
+                                             └─ dirstats-ntfs (Windows) ─ dirstats-scan
 ```
 
 Rules:
-- Front ends and the binary depend on `dirstats-app` only, not on
+- Front ends and the binary depend on `dirstats-core` only, not on
   `dirstats-scan` or `dirstats-treemap`; they reach those through
-  `dirstats_app::scan` and `dirstats_app::treemap`. TUI and GUI must be
+  `dirstats_core::scan` and `dirstats_core::treemap`. TUI and GUI must be
   swappable without touching scan or treemap code.
 - Scanning never blocks a front end: `scan_with` runs on a worker thread and
   reports through `Progress` and a cancel flag.
@@ -63,7 +63,7 @@ egui-fonts = [...]                 # egui's bundled fonts, for comparison
 ```
 
 `open`, `trash`, `delete`, `icloud` and `ntfs-mft` are owned by
-`dirstats-app`; the actions among them are forwarded to whichever front
+`dirstats-core`; the actions among them are forwarded to whichever front
 ends are built, with `dep?/feature`.
 
 With both front ends built the binary picks one at run time
@@ -75,7 +75,7 @@ uses the terminal when it does not, and falls back to the terminal if the
 window fails to open (except on Windows, where the error is reported). With no terminal either, it prints the summary.
 
 Per-crate features:
-- `dirstats-app`: `open`, `trash`, `delete`, `icloud`, `ntfs-mft`; none by
+- `dirstats-core`: `open`, `trash`, `delete`, `icloud`, `ntfs-mft`; none by
   default. `ntfs-mft` pulls in `dirstats-ntfs` on Windows only; without it Windows walks
   directories like every other platform.
   `trash` and `delete` are independent. In the app, `delete` only does
@@ -86,7 +86,7 @@ Per-crate features:
   end-to-end tests, CI only).
 - `dirstats-tui`: forwards `open`, `trash` and `ntfs-mft`.
 - `dirstats-treemap`: `parallel` (rayon cushion rendering), on by default.
-  `dirstats-app` keeps it on and nothing forwards it: every target dirstats
+  `dirstats-core` keeps it on and nothing forwards it: every target dirstats
   ships for has threads, and a single-threaded or WebAssembly build is not
   planned. Library users can still depend on `dirstats-treemap` with
   `default-features = false`.
@@ -114,7 +114,7 @@ accounting for each well-known filesystem. The scan layer exposes one
 Detection of the filesystem type is done once per volume so the scan picks
 the right strategy without per-entry cost.
 
-## Using dirstats-app as a library
+## Using dirstats-core as a library
 
 Other programs use the same crate the front ends do. Two ways in:
 
@@ -128,15 +128,15 @@ Other programs use the same crate the front ends do. Two ways in:
   or filesystem roots, no home folder, no Time Machine backups on macOS.
   Nobody is asked; confirming is the caller's job.
 
-`crates/dirstats-app/examples/largest.rs` scans a folder, lists its
+`crates/dirstats-core/examples/largest.rs` scans a folder, lists its
 largest entries and, with `--trash`, moves them to the trash.
 
 ## Front ends
 
 - TUI (now): ratatui + crossterm, modelled on dua-cli's interactive mode
   plus a cell-based treemap. Keyboard-first, works over SSH.
-- GUI (now): eframe/egui with the same `dirstats-app` state. The pixel
-  treemap from `dirstats_app::treemap::render` is uploaded as a texture and
+- GUI (now): eframe/egui with the same `dirstats-core` state. The pixel
+  treemap from `dirstats_core::treemap::render` is uploaded as a texture and
   re-rendered only when the tree, directory, layout or panel size changes.
   Hover uses the grid hit-test index; click reveals, double-click zooms,
   right-click opens or trashes. On Windows and Linux the menu also offers
@@ -153,7 +153,7 @@ largest entries and, with `--trash`, moves them to the trash.
 
 ## Roadmap
 
-1. Done: `dirstats-app`, `dirstats-tui`, and the `dirstats` lib+bin crate
+1. Done: `dirstats-core`, `dirstats-tui`, and the `dirstats` lib+bin crate
    with the feature flags above; `--png` replaces the treemap example.
 2. Add a CI matrix (macOS, Linux, Windows) so all platform code compiles.
 3. Fill the platform gaps listed above, starting with Windows volume

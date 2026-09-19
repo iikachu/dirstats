@@ -8,13 +8,13 @@ description = "Terminal front end for dirstats"
 
 [features]
 default = []
-trash = ["dirstats-app/trash"]
-open = ["dirstats-app/open"]
+trash = ["dirstats-core/trash"]
+open = ["dirstats-core/open"]
 # Scan whole NTFS volumes from the master file table (Windows, as administrator).
-ntfs-mft = ["dirstats-app/ntfs-mft"]
+ntfs-mft = ["dirstats-core/ntfs-mft"]
 
 [dependencies]
-dirstats-app.workspace = true
+dirstats-core.workspace = true
 ratatui.workspace = true
 
 [dev-dependencies]

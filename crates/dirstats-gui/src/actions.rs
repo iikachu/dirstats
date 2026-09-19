@@ -9,7 +9,7 @@
 
 //! Selection, per-node state lookups and carrying out context-menu actions.
 
-use dirstats_app::NodeId;
+use dirstats_core::NodeId;
 
 #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 use crate::dialogs::Dialog;
@@ -76,8 +76,8 @@ impl Gui {
     /// when the tree changes). An eviction done this session reports
     /// `Evicted` without a lookup. The lookups cost microseconds and only
     /// displayed rows and an open context menu ask, so this stays cheap.
-    pub(super) fn cloud_status(&mut self, node: NodeId) -> dirstats_app::cloud::CloudStatus {
-        use dirstats_app::cloud::{CloudStatus, status};
+    pub(super) fn cloud_status(&mut self, node: NodeId) -> dirstats_core::cloud::CloudStatus {
+        use dirstats_core::cloud::{CloudStatus, status};
         if self.app.is_evicted(node) {
             return CloudStatus::Evicted;
         }

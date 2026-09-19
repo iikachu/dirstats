@@ -42,7 +42,7 @@ pub fn scan_with(root: impl AsRef<Path>, options: &ScanOptions, cancel: &AtomicB
 ## 3. Wiring
 
 Front ends never call a scanner. They go through
-`crates/dirstats-app/src/scanner.rs` (`RunningScan::spawn`), and the CLI's
+`crates/dirstats-core/src/scanner.rs` (`RunningScan::spawn`), and the CLI's
 `--summary` and `--png` paths in `crates/dirstats/src/lib.rs` call `scan`
 directly. A separate-crate fast path is chained in front of the current
 entry point (today `dirstats_ntfs::scan_with`, which itself falls through to

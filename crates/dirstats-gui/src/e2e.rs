@@ -22,7 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use dirstats_app::App;
+use dirstats_core::App;
 use eframe::egui::{self, Key};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -414,12 +414,12 @@ fn time_machine_backup_offers_no_trash() {
     // An ordinary folder beside the backup keeps its trash item.
     right_click(&mut harness, "Documents/");
     assert!(!harness.get_by_label(&trash).accesskit_node().is_disabled());
-    assert!(harness.query_by_label(dirstats_app::backup::NOTE).is_none());
+    assert!(harness.query_by_label(dirstats_core::backup::NOTE).is_none());
     harness.key_press(Key::Escape);
     harness.step();
 
     right_click(&mut harness, "Backups.backupdb/");
-    harness.get_by_label(dirstats_app::backup::NOTE);
+    harness.get_by_label(dirstats_core::backup::NOTE);
     let disabled = harness.get_by_label(&trash).accesskit_node().is_disabled();
     assert_eq!(disabled, cfg!(target_os = "macos"), "trash item disabled only on macOS");
     screenshot(&mut harness, "time-machine-menu");
@@ -433,7 +433,7 @@ fn time_machine_backup_offers_no_trash() {
         let err = gui.app.check_removable(backup).unwrap_err();
         assert!(err.to_string().contains("Managed by Time Machine"), "{err}");
     } else {
-        assert!(dirstats_app::backup::NOTE.contains("macOS Time Machine backup"));
+        assert!(dirstats_core::backup::NOTE.contains("macOS Time Machine backup"));
         gui.app.check_removable(backup).expect("only macOS keeps backups out of the trash");
     }
 }

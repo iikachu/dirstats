@@ -7,7 +7,7 @@ dirstats is a workspace of two crates with different licenses:
 | `crates/dirstats-scan` | Apache-2.0 (`LICENSE-APACHE`) | `tree.rs`, `scan.rs` |
 | `crates/dirstats-treemap` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | `layout.rs`, `render.rs`, examples |
 | `crates/dirstats-ntfs` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | `mft.rs`, `volume.rs` |
-| `crates/dirstats-app`, `crates/dirstats-tui`, `crates/dirstats` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | app state, terminal UI, binary |
+| `crates/dirstats-core`, `crates/dirstats-tui`, `crates/dirstats` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | app state, terminal UI, binary |
 
 `dirstats-scan` contains no GPL-derived code and must stay that way: code
 ported from WinDirStat or Disk Inventory X belongs in `dirstats-treemap` (or

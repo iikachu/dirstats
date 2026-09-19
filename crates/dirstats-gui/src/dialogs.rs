@@ -9,7 +9,7 @@
 
 //! Permanent-delete modals (Windows and Linux): the gate, the confirmation, progress and the report.
 
-use dirstats_app::{NodeId, format};
+use dirstats_core::{NodeId, format};
 use eframe::egui;
 
 use crate::Gui;
@@ -44,7 +44,7 @@ pub(super) enum Dialog {
     #[cfg(feature = "trash")]
     TrashFailed { node: NodeId, error: String },
     /// A finished deletion of `path` that was cancelled or left failures.
-    Report { path: std::path::PathBuf, outcome: dirstats_app::DeleteOutcome },
+    Report { path: std::path::PathBuf, outcome: dirstats_core::DeleteOutcome },
 }
 
 impl Gui {

@@ -259,7 +259,7 @@ mod tests {
     use std::{fs, io};
 
     /// Moves a real temporary file to the system trash, and back again; run explicitly with
-    /// `cargo test -p dirstats-app --features trash -- --ignored`.
+    /// `cargo test -p dirstats-core --features trash -- --ignored`.
     #[test]
     #[ignore]
     fn trashes_a_file_without_prompting() {

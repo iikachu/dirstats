@@ -13,9 +13,9 @@
 
 mod treemap;
 
-use dirstats_app::App;
-use dirstats_app::format;
-use dirstats_app::treemap::ExtensionColors;
+use dirstats_core::App;
+use dirstats_core::format;
+use dirstats_core::treemap::ExtensionColors;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -185,8 +185,8 @@ fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
             }
             let name: String = name.chars().take(name_width).collect();
             let color = match node.kind {
-                dirstats_app::scan::Kind::Directory => Color::Blue,
-                dirstats_app::scan::Kind::Symlink => Color::Magenta,
+                dirstats_core::scan::Kind::Directory => Color::Blue,
+                dirstats_core::scan::Kind::Symlink => Color::Magenta,
                 _ => Color::Reset,
             };
             let mut spans = vec![

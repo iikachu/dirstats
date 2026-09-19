@@ -9,8 +9,8 @@
 
 //! The entry list: the zoom directory's row, the expandable tree under it and keyboard navigation.
 
-use dirstats_app::{NodeId, format};
-use dirstats_app::treemap::render::{ExtensionColors, ExtensionMix};
+use dirstats_core::{NodeId, format};
+use dirstats_core::treemap::render::{ExtensionColors, ExtensionMix};
 use eframe::egui::{self, Color32, Key, Sense};
 
 use crate::menu::{NodeAction, TrashState, node_menu, zoom_label};
@@ -50,7 +50,7 @@ fn share_bar(ui: &egui::Ui, bar: egui::Rect, track: Color32, palette: Option<(&E
 /// the list's row closure, which holds parts of the app mutably.
 fn current_dir_row(
     ui: &mut egui::Ui,
-    tree: &dirstats_app::Tree,
+    tree: &dirstats_core::Tree,
     crumbs: &[NodeId],
     palette: Option<(&ExtensionMix, &ExtensionColors)>,
     edges: [f32; 9],
@@ -318,7 +318,7 @@ impl Gui {
         let mut rows = self.app.tree_rows();
         self.keyboard_navigation(ui, &mut rows, row_height + ui.spacing().item_spacing.y);
         // Computed before borrowing the tree, since the lookup caches into self.
-        let cloud_states: Vec<dirstats_app::cloud::CloudStatus> = rows.iter().map(|&(id, _)| self.cloud_status(id)).collect();
+        let cloud_states: Vec<dirstats_core::cloud::CloudStatus> = rows.iter().map(|&(id, _)| self.cloud_status(id)).collect();
         let tree = self.app.tree.as_ref().expect("checked above");
         let (mix, colors) = (self.mix.as_ref(), self.colors.as_ref());
         let selected = self.selected_node();
@@ -441,9 +441,9 @@ impl Gui {
                     // when only a placeholder is on disk. The truncating label
                     // would take the whole cell, so its room is held back first.
                     let glyph = match cloud_states[row_index] {
-                        dirstats_app::cloud::CloudStatus::Local => None,
-                        dirstats_app::cloud::CloudStatus::Downloaded => Some(icons::Glyph::Cloud),
-                        dirstats_app::cloud::CloudStatus::Evicted => Some(icons::Glyph::CloudOff),
+                        dirstats_core::cloud::CloudStatus::Local => None,
+                        dirstats_core::cloud::CloudStatus::Downloaded => Some(icons::Glyph::Cloud),
+                        dirstats_core::cloud::CloudStatus::Evicted => Some(icons::Glyph::CloudOff),
                     };
                     let icon_room = if glyph.is_some() { 18.0 } else { 0.0 };
                     let text_rect = egui::Rect::from_min_max(label_rect.min, egui::pos2(label_rect.max.x - icon_room, bottom));
