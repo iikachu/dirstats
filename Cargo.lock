@@ -1116,14 +1116,14 @@ name = "dirstats"
 version = "0.1.0"
 dependencies = [
  "clap",
- "dirstats-app",
+ "dirstats-core",
  "dirstats-gui",
  "dirstats-tui",
  "png 0.17.16",
 ]
 
 [[package]]
-name = "dirstats-app"
+name = "dirstats-core"
 version = "0.1.0"
 dependencies = [
  "dirstats-ntfs",
@@ -1144,7 +1144,7 @@ name = "dirstats-gui"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "dirstats-app",
+ "dirstats-core",
  "eframe",
  "egui_kittest",
  "rfd",
@@ -1184,7 +1184,7 @@ dependencies = [
 name = "dirstats-tui"
 version = "0.1.0"
 dependencies = [
- "dirstats-app",
+ "dirstats-core",
  "ratatui",
  "tempfile",
 ]

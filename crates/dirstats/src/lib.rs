@@ -9,8 +9,8 @@
 //! dirstats as a library: command-line options and the entry points each
 //! front end is started from. The `dirstats` binary is a thin wrapper.
 
-pub use dirstats_app as app;
-pub use dirstats_app::{scan, treemap};
+pub use dirstats_core as core;
+pub use dirstats_core::{scan, treemap};
 #[cfg(feature = "tui")]
 pub use dirstats_tui as tui;
 #[cfg(feature = "gui")]
@@ -19,7 +19,7 @@ pub use dirstats_gui as gui;
 pub mod session;
 
 use clap::{Parser, ValueEnum};
-use dirstats_app::{ScanOptions, SizeMetric};
+use dirstats_core::{ScanOptions, SizeMetric};
 use std::path::{Component, Path, PathBuf};
 
 /// `--metric`: which [`SizeMetric`] the scan sorts and weighs by.
@@ -157,17 +157,17 @@ fn normalize(path: &Path) -> PathBuf {
 /// under the root.
 pub fn print_summary(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
-    let tree = dirstats_app::scanner::scan(cli.scan_root()?, &cli.scan_options())?;
+    let tree = dirstats_core::scanner::scan(cli.scan_root()?, &cli.scan_options())?;
     let root = tree.root();
     println!(
         "{} entries, {} files, {} in {:.2?}",
         tree.len(),
         tree.node(root).file_count,
-        dirstats_app::format::size(tree.size(root)),
+        dirstats_core::format::size(tree.size(root)),
         started.elapsed()
     );
     for &child in tree.children(root).iter().take(20) {
-        println!("{:>10}  {}", dirstats_app::format::size(tree.size(child)), tree.path(child).display());
+        println!("{:>10}  {}", dirstats_core::format::size(tree.size(child)), tree.path(child).display());
     }
     Ok(())
 }
@@ -175,10 +175,10 @@ pub fn print_summary(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 /// Scan synchronously and write a 1600 × 1000 cushion treemap PNG to `out`.
 #[cfg(feature = "png")]
 pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    use dirstats_app::treemap::render::{ExtensionColors, render};
-    use dirstats_app::treemap::{Shading, Style, TreemapOptions};
+    use dirstats_core::treemap::render::{ExtensionColors, render};
+    use dirstats_core::treemap::{Shading, Style, TreemapOptions};
 
-    let tree = dirstats_app::scanner::scan(cli.scan_root()?, &cli.scan_options())?;
+    let tree = dirstats_core::scanner::scan(cli.scan_root()?, &cli.scan_options())?;
     let style = match cli.layout {
         LayoutStyle::Rows => Style::Rows,
         LayoutStyle::Squarified => Style::Squarified,
@@ -206,7 +206,7 @@ pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::er
 /// places to pick from.
 #[cfg(feature = "gui")]
 pub fn run_gui(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
-    let mut app = dirstats_app::App::new(cli.scan_options());
+    let mut app = dirstats_core::App::new(cli.scan_options());
     if cli.path.is_some() {
         app.start_scan(cli.scan_root()?);
     }
@@ -218,7 +218,7 @@ pub fn run_gui(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 /// the current directory, and return when it quits.
 #[cfg(feature = "tui")]
 pub fn run_tui(cli: &Cli) -> std::io::Result<()> {
-    let mut app = dirstats_app::App::new(cli.scan_options());
+    let mut app = dirstats_core::App::new(cli.scan_options());
     app.start_scan(cli.scan_root()?);
     dirstats_tui::run(&mut app)
 }

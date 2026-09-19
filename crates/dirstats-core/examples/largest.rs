@@ -6,17 +6,17 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-//! Using dirstats-app as a library, without an `App`: scan a folder, list
+//! Using dirstats-core as a library, without an `App`: scan a folder, list
 //! its largest entries, and optionally move them to the trash.
 //!
 //! ```text
-//! cargo run -p dirstats-app --features trash --example largest -- DIR [COUNT] [--trash]
+//! cargo run -p dirstats-core --features trash --example largest -- DIR [COUNT] [--trash]
 //! ```
 //!
 //! Without `--trash` nothing is changed. With it, each listed entry goes
 //! to the trash unless `check_removable` refuses it.
 
-use dirstats_app::{ScanOptions, format, scanner, trash};
+use dirstats_core::{ScanOptions, format, scanner, trash};
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

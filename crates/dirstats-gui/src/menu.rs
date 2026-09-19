@@ -9,7 +9,7 @@
 
 //! The context menu shared by the tree and the treemap, and the rows it is built from.
 
-use dirstats_app::NodeId;
+use dirstats_core::NodeId;
 use eframe::egui::{self, Sense};
 
 use crate::icons;
@@ -60,7 +60,7 @@ pub(super) enum Permanent {
 /// Label of the zoom item for `node`: a folder zooms into itself, a file
 /// into the folder holding it, and nothing is offered when that is where
 /// the view already is.
-pub(super) fn zoom_label(tree: &dirstats_app::Tree, current: Option<NodeId>, node: NodeId) -> Option<&'static str> {
+pub(super) fn zoom_label(tree: &dirstats_core::Tree, current: Option<NodeId>, node: NodeId) -> Option<&'static str> {
     if !tree.children(node).is_empty() {
         return Some("Zoom in");
     }
@@ -78,7 +78,7 @@ pub(super) fn node_menu(
     zoom: Option<&str>,
     trashed: TrashState,
     permanent: Permanent,
-    cloud: dirstats_app::cloud::CloudStatus,
+    cloud: dirstats_core::cloud::CloudStatus,
 ) -> Option<NodeAction> {
     let mut action = None;
     ui.set_max_width(320.0);
@@ -116,13 +116,13 @@ pub(super) fn node_menu(
     }
     #[cfg(feature = "icloud")]
     match cloud {
-        dirstats_app::cloud::CloudStatus::Local => {}
-        dirstats_app::cloud::CloudStatus::Downloaded => {
+        dirstats_core::cloud::CloudStatus::Local => {}
+        dirstats_core::cloud::CloudStatus::Downloaded => {
             if menu_item(ui, Some(icons::Glyph::CloudOff), "Remove Download", false).clicked() {
                 action = Some(NodeAction::Evict);
             }
         }
-        dirstats_app::cloud::CloudStatus::Evicted => {
+        dirstats_core::cloud::CloudStatus::Evicted => {
             ui.add_enabled_ui(false, |ui| menu_item(ui, Some(icons::Glyph::CloudOff), "Not Downloaded", false));
         }
     }
@@ -136,7 +136,7 @@ pub(super) fn node_menu(
         match trashed {
             TrashState::Present | TrashState::TimeMachine => {
                 let backup = trashed == TrashState::TimeMachine;
-                if backup && dirstats_app::backup::BLOCKS_TRASH {
+                if backup && dirstats_core::backup::BLOCKS_TRASH {
                     // Shown but disabled, with the note saying where to go
                     // instead, so the missing action does not read as a bug.
                     #[cfg(feature = "trash")]
@@ -164,7 +164,7 @@ pub(super) fn node_menu(
                 if backup {
                     ui.horizontal(|ui| {
                         ui.add_space(10.0);
-                        ui.add(egui::Label::new(egui::RichText::new(dirstats_app::backup::NOTE).weak().small()).wrap().selectable(false));
+                        ui.add(egui::Label::new(egui::RichText::new(dirstats_core::backup::NOTE).weak().small()).wrap().selectable(false));
                     });
                     ui.add_space(4.0);
                 }
@@ -248,9 +248,9 @@ pub(super) fn menu_separator(ui: &mut egui::Ui) {
 mod tests {
     use std::path::Path;
 
-    use dirstats_app::cloud::CloudStatus;
-    use dirstats_app::scan::{Kind, Node, TreeBuilder};
-    use dirstats_app::{SizeMetric, Tree};
+    use dirstats_core::cloud::CloudStatus;
+    use dirstats_core::scan::{Kind, Node, TreeBuilder};
+    use dirstats_core::{SizeMetric, Tree};
     use eframe::egui::{self, Event, PointerButton, Pos2, Rect};
 
     use super::*;

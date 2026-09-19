@@ -50,7 +50,7 @@ warnings in code you touched are worth fixing; existing ones are not your
 problem.
 
 **3. Keep the layers.** Front ends (`dirstats-gui`, `dirstats-tui`) only
-present and take input; state and actions live in `dirstats-app`; scanning
+present and take input; state and actions live in `dirstats-core`; scanning
 and layout live below that. [ARCHITECTURE.md](ARCHITECTURE.md) has the map.
 A change that works but sits in the wrong layer will still be welcomed, and
 probably moved.

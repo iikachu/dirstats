@@ -13,7 +13,7 @@ wrong once already cost a rewrite of the repository's history.
 
 | Upstream licence | Examples | May go in |
 |---|---|---|
-| GPL (any version that allows "or later", or GPL-3.0) | WinDirStat (GPL-2.0-or-later), Disk Inventory X (GPL-3.0) | GPL crates only: `dirstats-treemap`, `dirstats-ntfs`, `dirstats-app`, `dirstats-tui`, `dirstats-gui`, `dirstats` |
+| GPL (any version that allows "or later", or GPL-3.0) | WinDirStat (GPL-2.0-or-later), Disk Inventory X (GPL-3.0) | GPL crates only: `dirstats-treemap`, `dirstats-ntfs`, `dirstats-core`, `dirstats-tui`, `dirstats-gui`, `dirstats` |
 | Apache-2.0 | dust | any crate, including `dirstats-scan` |
 | MIT, BSD, Zlib | dua-cli / dua-core (MIT) | any crate; keep the licence text in `LICENSES/` |
 | GPL-2.0-only, or no licence stated | | nowhere. Stop and ask |

@@ -12,7 +12,7 @@ crate that can own it; upper crates only forward.
 ## 1. Own it in the right crate
 
 - An **action or capability** (trash, open, iCloud eviction) is implemented
-  in `dirstats-app`, behind a feature there whose entries are `dep:` items:
+  in `dirstats-core`, behind a feature there whose entries are `dep:` items:
 
 ```toml
 trash = ["dep:trash", "dep:objc2-foundation"]
@@ -22,14 +22,14 @@ trash = ["dep:trash", "dep:objc2-foundation"]
   same-named feature in `dirstats-gui` / `dirstats-tui` that only forwards:
 
 ```toml
-trash = ["dirstats-app/trash"]
+trash = ["dirstats-core/trash"]
 ```
 
 - The **binary** forwards to every crate that has the feature. Front ends are
   optional dependencies, so use `?` so the flag does not switch them on:
 
 ```toml
-trash = ["dirstats-app/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
+trash = ["dirstats-core/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
 ```
 
   Forgetting the `?` makes `--features trash` silently build the TUI too.

@@ -9,7 +9,7 @@
 
 //! What shows before there is a tree: the location picker and scan progress.
 
-use dirstats_app::format;
+use dirstats_core::format;
 use eframe::egui::{self, Sense};
 
 use crate::theme::hover_fill;
@@ -22,9 +22,9 @@ impl Gui {
     /// is known to be missing (macOS), it says what that costs.
     pub(super) fn location_picker(&mut self, ui: &mut egui::Ui) {
         if self.locations.is_none() {
-            self.full_disk_access = dirstats_app::locations::full_disk_access();
+            self.full_disk_access = dirstats_core::locations::full_disk_access();
         }
-        let locations = self.locations.get_or_insert_with(dirstats_app::locations::list);
+        let locations = self.locations.get_or_insert_with(dirstats_core::locations::list);
         let rect = ui.available_rect_before_wrap();
         let width = (rect.width() - 2.0 * PAD - 32.0).min(560.0).max(200.0);
         let row_height = 48.0;
@@ -56,7 +56,7 @@ impl Gui {
                 );
                 #[cfg(target_os = "macos")]
                 if ui.button("Open Privacy Settings…").clicked()
-                    && let Err(err) = dirstats_app::locations::open_full_disk_access_settings()
+                    && let Err(err) = dirstats_core::locations::open_full_disk_access_settings()
                 {
                     self.app.message = Some(format!("could not open System Settings: {err}"));
                 }
@@ -76,9 +76,9 @@ impl Gui {
             let text = child.visuals().text_color();
             let weak = child.visuals().weak_text_color();
             let glyph = match location.kind {
-                dirstats_app::locations::Kind::Home => icons::Glyph::Home,
-                dirstats_app::locations::Kind::Volume => icons::Glyph::Storage,
-                dirstats_app::locations::Kind::Root => icons::Glyph::Folder,
+                dirstats_core::locations::Kind::Home => icons::Glyph::Home,
+                dirstats_core::locations::Kind::Volume => icons::Glyph::Storage,
+                dirstats_core::locations::Kind::Root => icons::Glyph::Folder,
             };
             let icon_rect = egui::Rect::from_center_size(egui::pos2(row_rect.min.x + 22.0, row_rect.center().y), egui::vec2(22.0, 22.0));
             icons::paint(painter, icon_rect, glyph, text);

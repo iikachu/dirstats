@@ -24,22 +24,22 @@ tui = ["dep:dirstats-tui"]
 # Use egui's bundled fonts in the GUI instead of the platform's own, for comparison.
 egui-fonts = ["dirstats-gui?/egui-fonts"]
 # Open the selected entry with the desktop.
-open = ["dirstats-app/open", "dirstats-tui?/open", "dirstats-gui?/open"]
+open = ["dirstats-core/open", "dirstats-tui?/open", "dirstats-gui?/open"]
 # Move-to-trash action.
-trash = ["dirstats-app/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
+trash = ["dirstats-core/trash", "dirstats-tui?/trash", "dirstats-gui?/trash"]
 # Permanent delete in the GUI, independent of the trash (Windows and Linux).
-delete = ["dirstats-app/delete", "dirstats-gui?/delete"]
+delete = ["dirstats-core/delete", "dirstats-gui?/delete"]
 # iCloud Drive "Remove Download" action (macOS; does nothing elsewhere).
 # Only the GUI offers it; forward to dirstats-tui too if the TUI gains it.
-icloud = ["dirstats-app/icloud", "dirstats-gui?/icloud"]
+icloud = ["dirstats-core/icloud", "dirstats-gui?/icloud"]
 # Scan whole NTFS volumes from the master file table (Windows, as
 # administrator); without it, or when it cannot, dirstats walks directories.
-ntfs-mft = ["dirstats-app/ntfs-mft", "dirstats-tui?/ntfs-mft", "dirstats-gui?/ntfs-mft"]
+ntfs-mft = ["dirstats-core/ntfs-mft", "dirstats-tui?/ntfs-mft", "dirstats-gui?/ntfs-mft"]
 # Write a cushion treemap PNG with `--png`.
 png = ["dep:png"]
 
 [dependencies]
-dirstats-app.workspace = true
+dirstats-core.workspace = true
 dirstats-tui = { workspace = true, optional = true }
 dirstats-gui = { workspace = true, optional = true }
 clap.workspace = true

@@ -7,11 +7,11 @@
 // (at your option) any later version.
 
 //! Graphical front end: an entry list, a glow treemap and an extension
-//! legend, driven entirely by [`dirstats_app::App`].
+//! legend, driven entirely by [`dirstats_core::App`].
 
-use dirstats_app::{App, NodeId};
-use dirstats_app::treemap::render::{ExtensionColors, ExtensionMix};
-use dirstats_app::treemap::{Style, Treemap};
+use dirstats_core::{App, NodeId};
+use dirstats_core::treemap::render::{ExtensionColors, ExtensionMix};
+use dirstats_core::treemap::{Style, Treemap};
 use eframe::egui::{self, Key, TextureHandle};
 
 mod actions;
@@ -113,13 +113,13 @@ struct Gui {
     /// Largest extensions below every node, for the share bar segments.
     mix: Option<ExtensionMix>,
     /// Places offered when nothing is being scanned, listed on first show.
-    locations: Option<Vec<dirstats_app::locations::Location>>,
+    locations: Option<Vec<dirstats_core::locations::Location>>,
     /// Probed with the locations; `Some(false)` earns a hint in the picker
     /// and on the scanning screen.
     full_disk_access: Option<bool>,
     /// iCloud status of nodes drawn so far; cleared with the tree and after
     /// an eviction.
-    cloud: std::collections::HashMap<NodeId, dirstats_app::cloud::CloudStatus>,
+    cloud: std::collections::HashMap<NodeId, dirstats_core::cloud::CloudStatus>,
     /// Bumped whenever a new tree arrives so cached renders are invalidated.
     tree_version: u64,
     /// Last treemap render, kept for hit-testing boxes and re-shading highlights.
@@ -133,7 +133,7 @@ struct Gui {
     /// the base with a pulsing alpha.
     highlight: Option<TextureHandle>,
     /// Region of `highlight` currently holding pixels, cleared on the next change.
-    highlight_bounds: Option<dirstats_app::treemap::Rect>,
+    highlight_bounds: Option<dirstats_core::treemap::Rect>,
     /// What `highlight` was last drawn for; `None` after a re-render or
     /// while nothing is hovered.
     highlight_key: Option<HighlightKey>,
@@ -174,7 +174,7 @@ impl Gui {
             colors: None,
             mix: None,
             locations: None,
-            full_disk_access: dirstats_app::locations::full_disk_access(),
+            full_disk_access: dirstats_core::locations::full_disk_access(),
             cloud: std::collections::HashMap::new(),
             tree_version: 0,
             map: None,

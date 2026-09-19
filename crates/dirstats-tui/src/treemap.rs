@@ -2,11 +2,11 @@
 // by dirstats contributors
 
 //! Treemap drawn with terminal cells: one coloured cell per unit of area,
-//! laid out by `dirstats_app::treemap::layout`.
+//! laid out by `dirstats_core::treemap::layout`.
 
-use dirstats_app::{NodeId, Tree};
-use dirstats_app::treemap::layout::{self, Rect as MapRect, Style};
-use dirstats_app::treemap::{ExtensionColors, Oklch};
+use dirstats_core::{NodeId, Tree};
+use dirstats_core::treemap::layout::{self, Rect as MapRect, Style};
+use dirstats_core::treemap::{ExtensionColors, Oklch};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
@@ -132,11 +132,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), vec![0u8; 3000]).unwrap();
         std::fs::write(dir.path().join("b.bin"), vec![0u8; 1000]).unwrap();
-        let options = dirstats_app::ScanOptions {
-            size_metric: dirstats_app::SizeMetric::Apparent,
+        let options = dirstats_core::ScanOptions {
+            size_metric: dirstats_core::SizeMetric::Apparent,
             ..Default::default()
         };
-        let tree = dirstats_app::scan::scan(dir.path(), &options).unwrap();
+        let tree = dirstats_core::scan::scan(dir.path(), &options).unwrap();
         let selected = tree.children(tree.root())[0];
         let area = Rect::new(0, 0, 40, 20);
         let mut buffer = Buffer::empty(area);

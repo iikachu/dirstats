@@ -9,8 +9,8 @@
 
 //! Toolbar above the columns and status footer below them.
 
-use dirstats_app::format;
-use dirstats_app::treemap::Style;
+use dirstats_core::format;
+use dirstats_core::treemap::Style;
 use eframe::egui::{self, Sense};
 
 use crate::theme::disabled_icon;

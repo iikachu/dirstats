@@ -17,7 +17,7 @@ readme: written for end users, showing what the app does and how to use it
 ```
 
 - The area is the crate without its `dirstats-` prefix (`scan`, `treemap`,
-  `ntfs`, `app`, `tui`, `gui`, `cli` for the binary) or a repository area
+  `ntfs`, `core`, `tui`, `gui`, `cli` for the binary) or a repository area
   (`ci`, `readme`, `credits`, `skills`, `gitignore`). Several areas are joined
   with a comma.
 - After the colon, describe the resulting behaviour from the user's side, in
