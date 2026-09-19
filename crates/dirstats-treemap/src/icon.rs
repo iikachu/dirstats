@@ -11,8 +11,10 @@
 //! a dark rounded frame.
 //!
 //! The icon is computed, not stored, so every size is drawn for that size
-//! and the GUI can make its window icon at start-up. The `icon` example
-//! writes the PNG, ICO and ICNS files a package needs.
+//! and the GUI can make its window icon at start-up. [`svg()`] gives a
+//! small vector version, the logo of these docs. The `icon` example writes
+//! the PNG, ICO and ICNS files a package needs, the README banner and the
+//! docs logo.
 
 use crate::layout::Style;
 use crate::render::{ExtensionColors, Oklch, Shading, TreemapOptions, render};
@@ -124,6 +126,69 @@ pub fn icon(size: u32, shape: Shape) -> Vec<u8> {
         pixel[3] = ((covered * 255 + samples / 2) / samples) as u8;
     }
     out
+}
+
+/// The [`Shape::Square`] icon as a small vector SVG, for places that want
+/// text rather than pixels, such as the data-URL logo of the API docs.
+///
+/// Same layout, colours, frame and grid as [`icon()`] at a large size, but
+/// the cushions are one radial gradient per tile rather than per-pixel
+/// shading, and the corners are circular (a smaller radius, which reads
+/// about the same as the superellipse). Attributes use single quotes so
+/// the result can go in a Rust string or a data URL unescaped.
+#[must_use]
+pub fn svg() -> String {
+    use std::fmt::Write;
+    const SIDE: f64 = 100.0;
+    /// A circular corner this much smaller matches the superellipse by eye.
+    const CIRCLE_RADIUS: f64 = 0.72;
+    let tree = tree(u32::MAX);
+    let colors = ExtensionColors::rank(&tree);
+    let (margin, radius) = Shape::Square.metrics();
+    let body = RoundedSquare::new(SIDE, margin, radius);
+    let inner = body.inset((body.side * FRAME_WIDTH * 10.0).round() / 10.0);
+    // Lay out at ten times the size so tile edges land on tenths.
+    let scale = 10.0;
+    let side = (inner.side * scale).round() as u32;
+    let options = TreemapOptions { style: Style::Squarified, shading: Shading::Flat, ..TreemapOptions::default() };
+    let map = render(&tree, tree.root(), side, side, &options, |t, id| colors.color(t, id));
+    let hex = |c: Oklch| {
+        let [r, g, b] = c.to_srgb();
+        format!("#{r:02x}{g:02x}{b:02x}")
+    };
+    let n = |v: f64| format!("{}", (v * 10.0).round() / 10.0);
+
+    let mut tiles = String::new();
+    let mut shades = String::new();
+    for item in map.items.iter().filter(|i| i.leaf && tree.children(i.node).is_empty()) {
+        let r = item.rect;
+        let geometry = format!(
+            "x='{}' y='{}' width='{}' height='{}'",
+            n(inner.min + f64::from(r.left) / scale),
+            n(inner.min + f64::from(r.top) / scale),
+            n(f64::from(r.width()) / scale),
+            n(f64::from(r.height()) / scale)
+        );
+        // Lifted to about the average lightness the glow gives a face.
+        let _ = write!(tiles, "<rect {geometry} fill='{}'/>", hex(colors.color(&tree, item.node).lighten(0.07)));
+        let _ = write!(shades, "<rect {geometry}/>");
+    }
+    format!(
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {s} {s}'>\
+<defs><radialGradient id='c' cx='.3' cy='.3' r='.9'><stop offset='0' stop-color='#fff' stop-opacity='.3'/><stop offset='.65' stop-color='#fff' stop-opacity='0'/><stop offset='1' stop-color='#000' stop-opacity='.12'/></radialGradient>\
+<clipPath id='k'><rect x='{ix}' y='{ix}' width='{iw}' height='{iw}' rx='{ir}'/></clipPath></defs>\
+<rect x='{bx}' y='{bx}' width='{bw}' height='{bw}' rx='{br}' fill='{frame}'/>\
+<g clip-path='url(#k)'>{tiles}<g fill='url(#c)' stroke='{grid}' stroke-width='.35' stroke-opacity='.6'>{shades}</g></g></svg>",
+        s = SIDE,
+        bx = n(body.min),
+        bw = n(body.side),
+        br = n(body.radius * CIRCLE_RADIUS),
+        ix = n(inner.min),
+        iw = n(inner.side),
+        ir = n(inner.radius * CIRCLE_RADIUS),
+        frame = hex(FRAME),
+        grid = hex(GRID),
+    )
 }
 
 /// A square with rounded corners, in subpixels. Corners are a superellipse
@@ -262,6 +327,14 @@ mod tests {
                 assert_eq!(alpha(size / 2, size / 2), 255, "{shape:?} {size}: centre");
             }
         }
+    }
+
+    #[test]
+    fn svg_has_a_tile_per_file() {
+        let svg = svg();
+        let files = tree(u32::MAX).nodes().filter(|(_, n)| n.kind == Kind::File).count();
+        assert_eq!(svg.matches(" fill='#").count(), files + 1, "one per tile, plus the frame");
+        assert!(!svg.contains('"'), "single quotes only");
     }
 
     #[test]
