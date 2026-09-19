@@ -10,7 +10,7 @@
 //!
 //! - [`layout`] arranges sibling sizes into rectangles.
 //! - [`color`] does all shading in OKLCH; sRGB only at the pixel.
-//! - [`render`] draws a shaded treemap into an RGBA buffer.
+//! - [`render()`] draws a shaded treemap into an RGBA buffer.
 //!
 //! See `CREDITS.md` in the repository for the projects this crate builds on.
 

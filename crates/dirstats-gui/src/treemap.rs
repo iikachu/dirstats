@@ -9,8 +9,8 @@
 
 //! The treemap pane: cached base render, the pulsing highlight overlay and pointer handling.
 
-use dirstats_treemap::TreemapOptions;
-use dirstats_treemap::render::{ExtensionColors, render};
+use dirstats_app::treemap::TreemapOptions;
+use dirstats_app::treemap::render::{ExtensionColors, render};
 use eframe::egui::{self, Color32, ColorImage, Sense, TextureOptions};
 
 use crate::menu::{node_menu, zoom_label};
@@ -27,7 +27,7 @@ pub(super) const HIGHLIGHT_TOWARD_MAX: f64 = 0.7;
 pub(super) const HIGHLIGHT_LIGHTNESS: f64 = 0.06;
 
 /// The vivid version of a colour used for hover and the legend swatch.
-pub(super) fn vivid(color: dirstats_treemap::Oklch) -> dirstats_treemap::Oklch {
+pub(super) fn vivid(color: dirstats_app::treemap::Oklch) -> dirstats_app::treemap::Oklch {
     color.lighten(HIGHLIGHT_LIGHTNESS).toward_max_chroma(HIGHLIGHT_TOWARD_MAX)
 }
 
@@ -68,7 +68,7 @@ impl Gui {
             return;
         }
         let (Some(map), Some(texture)) = (&self.map, &mut self.highlight) else { return };
-        let leaves: Vec<(usize, dirstats_treemap::Oklch)> = match &target {
+        let leaves: Vec<(usize, dirstats_app::treemap::Oklch)> = match &target {
             None => Vec::new(),
             Some(Highlight::Subtree(root)) => {
                 let start = map.item_index(*root).unwrap_or(map.items.len());
@@ -87,8 +87,8 @@ impl Gui {
                 .collect(),
         };
         // Upload one region covering both what was lit and what will be.
-        let union = |a: dirstats_treemap::Rect, b: dirstats_treemap::Rect| {
-            dirstats_treemap::Rect::new(a.left.min(b.left), a.top.min(b.top), a.right.max(b.right), a.bottom.max(b.bottom))
+        let union = |a: dirstats_app::treemap::Rect, b: dirstats_app::treemap::Rect| {
+            dirstats_app::treemap::Rect::new(a.left.min(b.left), a.top.min(b.top), a.right.max(b.right), a.bottom.max(b.bottom))
         };
         let mut bounds = self.highlight_bounds;
         for &(i, _) in &leaves {
@@ -119,7 +119,7 @@ impl Gui {
         let response = ui.add(egui::Image::new((texture.id(), available)).sense(Sense::click()));
         let origin = response.rect.min;
         let painter = ui.painter_at(response.rect);
-        let to_screen = |r: dirstats_treemap::Rect| {
+        let to_screen = |r: dirstats_app::treemap::Rect| {
             egui::Rect::from_min_max(
                 origin + egui::vec2(r.left as f32, r.top as f32),
                 origin + egui::vec2(r.right as f32, r.bottom as f32),
@@ -167,7 +167,7 @@ impl Gui {
                 }
             }
         }
-        let outline = |item: &dirstats_treemap::render::VisibleItem, color: Color32, width: f32| {
+        let outline = |item: &dirstats_app::treemap::render::VisibleItem, color: Color32, width: f32| {
             painter.rect_stroke(to_screen(item.rect), 0.0, egui::Stroke::new(width, color), egui::StrokeKind::Inside);
         };
         match &self.selection {

@@ -15,7 +15,7 @@ mod treemap;
 
 use dirstats_app::App;
 use dirstats_app::format;
-use dirstats_treemap::ExtensionColors;
+use dirstats_app::treemap::ExtensionColors;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};

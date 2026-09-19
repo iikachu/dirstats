@@ -10,6 +10,9 @@
 //! backup disk plugged into another system is just files to that system:
 //! it is labelled as a macOS backup, and nothing is refused. Only the
 //! volume probe touches the disk.
+//!
+//! [`App::is_time_machine`](crate::App::is_time_machine) asks the same of
+//! a scanned node.
 
 use std::path::{Component, Path};
 
@@ -96,6 +99,18 @@ fn volume_root(path: &Path) -> Option<std::path::PathBuf> {
 #[cfg(not(unix))]
 fn volume_root(path: &Path) -> Option<std::path::PathBuf> {
     path.ancestors().last().map(Path::to_path_buf)
+}
+
+impl crate::App {
+    /// Whether `id` is part of a Time Machine backup; see [`NOTE`].
+    #[must_use]
+    pub fn is_time_machine(&self, id: crate::NodeId) -> bool {
+        // By ancestor names rather than `tree.path`, which allocates, since
+        // front ends ask for every displayed row. The scan root's own path
+        // was covered by the volume probe.
+        let Some(tree) = &self.tree else { return false };
+        self.backup_volume || self.ancestor_or_self(id, |n| &*tree.node(n).name == std::ffi::OsStr::new("Backups.backupdb"))
+    }
 }
 
 #[cfg(test)]

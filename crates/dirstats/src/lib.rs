@@ -10,8 +10,7 @@
 //! front end is started from. The `dirstats` binary is a thin wrapper.
 
 pub use dirstats_app as app;
-pub use dirstats_scan as scan;
-pub use dirstats_treemap as treemap;
+pub use dirstats_app::{scan, treemap};
 #[cfg(feature = "tui")]
 pub use dirstats_tui as tui;
 #[cfg(feature = "gui")]
@@ -20,7 +19,7 @@ pub use dirstats_gui as gui;
 pub mod session;
 
 use clap::{Parser, ValueEnum};
-use dirstats_scan::{ScanOptions, SizeMetric};
+use dirstats_app::{ScanOptions, SizeMetric};
 use std::path::{Component, Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
@@ -168,8 +167,8 @@ pub fn print_summary(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 /// Scan synchronously and write a cushion treemap PNG.
 #[cfg(feature = "png")]
 pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    use dirstats_treemap::render::{ExtensionColors, render};
-    use dirstats_treemap::{Shading, Style, TreemapOptions};
+    use dirstats_app::treemap::render::{ExtensionColors, render};
+    use dirstats_app::treemap::{Shading, Style, TreemapOptions};
 
     let tree = dirstats_app::scanner::scan(cli.scan_root()?, &cli.scan_options())?;
     let style = match cli.layout {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // by dirstats contributors
 
-//! Permanent deletion on Windows, bypassing the Recycle Bin.
+//! Permanent deletion on Windows and Linux, bypassing the trash.
 //!
 //! The tree is not re-enumerated: the scan already knows every path, so
 //! the worker walks the scanned nodes, removes files first and then
@@ -9,6 +9,10 @@
 //! are removed as links; their targets are never entered. Nothing here is
 //! reversible, so front ends gate it behind [`crate::App::permanent_delete`]
 //! and confirm each deletion themselves.
+//!
+//! Front ends start one with `App::delete_node_permanently` and adopt the
+//! result with `App::poll_delete` each tick; both exist on Windows and
+//! Linux only.
 
 use dirstats_scan::{Kind, NodeId, Tree};
 use std::io;
@@ -187,6 +191,49 @@ fn remove_dir_force(path: &Path) -> io::Result<()> {
             std::fs::remove_dir(path).map_err(|_| err)
         }
         Err(err) => Err(err),
+    }
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+impl crate::App {
+    /// Start deleting `id` permanently on a worker thread, bypassing the
+    /// Recycle Bin. Refused unless [`crate::App::permanent_delete`] is on. Only
+    /// one deletion runs at a time. The front end is expected to have
+    /// confirmed with the user; nothing here asks.
+    pub fn delete_node_permanently(&mut self, id: NodeId) -> io::Result<()> {
+        if !self.permanent_delete() {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "permanent delete is not enabled"));
+        }
+        if self.delete.is_some() {
+            return Err(io::Error::new(io::ErrorKind::ResourceBusy, "a deletion is already running"));
+        }
+        self.check_removable(id)?;
+        if self.is_gone(id) {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "already removed"));
+        }
+        let tree = self.tree.as_ref().ok_or(io::ErrorKind::NotFound)?;
+        self.delete = Some(RunningDelete::spawn(tree, id));
+        Ok(())
+    }
+
+    /// Adopt a finished deletion: the node counts as deleted when its path
+    /// is gone, whatever happened underneath. Returns the path and outcome
+    /// for the front end to report when a deletion has just finished.
+    pub fn poll_delete(&mut self) -> Option<(PathBuf, DeleteOutcome)> {
+        let running = self.delete.as_ref()?;
+        let DeleteStatus::Done(outcome) = running.try_finish() else { return None };
+        let running = self.delete.take()?;
+        if !running.path.exists() {
+            self.deleted.insert(running.node);
+        }
+        self.message = Some(if outcome.cancelled {
+            format!("delete cancelled after {} items: {}", outcome.removed, running.path.display())
+        } else if outcome.failures.is_empty() {
+            format!("deleted {} items: {}", outcome.removed, running.path.display())
+        } else {
+            format!("delete failed for {} of {} items: {}", outcome.failures.len(), running.total, running.path.display())
+        });
+        Some((running.path.clone(), outcome))
     }
 }
 

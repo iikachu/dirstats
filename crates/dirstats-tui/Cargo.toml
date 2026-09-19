@@ -15,7 +15,6 @@ ntfs-mft = ["dirstats-app/ntfs-mft"]
 
 [dependencies]
 dirstats-app.workspace = true
-dirstats-treemap.workspace = true
 ratatui.workspace = true
 
 [dev-dependencies]

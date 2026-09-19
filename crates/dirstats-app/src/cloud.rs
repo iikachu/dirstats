@@ -3,6 +3,9 @@
 
 //! iCloud Drive items on macOS: whether a path is one, and evicting its
 //! local copy so the space comes back without deleting anything.
+//!
+//! On an [`App`](crate::App), `App::evict_node` (`icloud` feature) does the
+//! eviction and records it for `App::is_evicted`.
 
 use std::io;
 use std::path::Path;
@@ -96,6 +99,18 @@ pub fn status(_path: &Path, _is_dir: bool, _apparent: u64, _allocated: u64) -> C
 #[cfg(not(all(target_os = "macos", feature = "icloud")))]
 pub fn evict(_path: &Path) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "no cloud storage on this platform"))
+}
+
+#[cfg(feature = "icloud")]
+impl crate::App {
+    /// Remove the local copy of a synced iCloud item, keeping it in the cloud.
+    pub fn evict_node(&mut self, id: crate::NodeId) -> io::Result<()> {
+        let path = self.path_of(id).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such entry"))?;
+        evict(&path)?;
+        self.evicted.insert(id);
+        self.message = Some(format!("removed download: {} (rescan to update sizes)", path.display()));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
