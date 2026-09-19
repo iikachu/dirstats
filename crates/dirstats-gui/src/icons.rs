@@ -33,6 +33,8 @@ pub enum Glyph {
     OpenInNew,
     /// `delete`, the can.
     Delete,
+    /// `delete_forever`, the can with a cross, for permanent deletion.
+    DeleteForever,
     /// `undo`, for putting an item back.
     Undo,
     /// Column picker.
@@ -60,6 +62,7 @@ impl Glyph {
             Glyph::ContentCopy => "M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-560h80v560h440v80H200Zm160-240v-480 480Z",
             Glyph::OpenInNew => "M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h280v80H200v560h560v-280h80v280q0 33-23.5 56.5T760-120H200Zm188-212-56-56 372-372H560v-80h280v280h-80v-144L388-332Z",
             Glyph::Delete => "M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z",
+            Glyph::DeleteForever => "m376-300 104-104 104 104 56-56-104-104 104-104-56-56-104 104-104-104-56 56 104 104-104 104 56 56Zm-96 180q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520Zm-400 0v520-520Z",
             Glyph::ViewColumn => "M121-280v-400q0-33 23.5-56.5T201-760h559q33 0 56.5 23.5T840-680v400q0 33-23.5 56.5T760-200H201q-33 0-56.5-23.5T121-280Zm79 0h133v-400H200v400Zm213 0h133v-400H413v400Zm213 0h133v-400H626v400Z",
             Glyph::Home => "M240-200h120v-240h240v240h120v-360L480-740 240-560v360Zm-80 80v-480l320-240 320 240v480H520v-240h-80v240H160Zm320-350Z",
             Glyph::Storage => "M120-160v-160h720v160H120Zm80-40h80v-80h-80v80Zm-80-440v-160h720v160H120Zm80-40h80v-80h-80v80Zm-80 280v-160h720v160H120Zm80-40h80v-80h-80v80Z",
@@ -334,6 +337,7 @@ mod tests {
             (Glyph::ContentCopy, svg!("content_copy")),
             (Glyph::OpenInNew, svg!("open_in_new")),
             (Glyph::Delete, svg!("delete")),
+            (Glyph::DeleteForever, svg!("delete_forever")),
             (Glyph::Undo, svg!("undo")),
             (Glyph::ViewColumn, svg!("view_column")),
             (Glyph::Home, svg!("home")),
