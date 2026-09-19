@@ -1,17 +1,23 @@
 # Credits
 
-dirstats is a workspace of two crates with different licenses:
+dirstats is a workspace of crates with different licenses:
 
 | Crate | License | Files |
 |---|---|---|
 | `crates/dirstats-scan` | Apache-2.0 (`LICENSE-APACHE`) | `tree.rs`, `scan.rs` |
 | `crates/dirstats-treemap` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | `layout.rs`, `render.rs`, examples |
 | `crates/dirstats-ntfs` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | `mft.rs`, `volume.rs` |
-| `crates/dirstats-core`, `crates/dirstats-tui`, `crates/dirstats` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | app state, terminal UI, binary |
+| `crates/dirstats-core`, `crates/dirstats-tui`, `crates/dirstats-gui`, `crates/dirstats` | GPL-3.0-or-later (`LICENSE-GPL-3.0`) | app state, terminal and graphical UI, binary |
 
 `dirstats-scan` contains no GPL-derived code and must stay that way: code
 ported from WinDirStat or Disk Inventory X belongs in `dirstats-treemap` (or
-another GPL crate). License texts for upstream projects are in `LICENSES/`.
+another GPL crate). License texts for upstream projects are in `LICENSES/`,
+and the people behind each project are listed in
+[UPSTREAM-CONTRIBUTORS.md](UPSTREAM-CONTRIBUTORS.md).
+
+Each crate published to crates.io carries its own license text, this file,
+`UPSTREAM-CONTRIBUTORS.md` and the `LICENSES/` texts of the projects it
+draws on, as symlinks to the copies at the repository root.
 
 ## WinDirStat — treemap layout and cushion rendering
 
@@ -19,7 +25,8 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
 - By WinDirStat Team (https://windirstat.net). Original author
   Bernhard Seifert; major contributors Bryan Berns and Oliver Schneider;
   treemap rendering improvements by Falco Peijnenburg and Morten Asscheman.
-  See upstream `CONTRIBUTORS.md`.
+  Everyone in upstream `CONTRIBUTORS.md` is listed in
+  `UPSTREAM-CONTRIBUTORS.md`.
 - License: GPL-2.0-or-later (`LICENSES/GPL-2.0-windirstat.md`), used in
   `dirstats-treemap` under GPL-3.0-or-later.
 - Used in:
@@ -35,7 +42,8 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
 ## dua-cli / dua-core — parallel traversal and tree design
 
 - Project: https://github.com/Byron/dua-cli
-- By Sebastian Thiel
+- By Sebastian Thiel and dua-cli contributors (see
+  `UPSTREAM-CONTRIBUTORS.md`)
 - License: MIT (`LICENSES/MIT-dua-cli.txt`)
 - Used in:
   - Dependency `dua-core`: parallel, work-stealing directory traversal
