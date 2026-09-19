@@ -7,26 +7,19 @@
 // (at your option) any later version.
 
 //! The dirstats app icon: a cushion treemap of a small made-up tree, drawn
-//! by [`dirstats_treemap::render()`] with the same palette and shading as
+//! by `dirstats_treemap::render()` with the same palette and shading as
 //! the app, set in a dark rounded frame.
 //!
-//! Nothing here is compiled into dirstats itself. The GUI's build script
-//! calls [`icon()`] and embeds the pixels, and the `dirstats-icon` program
-//! writes every other file:
+//! Not part of the GUI library: `build.rs` includes this file to draw the
+//! window icon, whose pixels the library embeds, and the `icon` example
+//! includes it to write every other file:
 //!
 //! ```text
-//! cargo run -p dirstats-icon --features cli -- OUT_DIR
+//! cargo run -p dirstats-gui --example icon -- OUT_DIR
 //! ```
 //!
 //! Every size is drawn for that size rather than scaled. [`svg()`] gives a
-//! small vector version, the logo of these docs.
-
-// docs.rs only allows https: images (its CSP is `img-src 'self' https:`), so
-// the logo is a link to the generated file, not a data URL.
-#![doc(
-    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg",
-    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg"
-)]
+//! small vector version, the logo of the API docs.
 
 use dirstats_treemap::Style;
 use dirstats_treemap::render::{ExtensionColors, Oklch, Shading, TreemapOptions, render};

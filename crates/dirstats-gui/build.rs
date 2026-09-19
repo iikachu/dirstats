@@ -9,7 +9,12 @@
 //! Draw the window icon at build time, so the icon code never ships in the
 //! app: `src/lib.rs` embeds the raw pixels written here.
 
-use dirstats_icon::{Shape, icon};
+// Shared with the `icon` example, which uses the rest of it.
+#[path = "build/icon.rs"]
+#[allow(dead_code)]
+mod icon;
+
+use icon::{Shape, icon};
 
 /// Side of the embedded icon in pixels; `src/lib.rs` must agree.
 const SIZE: u32 = 256;
@@ -23,6 +28,6 @@ fn main() {
     };
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("cargo sets OUT_DIR"));
     std::fs::write(out.join("icon.rgba"), icon(SIZE, shape)).expect("OUT_DIR is writable");
-    // Only this script and dirstats-icon (a dependency, tracked by cargo) change the icon.
     println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=build/icon.rs");
 }

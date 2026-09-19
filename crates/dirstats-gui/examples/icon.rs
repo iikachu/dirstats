@@ -17,13 +17,16 @@
 //!   and favicon of the API docs, checked in as `assets/dirstats-logo.svg`.
 //!
 //! ```text
-//! cargo run -p dirstats-icon --features cli -- OUT_DIR
+//! cargo run -p dirstats-gui --example icon -- OUT_DIR
 //! ```
 //!
 //! After changing the icon, copy `dirstats-hero.svg` and `dirstats-logo.svg`
 //! over the ones in `assets/`; the GUI picks up the change on its next build.
 
-use dirstats_icon::{Shape, icon};
+#[path = "../build/icon.rs"]
+mod icon;
+
+use icon::{Shape, icon};
 use std::path::PathBuf;
 
 const PNG_SIZES: &[u32] = &[16, 24, 32, 48, 64, 128, 256, 512, 1024];
@@ -44,7 +47,7 @@ const ICNS_TYPES: &[(&[u8; 4], u32)] = &[
 ];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let out = PathBuf::from(std::env::args_os().nth(1).ok_or("usage: dirstats-icon OUT_DIR")?);
+    let out = PathBuf::from(std::env::args_os().nth(1).ok_or("usage: icon OUT_DIR")?);
     std::fs::create_dir_all(&out)?;
 
     for &size in PNG_SIZES {
@@ -81,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write(&out.join("dirstats.icns"), &icns)?;
 
     write(&out.join("dirstats-hero.svg"), hero(&png(HERO_ICON, Shape::Macos)?).as_bytes())?;
-    write(&out.join("dirstats-logo.svg"), dirstats_icon::svg().as_bytes())?;
+    write(&out.join("dirstats-logo.svg"), icon::svg().as_bytes())?;
     Ok(())
 }
 
