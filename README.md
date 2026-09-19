@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/dirstats-hero.svg" alt="The dirstats icon, a treemap of coloured tiles, beside the name dirstats and &quot;See what is filling your disk.&quot;" width="900"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-hero.svg" alt="The dirstats icon, a treemap of coloured tiles, beside the name dirstats and &quot;See what is filling your disk.&quot;" width="900"></p>
 
 # dirstats
 
