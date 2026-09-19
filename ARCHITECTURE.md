@@ -16,11 +16,12 @@ a front end.
 | Scan | `dirstats-scan` (`scan` + `platform::*`) | Apache-2.0 | Parallel traversal, hard links, volume boundaries, per-filesystem fast paths |
 | Persist | `dirstats-scan` (feature `serde`) | Apache-2.0 | Save and load scans |
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
-| Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels; the app icon (`icon`, files written by `examples/icon.rs`) |
+| Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
 | NTFS | `dirstats-ntfs` | GPL-3.0-or-later | Whole-volume scan from the master file table (Windows, needs administrator rights); walks with `dirstats-scan` otherwise |
 | Core | `dirstats-core` | GPL-3.0-or-later | The library front ends and other programs use: state (current scan, selection, zoom, sort), the worker threads for scans and permanent deletes, and file actions (open, reveal, trash, put back, iCloud evict; on Windows and Linux also gated permanent delete). Re-exports `dirstats-scan` as `scan` and `dirstats-treemap` as `treemap` |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
+| Build tool | `dirstats-icon` | GPL-3.0-or-later | The app icon, drawn as a treemap with `dirstats-treemap`. Never linked into the app: the GUI's `build.rs` embeds its pixels, and its `cli` program writes the PNG, ICO and ICNS files, the README banner and the docs logo |
 
 ```
 dirstats ─┬─ dirstats-gui ─┐
@@ -34,7 +35,9 @@ Rules:
 - Front ends and the binary depend on `dirstats-core` only, not on
   `dirstats-scan` or `dirstats-treemap`; they reach those through
   `dirstats_core::scan` and `dirstats_core::treemap`. TUI and GUI must be
-  swappable without touching scan or treemap code.
+  swappable without touching scan or treemap code. The one exception is
+  `dirstats-gui`'s build-dependency on `dirstats-icon`, which only runs at
+  build time.
 - Scanning never blocks a front end: `scan_with` runs on a worker thread and
   reports through `Progress` and a cancel flag.
 - `dirstats-scan` stays free of GPL-derived code (see
@@ -162,4 +165,4 @@ largest entries and, with `--trash`, moves them to the trash.
    rasterisation, GUI front end.
 5. Hilbert and Moore layouts; frames and labels.
 6. Save and load scans; benchmarks against dua, gdu, ncdu.
-7. App bundles and icons.
+7. App bundles. The icon is done (`dirstats-icon`).
