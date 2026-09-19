@@ -3,8 +3,13 @@ name = "dirstats-gui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
 license = "GPL-3.0-or-later"
-description = "Graphical front end for dirstats (egui)"
+description = "Graphical front end of the dirstats app (egui); not meant to be used on its own"
+keywords = ["disk-usage", "treemap", "egui"]
+categories = ["gui"]
 
 [features]
 default = []

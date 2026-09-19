@@ -24,16 +24,23 @@ terminal.
 
 ## Install
 
-You need [Rust](https://rustup.rs). Then, from this folder:
+You need [Rust](https://rustup.rs). Then:
 
 ```bash
-cargo install --path crates/dirstats
+cargo install dirstats
 ```
 
 To also get PNG export:
 
 ```bash
-cargo install --path crates/dirstats --features png
+cargo install dirstats --features png
+```
+
+To build the latest code instead, run this from a checkout of this
+repository:
+
+```bash
+cargo install --path crates/dirstats
 ```
 
 ## Use
@@ -110,7 +117,7 @@ layouts, saving and loading scans, and ready-to-run app downloads.
 ## For developers
 
 dirstats is also a set of Rust crates: a scanner, a treemap renderer and the
-app state behind both interfaces. See [ARCHITECTURE.md](ARCHITECTURE.md) for
+app state behind both interfaces. See [ARCHITECTURE.md](https://github.com/iikachu/dirstats/blob/main/ARCHITECTURE.md) for
 the layout and feature flags. A taste of the library:
 
 ```rust
@@ -127,4 +134,4 @@ let map = render(&tree, tree.root(), 1600, 1000, &TreemapOptions::default(),
 ## License
 
 The application is GPL-3.0-or-later; the scanning library `dirstats-scan` is
-Apache-2.0. See [CREDITS.md](CREDITS.md) for the projects dirstats builds on.
+Apache-2.0. See [CREDITS.md](https://github.com/iikachu/dirstats/blob/main/CREDITS.md) for the projects dirstats builds on.
