@@ -2,11 +2,11 @@
 // by dirstats contributors
 
 //! Treemap drawn with terminal cells: one coloured cell per unit of area,
-//! laid out by `dirstats_treemap::layout`.
+//! laid out by `dirstats_app::treemap::layout`.
 
 use dirstats_app::{NodeId, Tree};
-use dirstats_treemap::layout::{self, Rect as MapRect, Style};
-use dirstats_treemap::{ExtensionColors, Oklch};
+use dirstats_app::treemap::layout::{self, Rect as MapRect, Style};
+use dirstats_app::treemap::{ExtensionColors, Oklch};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};

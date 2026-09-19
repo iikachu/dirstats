@@ -6,11 +6,16 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-//! Application state shared by every dirstats front end.
+//! The dirstats library: application state shared by every front end,
+//! the background work behind it, and the file actions it offers.
 //!
 //! A front end owns an [`App`], forwards user intent as method calls, and
 //! draws whatever the state says. Scans run on a worker thread; call
 //! [`App::poll`] on every tick to pick up the result.
+//!
+//! The layers below are re-exported, so this is the only dirstats crate a
+//! front end or another program needs: [`scan`] builds the sized tree and
+//! [`treemap`] lays it out and renders it.
 
 pub mod backup;
 pub mod cloud;
@@ -28,6 +33,7 @@ pub mod trash;
 #[cfg(feature = "delete")]
 pub use delete::{DeleteFailure, DeleteOutcome, DeleteStatus, RunningDelete};
 pub use dirstats_scan::{self as scan, NodeId, ScanOptions, SizeMetric, Tree};
+pub use dirstats_treemap as treemap;
 pub use scanner::{RunningScan, ScanStatus};
 
 use std::io;

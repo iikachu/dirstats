@@ -10,7 +10,7 @@
 //! The entry list: the zoom directory's row, the expandable tree under it and keyboard navigation.
 
 use dirstats_app::{NodeId, format};
-use dirstats_treemap::render::{ExtensionColors, ExtensionMix};
+use dirstats_app::treemap::render::{ExtensionColors, ExtensionMix};
 use eframe::egui::{self, Color32, Key, Sense};
 
 use crate::menu::{NodeAction, TrashState, node_menu, zoom_label};

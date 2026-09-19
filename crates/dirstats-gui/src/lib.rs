@@ -10,8 +10,8 @@
 //! legend, driven entirely by [`dirstats_app::App`].
 
 use dirstats_app::{App, NodeId};
-use dirstats_treemap::render::{ExtensionColors, ExtensionMix};
-use dirstats_treemap::{Style, Treemap};
+use dirstats_app::treemap::render::{ExtensionColors, ExtensionMix};
+use dirstats_app::treemap::{Style, Treemap};
 use eframe::egui::{self, Key, TextureHandle};
 
 mod actions;
@@ -127,7 +127,7 @@ struct Gui {
     /// the base with a pulsing alpha.
     highlight: Option<TextureHandle>,
     /// Region of `highlight` currently holding pixels, cleared on the next change.
-    highlight_bounds: Option<dirstats_treemap::Rect>,
+    highlight_bounds: Option<dirstats_app::treemap::Rect>,
     highlight_key: Option<HighlightKey>,
     style: Style,
     /// Current selection: a node or an extension, never both.

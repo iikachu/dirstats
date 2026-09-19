@@ -15,7 +15,7 @@ reading before a non-trivial change.
 | `dirstats-scan` | tree model and parallel scan | **Apache-2.0** |
 | `dirstats-treemap` | layout and cushion rendering | GPL-3.0-or-later |
 | `dirstats-ntfs` | NTFS master file table fast path | GPL-3.0-or-later |
-| `dirstats-app` | front-end-agnostic state and actions | GPL-3.0-or-later |
+| `dirstats-app` | the library: state, worker threads, file actions; re-exports scan and treemap | GPL-3.0-or-later |
 | `dirstats-tui`, `dirstats-gui` | presentation and input only | GPL-3.0-or-later |
 | `dirstats` | CLI and binary; picks a front end | GPL-3.0-or-later |
 
@@ -70,7 +70,7 @@ This project is permissive about how work gets done. Without asking, you may:
    contributors`. Write credits as "by <who>"; never "Copyright" or ©. Leave
    texts under `LICENSES/` verbatim.
 2. **Layers.** Front ends never scan, lay out or touch the filesystem; they
-   call `dirstats-app`. Scans run on a worker thread and never block a front
+   call `dirstats-app`, and depend on no other dirstats library crate. Scans run on a worker thread and never block a front
    end.
 3. **Real files.** Trash, permanent delete, open and iCloud eviction act on
    the user's system. Exercise them only on paths inside a temp directory the

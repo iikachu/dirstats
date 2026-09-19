@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license = "GPL-3.0-or-later"
-description = "Front-end-agnostic application state for dirstats"
+description = "The dirstats library: scan state, background work and file actions, with the scanner and treemap re-exported"
 
 [features]
 default = []
@@ -24,7 +24,10 @@ open = ["dep:open"]
 icloud = ["dep:objc2-foundation", "dep:objc2"]
 
 [dependencies]
+# The layers below; re-exported as `scan` and `treemap`, so front ends
+# and library users depend on this crate alone.
 dirstats-scan.workspace = true
+dirstats-treemap.workspace = true
 foldhash.workspace = true
 trash = { workspace = true, optional = true }
 open = { workspace = true, optional = true }

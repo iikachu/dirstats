@@ -59,7 +59,7 @@ impl Gui {
                     let k = 0.35 + 0.65 * phase;
                     let peak = vivid(*color);
                     // Same straight-line mix the treemap blend produces.
-                    dirstats_treemap::Oklch::new(
+                    dirstats_app::treemap::Oklch::new(
                         color.l + (peak.l - color.l) * k,
                         color.c + (peak.c - color.c) * k,
                         color.h,
