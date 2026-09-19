@@ -8,6 +8,11 @@ description = "Treemap layouts and cushion rendering for dirstats trees"
 keywords = ["treemap", "disk-usage", "visualization"]
 categories = ["visualization"]
 
+# Hosted docs: no platform-specific code, so one target is enough.
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu"]
+
 [features]
 default = ["parallel"]
 # Rasterise treemap bands on all cores.

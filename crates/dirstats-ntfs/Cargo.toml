@@ -8,6 +8,11 @@ description = "NTFS fast path for dirstats: reads the master file table instead 
 keywords = ["ntfs", "mft", "disk-usage", "scan"]
 categories = ["filesystem"]
 
+# Hosted docs: the master file table reader only exists on Windows.
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc"]
+
 [dependencies]
 dirstats-scan.workspace = true
 foldhash.workspace = true

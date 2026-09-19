@@ -6,6 +6,11 @@ rust-version.workspace = true
 license = "GPL-3.0-or-later"
 description = "Terminal front end for dirstats"
 
+# Hosted docs: every feature, one page per platform.
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "aarch64-apple-darwin"]
+
 [features]
 default = []
 trash = ["dirstats-app/trash"]
