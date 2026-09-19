@@ -52,25 +52,33 @@ pub(super) enum Dialog {
 #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 const WIDTH: f32 = 380.0;
 
-/// The frame of a utility dialog: tight margins and small corners, like the
-/// system's own alerts rather than a floating card.
+/// Corner radius of a dialog, small like the system's own alerts.
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+const RADIUS: u8 = 4;
+
+/// The frame of a utility dialog: no margin of its own, so the body and the
+/// footer band (see [`buttons`]) can each span the full width.
 #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 fn frame(ctx: &egui::Context) -> egui::Frame {
-    egui::Frame::window(&ctx.style()).inner_margin(egui::Margin::same(14)).corner_radius(4.0)
+    egui::Frame::window(&ctx.style()).inner_margin(0).corner_radius(RADIUS)
 }
 
 /// An alert body: `glyph` on the left in `tint`, then a bold title in body
 /// size and whatever `body` adds, all in one tight column.
 #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 fn alert(ui: &mut egui::Ui, glyph: Glyph, tint: egui::Color32, title: &str, body: impl FnOnce(&mut egui::Ui)) {
-    ui.horizontal_top(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-        icons::paint(ui.painter(), rect, glyph, tint);
-        ui.add_space(6.0);
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 4.0;
-            ui.label(egui::RichText::new(title).strong());
-            body(ui);
+    ui.spacing_mut().item_spacing.y = 0.0;
+    egui::Frame::new().inner_margin(egui::Margin { left: 16, right: 16, top: 16, bottom: 14 }).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal_top(|ui| {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+            icons::paint(ui.painter(), rect, glyph, tint);
+            ui.add_space(6.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.label(egui::RichText::new(title).strong());
+                body(ui);
+            });
         });
     });
 }
@@ -88,26 +96,35 @@ fn facts(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     });
 }
 
-/// The button row under a separator, right-aligned, in reading order
-/// (the last is the default action). Returns which button was clicked.
+/// The button row in a tinted footer band across the bottom of the dialog,
+/// right-aligned in reading order (the last is the default action), as in
+/// Windows and GTK message boxes. Returns which button was clicked.
 #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
 fn buttons(ui: &mut egui::Ui, labels: &[(&str, Style)]) -> Option<usize> {
-    ui.add_space(4.0);
-    ui.separator();
     let mut clicked = None;
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().button_padding = egui::vec2(10.0, 3.0);
-        for (i, (label, style)) in labels.iter().enumerate().rev() {
-            let text = egui::RichText::new(*label);
-            let button = match style {
-                Style::Plain => egui::Button::new(text),
-                Style::Default => egui::Button::new(text.strong()),
-                Style::Destructive => egui::Button::new(text.strong().color(egui::Color32::WHITE)).fill(ui.visuals().error_fg_color),
-            };
-            if ui.add(button.min_size(egui::vec2(76.0, 0.0))).clicked() {
-                clicked = Some(i);
+    let visuals = ui.visuals().clone();
+    let corners = egui::CornerRadius { nw: 0, ne: 0, sw: RADIUS, se: RADIUS };
+    egui::Frame::new().fill(visuals.faint_bg_color).corner_radius(corners).inner_margin(egui::Margin::symmetric(16, 10)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        let size = ui.style().text_styles[&egui::TextStyle::Body].size;
+        let height = ui.spacing().interact_size.y + 2.0;
+        // A fixed-height row: a bare right-to-left layout would take all the
+        // height left in the modal and centre the buttons in it.
+        ui.allocate_ui_with_layout(egui::vec2(ui.available_width(), height), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            ui.spacing_mut().button_padding = egui::vec2(12.0, 3.0);
+            for (i, (label, style)) in labels.iter().enumerate().rev() {
+                let text = egui::RichText::new(*label).size(size);
+                let button = match style {
+                    Style::Plain => egui::Button::new(text),
+                    Style::Default => egui::Button::new(text.strong()),
+                    Style::Destructive => egui::Button::new(text.color(egui::Color32::WHITE)).fill(visuals.error_fg_color),
+                };
+                if ui.add(button.min_size(egui::vec2(80.0, height))).clicked() {
+                    clicked = Some(i);
+                }
             }
-        }
+        });
     });
     clicked
 }
@@ -208,7 +225,7 @@ impl Gui {
                             RichText::new(format!("Skips the {TRASH_NAME}; this cannot be undone. \
                                             Links are removed, not what they point at."))
                                 .small()
-                                .color(error),
+                                .weak(),
                         );
                     });
                     match buttons(ui, &[("Cancel", Style::Plain), ("Delete Permanently", Style::Destructive)]) {
@@ -247,10 +264,7 @@ impl Gui {
                             ("Failed", outcome.failures.len().to_string()),
                         ]);
                         if !outcome.failures.is_empty() {
-                            ui.label(RichText::new("Files in use and files needing administrator rights cannot be removed here.").small().weak());
-                        }
-                    });
-                    if !outcome.failures.is_empty() {
+                        ui.label(RichText::new("Files in use and files needing administrator rights cannot be removed here.").small().weak());
                         egui::Frame::group(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
                             egui::ScrollArea::vertical().max_height(180.0).auto_shrink([false, true]).show(ui, |ui| {
                                 egui::Grid::new("report-failures").num_columns(2).striped(true).spacing([10.0, 1.0]).show(ui, |ui| {
@@ -262,7 +276,8 @@ impl Gui {
                                 });
                             });
                         });
-                    }
+                        }
+                    });
                     if buttons(ui, &[("OK", Style::Default)]).is_some() {
                         next = Some(None);
                     }
