@@ -11,10 +11,12 @@
 //! - [`layout`] arranges sibling sizes into rectangles.
 //! - [`color`] does all shading in OKLCH; sRGB only at the pixel.
 //! - [`render()`] draws a shaded treemap into an RGBA buffer.
+//! - [`icon`] draws the dirstats app icon as a treemap.
 //!
 //! See `CREDITS.md` in the repository for the projects this crate builds on.
 
 pub mod color;
+pub mod icon;
 pub mod layout;
 pub mod render;
 

@@ -16,7 +16,7 @@ a front end.
 | Scan | `dirstats-scan` (`scan` + `platform::*`) | Apache-2.0 | Parallel traversal, hard links, volume boundaries, per-filesystem fast paths |
 | Persist | `dirstats-scan` (feature `serde`) | Apache-2.0 | Save and load scans |
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
-| Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
+| Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels; the app icon (`icon`, files written by `examples/icon.rs`) |
 | NTFS | `dirstats-ntfs` | GPL-3.0-or-later | Whole-volume scan from the master file table (Windows, needs administrator rights); walks with `dirstats-scan` otherwise |
 | Core | `dirstats-core` | GPL-3.0-or-later | The library front ends and other programs use: state (current scan, selection, zoom, sort), the worker threads for scans and permanent deletes, and file actions (open, reveal, trash, put back, iCloud evict; on Windows and Linux also gated permanent delete). Re-exports `dirstats-scan` as `scan` and `dirstats-treemap` as `treemap` |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
