@@ -78,8 +78,10 @@ Per-crate features:
 - `dirstats-app`: `open`, `trash`, `delete`, `icloud`, `ntfs-mft`; none by
   default. `ntfs-mft` pulls in `dirstats-ntfs` on Windows only; without it Windows walks
   directories like every other platform.
-  `trash` and `delete` are independent; `delete` only does anything on
-  Windows and Linux, so a macOS build without `trash` cannot remove files.
+  `trash` and `delete` are independent. In the app, `delete` only does
+  anything on Windows and Linux, so the macOS GUI and TUI without `trash`
+  cannot remove files; the library function `delete::delete_permanently`
+  works on every platform.
 - `dirstats-gui`: forwards those, plus `egui-fonts` and `e2e` (headless
   end-to-end tests, CI only).
 - `dirstats-tui`: forwards `open`, `trash` and `ntfs-mft`.
@@ -111,6 +113,23 @@ accounting for each well-known filesystem. The scan layer exposes one
 
 Detection of the filesystem type is done once per volume so the scan picks
 the right strategy without per-entry cost.
+
+## Using dirstats-app as a library
+
+Other programs use the same crate the front ends do. Two ways in:
+
+- An `App`, as the GUI and TUI do: scans on a worker thread, a selection,
+  actions by node id, and state that remembers what was trashed or
+  deleted.
+- Plain functions on paths, which `App`'s actions are built on:
+  `scanner::scan` (blocking scan), `trash::move_to_trash` and
+  `trash::put_back`, `delete::delete_permanently` (blocking), and
+  `cloud::evict`. Each removal checks `check_removable` first: no drive
+  or filesystem roots, no home folder, no Time Machine backups on macOS.
+  Nobody is asked; confirming is the caller's job.
+
+`crates/dirstats-app/examples/largest.rs` scans a folder, lists its
+largest entries and, with `--trash`, moves them to the trash.
 
 ## Front ends
 
