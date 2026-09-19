@@ -40,19 +40,26 @@ const FIXUP_STRIDE: usize = 512;
 /// extension records.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Record {
+    /// Set by the base record's header flags.
     pub is_directory: bool,
+    /// Length of the unnamed data stream in bytes.
     pub logical_size: Option<u64>,
-    /// Allocation of the unnamed data stream.
+    /// Allocation of the unnamed data stream in bytes: the compressed size
+    /// for a compressed or sparse stream, and the length rounded up to 8 for
+    /// a resident one. `None` when the table reports zero.
     pub physical_size: Option<u64>,
     /// Allocation of the `WofCompressedData` stream, which holds the real
     /// data of a file compressed by the Windows overlay filter.
     pub wof_physical_size: Option<u64>,
     /// Last modification as a `FILETIME`.
     pub modified: Option<u64>,
+    /// Tag of the reparse point, if the file is one.
     pub reparse_tag: Option<u32>,
 }
 
 impl Record {
+    /// Fold in what another record (or another thread) found for the same
+    /// file; values present in `other` win.
     fn merge(&mut self, other: Record) {
         self.is_directory |= other.is_directory;
         self.logical_size = other.logical_size.or(self.logical_size);
@@ -66,8 +73,12 @@ impl Record {
 /// One name of a file. A file has several when it is hard linked.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Name {
+    /// Record number of the containing directory, sequence number dropped.
     pub parent: u64,
+    /// Base record number of the file.
     pub record: u64,
+    /// UTF-16 code units, as stored. 8.3-only aliases and `.`/`..` are
+    /// never recorded.
     pub name: Vec<u16>,
 }
 
@@ -75,11 +86,14 @@ pub struct Name {
 /// and they are merged at the end, as one file's records can be far apart.
 #[derive(Debug, Default)]
 pub struct Table {
+    /// Files by base record number.
     pub records: HashMap<u64, Record>,
+    /// Every name found, in no particular order.
     pub names: Vec<Name>,
 }
 
 impl Table {
+    /// Take in everything another table read.
     pub fn merge(&mut self, other: Table) {
         for (number, record) in other.records {
             self.records.entry(number).or_default().merge(record);
@@ -89,7 +103,9 @@ impl Table {
 
     /// Parse a run of whole records. `first_record` is the number of the
     /// record at the start of `buffer`, which is patched in place by the
-    /// fixups. Damaged records are skipped.
+    /// fixups. Records that are unused, lack the `FILE` signature or fail
+    /// their fixups are skipped; a malformed attribute ends its record,
+    /// keeping what was read before it. A trailing partial record is ignored.
     pub fn parse_records(&mut self, buffer: &mut [u8], record_size: usize, first_record: u64) {
         if record_size == 0 {
             return;
@@ -160,6 +176,13 @@ impl Table {
 
     /// Build the tree under the volume's root directory, which is named
     /// `root_name`. `None` when the table holds no root.
+    ///
+    /// Only files reachable from the root by name are placed. A directory
+    /// with several names is placed once; a file's further names become
+    /// [`Node::duplicate_link`] entries when
+    /// [`ScanOptions::count_hard_links_once`] is set, and count in full
+    /// otherwise. Which name of a hard-linked file comes first is not
+    /// specified.
     #[must_use]
     pub fn into_tree(mut self, root_name: OsString, options: &ScanOptions) -> Option<Tree> {
         let root = *self.records.get(&ROOT_RECORD)?;
@@ -196,6 +219,9 @@ impl Table {
     }
 }
 
+/// Record the sizes of a `DATA` attribute: the unnamed stream's length and
+/// allocation, or the allocation of a `WofCompressedData` stream. Other
+/// named streams are ignored.
 fn parse_data(entry: &mut Record, attribute: &[u8], non_resident: bool) -> Option<()> {
     let name_units = usize::from(*attribute.get(9)?);
     // Later pieces of a stream split over several records repeat its sizes as zero.
@@ -255,12 +281,15 @@ fn apply_fixups(record: &mut [u8]) -> Option<()> {
     Some(())
 }
 
+/// The value of a resident attribute; `None` if it runs past the attribute.
 fn resident_value(attribute: &[u8]) -> Option<&[u8]> {
     let length = u32_at(attribute, 16)? as usize;
     let offset = usize::from(u16_at(attribute, 20)?);
     attribute.get(offset..offset.checked_add(length)?)
 }
 
+/// Symlinks and mount points (junctions) are [`Kind::Symlink`] and never
+/// entered.
 fn node_kind(record: &Record) -> Kind {
     match record.reparse_tag {
         // Their targets are listed where they really live, or on another volume.
@@ -270,6 +299,9 @@ fn node_kind(record: &Record) -> Kind {
     }
 }
 
+/// A tree node for `record`. Directories get no size of their own, only
+/// their contents'; an overlay-compressed file's allocation is that of its
+/// compressed stream.
 fn node(name: Box<std::ffi::OsStr>, parent: Option<NodeId>, record: &Record) -> Node {
     let kind = node_kind(record);
     let is_directory = kind == Kind::Directory;
@@ -291,7 +323,7 @@ fn node(name: Box<std::ffi::OsStr>, parent: Option<NodeId>, record: &Record) -> 
     }
 }
 
-/// `FILETIME` counts 100 ns ticks from 1601.
+/// `FILETIME` counts 100 ns ticks from 1601. `None` before 1970.
 fn system_time(filetime: u64) -> Option<SystemTime> {
     const TICKS_TO_UNIX_EPOCH: u64 = 116_444_736_000_000_000;
     let ticks = filetime.checked_sub(TICKS_TO_UNIX_EPOCH)?;
@@ -303,6 +335,7 @@ fn os_string(units: &[u16]) -> OsString {
     std::os::windows::ffi::OsStringExt::from_wide(units)
 }
 
+/// Unpaired surrogates become U+FFFD, as there is no lossless form here.
 #[cfg(not(windows))]
 fn os_string(units: &[u16]) -> OsString {
     String::from_utf16_lossy(units).into()

@@ -17,17 +17,25 @@ impl NodeId {
     /// The scanned root is always the first node.
     pub const ROOT: NodeId = NodeId(0);
 
+    /// Position in the tree's node vector. Nodes are numbered in the order
+    /// they were added, so a parent's index is always below its children's.
     #[must_use]
     pub fn index(self) -> usize {
         self.0 as usize
     }
 }
 
+/// What an entry is on disk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
+    /// A regular file.
     File,
+    /// A directory; the only kind that has children.
     Directory,
+    /// A symbolic link (or, from the NTFS fast path, a junction or mount
+    /// point). Never followed: it has no children and counts only its own size.
     Symlink,
+    /// Anything else, such as a FIFO, socket or device node.
     Other,
 }
 
@@ -41,25 +49,34 @@ pub enum SizeMetric {
     Apparent,
 }
 
+/// One entry in a [`Tree`].
 #[derive(Clone, Debug)]
 pub struct Node {
+    /// File name within its parent. For the root, the path it was scanned as.
     pub name: Box<OsStr>,
+    /// Containing directory; `None` only for the root.
     pub parent: Option<NodeId>,
+    /// What the entry is; only a [`Kind::Directory`] has children.
     pub kind: Kind,
     /// Logical length. For directories, includes all descendants once the tree is finished.
     pub apparent_size: u64,
     /// Allocated bytes. For directories, includes all descendants once the tree is finished.
     pub allocated_size: u64,
-    /// Files at or below this node.
+    /// Non-directory entries (files, symlinks and others, duplicate hard
+    /// links included) at or below this node; a non-directory counts itself.
     pub file_count: u64,
     /// Directories at or below this node, not counting itself.
     pub dir_count: u64,
-    /// Last modification. For directories, the newest anywhere below once
-    /// the tree is finished; `None` when unknown.
+    /// Last modification. For directories, the newest of its own and
+    /// anything below once the tree is finished; `None` when unknown.
     pub modified: Option<std::time::SystemTime>,
     /// An additional hard link to data already counted elsewhere; contributes no size.
     pub duplicate_link: bool,
-    /// Reading this entry's metadata failed.
+    /// Reading this entry's metadata failed; its sizes and time are then
+    /// unknown and left at zero and `None`. A directory whose listing failed
+    /// is not marked: that failure only shows in [`Progress::errors`].
+    ///
+    /// [`Progress::errors`]: crate::Progress::errors
     pub error: bool,
 }
 
@@ -85,17 +102,21 @@ impl Default for TreeBuilder {
 }
 
 impl TreeBuilder {
+    /// An empty builder; push the root first.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Add a node. The first node is the root and has no parent; every
-    /// other node names a parent pushed before it. Directory sizes and
-    /// counts start at zero and are rolled up by [`TreeBuilder::finish`].
+    /// other node names a parent pushed before it. Sizes, counts and times
+    /// on the pushed node are the entry's own: [`TreeBuilder::finish`] adds
+    /// every descendant's on top without resetting anything, so a directory
+    /// carries its own size (or zero) and a `file_count` and `dir_count` of
+    /// zero, and every other entry a `file_count` of one.
     ///
     /// # Panics
-    /// If the parent rule above is broken.
+    /// If the parent rule above is broken, or past `u32::MAX` nodes.
     pub fn push(&mut self, node: Node) -> NodeId {
         match node.parent {
             None => assert!(self.0.is_empty(), "only the root has no parent"),
@@ -186,31 +207,39 @@ impl Tree {
         }
     }
 
+    /// Always [`NodeId::ROOT`]. A tree returned by a scan is never empty.
     #[must_use]
     pub fn root(&self) -> NodeId {
         NodeId::ROOT
     }
 
+    /// Number of nodes, root included.
     #[must_use]
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
+    /// Only an empty [`TreeBuilder`] finishes into an empty tree.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
+    /// The metric the tree was finished with, which orders children and
+    /// decides [`Tree::size`].
     #[must_use]
     pub fn metric(&self) -> SizeMetric {
         self.metric
     }
 
+    /// # Panics
+    /// If `id` does not belong to this tree.
     #[must_use]
     pub fn node(&self, id: NodeId) -> &Node {
         &self.nodes[id.index()]
     }
 
+    /// Every node in id order, so each parent comes before its children.
     pub fn nodes(&self) -> impl Iterator<Item = (NodeId, &Node)> {
         self.nodes.iter().enumerate().map(|(i, n)| (NodeId(i as u32), n))
     }

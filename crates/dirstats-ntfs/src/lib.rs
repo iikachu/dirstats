@@ -8,8 +8,10 @@
 //! instead of walking its directories.
 //!
 //! [`scan_with`] stands in for [`dirstats_scan::scan_with`]. It reads the
-//! table when the root is an NTFS volume on Windows and the process may
-//! open it (which takes administrator rights), and walks otherwise.
+//! table when, on Windows, the root is a drive root such as `C:\` on an
+//! NTFS volume, [`ScanOptions::same_filesystem`] is set (the table cannot
+//! follow mount points) and the process may open the volume (which takes
+//! administrator rights), and walks otherwise.
 
 pub mod mft;
 #[cfg(windows)]
@@ -27,6 +29,11 @@ pub fn scan(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<Tree> {
 
 /// Scan `root`, reporting into `progress` and stopping with
 /// [`io::ErrorKind::Interrupted`] once `cancel` is set.
+///
+/// When the table cannot be read for a reason other than cancellation,
+/// `progress.entries` is reset to zero and the walk runs instead. A tree
+/// read from the table never sets [`Node::error`](dirstats_scan::Node::error)
+/// and counts nothing in `progress.errors`.
 pub fn scan_with(
     root: impl AsRef<Path>,
     options: &ScanOptions,

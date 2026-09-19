@@ -19,6 +19,9 @@ use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+/// How [`scan()`] walks. The default uses every available core, stays on
+/// the root's filesystem, counts hard-linked data once and sizes by
+/// [`SizeMetric::Allocated`].
 #[derive(Clone, Debug)]
 pub struct ScanOptions {
     /// Worker threads for directory reads.
@@ -27,6 +30,8 @@ pub struct ScanOptions {
     pub same_filesystem: bool,
     /// Count data reachable through several hard links only once.
     pub count_hard_links_once: bool,
+    /// Size that orders children and [`Tree::size`] reports. Both sizes
+    /// are recorded on every node whichever is chosen.
     pub size_metric: SizeMetric,
 }
 
@@ -44,17 +49,31 @@ impl Default for ScanOptions {
 /// Counters updated while a scan runs; safe to read from another thread.
 #[derive(Debug, Default)]
 pub struct Progress {
+    /// Entries added to the tree so far.
     pub entries: AtomicU64,
+    /// Errors reported by the walk (such as a directory that could not be
+    /// listed) plus entries whose metadata could not be read.
     pub errors: AtomicU64,
 }
 
-/// Scan `root` to completion.
+/// Scan `root` to completion; see [`scan_with`] for errors.
 pub fn scan(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<Tree> {
     scan_with(root, options, &AtomicBool::new(false), &Progress::default())
 }
 
 /// Scan `root`, reporting into `progress` and stopping with
 /// [`io::ErrorKind::Interrupted`] once `cancel` is set.
+///
+/// Symlinks are recorded but never followed. On macOS the first call turns
+/// off materialisation of evicted iCloud Drive (file-provider) items for
+/// the whole process, so reading one elsewhere in the process fails
+/// instead of downloading it.
+///
+/// # Errors
+/// If `root` cannot be stat'ed, if the scan yields no entries, or if
+/// listing the root itself fails and nothing below it was read. Failures
+/// further down do not fail the scan; they are counted in
+/// [`Progress::errors`].
 pub fn scan_with(
     root: impl AsRef<Path>,
     options: &ScanOptions,
@@ -225,10 +244,13 @@ mod platform {
         Vec::new()
     }
 
+    /// Device id of `root` itself (not a symlink's target); fails when
+    /// `root` cannot be stat'ed.
     pub fn root_device(root: &Path) -> io::Result<Option<u64>> {
         Ok(Some(std::fs::symlink_metadata(root)?.dev()))
     }
 
+    /// Device id of an entry, compared against [`root_device`].
     pub fn device(metadata: &Metadata) -> Option<u64> {
         Some(metadata.dev())
     }
@@ -298,10 +320,13 @@ mod platform {
         });
     }
 
+    /// Device id of `root` itself (not a symlink's target); fails when
+    /// `root` cannot be stat'ed.
     pub fn root_device(root: &Path) -> io::Result<Option<u64>> {
         Ok(Some(std::fs::symlink_metadata(root)?.dev()))
     }
 
+    /// Device id of an entry, compared against [`root_device`].
     pub fn device(metadata: &Metadata) -> Option<u64> {
         Some(metadata.dev())
     }
@@ -321,6 +346,10 @@ mod platform {
         firmlink_duplicates(&table, root)
     }
 
+    /// The Data-volume targets in `table` (the text of
+    /// `/usr/share/firmlinks`: a firmlink path, a tab, and its target
+    /// relative to `/System/Volumes/Data` per line) to skip when scanning
+    /// `root`.
     pub(super) fn firmlink_duplicates(table: &str, root: &Path) -> Vec<std::path::PathBuf> {
         let data = Path::new("/System/Volumes/Data");
         table
@@ -364,12 +393,15 @@ mod platform {
         Vec::new()
     }
 
+    /// Only checks that `root` can be stat'ed. `None` turns off the
+    /// same-filesystem test, so mount points are always entered.
     pub fn root_device(root: &Path) -> io::Result<Option<u64>> {
         std::fs::symlink_metadata(root)?;
         // TODO: compare volume serials once dua-core exposes them for all entries.
         Ok(None)
     }
 
+    /// Unknown here; see [`root_device`].
     pub fn device(_metadata: &Metadata) -> Option<u64> {
         None
     }

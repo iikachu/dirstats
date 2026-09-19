@@ -3,6 +3,8 @@
 
 //! The MFT reader and the walker agree on a real NTFS volume. Needs an
 //! elevated prompt; the volume is `DIRSTATS_TEST_VOLUME` (default `C:\`).
+//! The tests create a fixture of 20,000 files on that volume (see
+//! `support::fixture`) and leave it there for the next run.
 //!
 //! ```text
 //! cargo test -p dirstats-ntfs --test mft_vs_walk -- --ignored
@@ -18,6 +20,8 @@ fn volume() -> PathBuf {
     std::env::var_os("DIRSTATS_TEST_VOLUME").map_or_else(|| PathBuf::from(r"C:\"), PathBuf::from)
 }
 
+/// Scan the test volume from its table and by walking, after making sure
+/// the fixture exists; `cold` empties the standby list before each scan.
 fn scan_both(metric: SizeMetric, cold: bool) -> (Tree, Tree) {
     let root = volume();
     support::fixture(&root, 20_000);
@@ -33,7 +37,8 @@ fn scan_both(metric: SizeMetric, cold: bool) -> (Tree, Tree) {
     (mft, walk)
 }
 
-/// Counts and sizes of every directory in the fixture match.
+/// Kind, counts and sizes of every directory in the fixture, and the names
+/// of its children, match.
 fn assert_fixture_agrees(mft: &Tree, walk: &Tree) {
     let fixture = Path::new(support::FIXTURE);
     let (m, w) = (support::find(mft, fixture).expect("fixture in MFT tree"), support::find(walk, fixture).unwrap());
