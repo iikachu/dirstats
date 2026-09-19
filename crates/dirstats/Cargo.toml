@@ -3,8 +3,13 @@ name = "dirstats"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
 license = "GPL-3.0-or-later"
 description = "Disk usage scanner with treemaps, in a window or the terminal"
+keywords = ["disk-usage", "treemap", "du", "tui", "gui"]
+categories = ["command-line-utilities", "filesystem", "visualization"]
 default-run = "dirstats"
 
 [lib]

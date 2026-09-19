@@ -3,8 +3,13 @@ name = "dirstats-tui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
 license = "GPL-3.0-or-later"
-description = "Terminal front end for dirstats"
+description = "Terminal front end of the dirstats app (ratatui); not meant to be used on its own"
+keywords = ["disk-usage", "treemap", "ratatui", "tui"]
+categories = ["command-line-interface"]
 
 [features]
 default = []

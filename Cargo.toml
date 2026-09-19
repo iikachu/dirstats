@@ -6,6 +6,8 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
+repository = "https://github.com/iikachu/dirstats"
+homepage = "https://github.com/iikachu/dirstats"
 
 [workspace.dependencies]
 dirstats-scan = { path = "crates/dirstats-scan", version = "0.1.0" }

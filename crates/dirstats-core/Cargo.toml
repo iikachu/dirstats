@@ -3,8 +3,13 @@ name = "dirstats-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
 license = "GPL-3.0-or-later"
 description = "The dirstats library: scan state, background work and file actions, with the scanner and treemap re-exported"
+keywords = ["disk-usage", "treemap", "filesystem", "scan"]
+categories = ["filesystem"]
 
 [features]
 default = []
