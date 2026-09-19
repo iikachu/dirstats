@@ -175,7 +175,7 @@ impl Gui {
             let mut cancel = false;
             Modal::new(egui::Id::new("delete-progress")).frame(frame(ctx)).show(ctx, |ui| {
                 ui.set_width(WIDTH);
-                alert(ui, Glyph::Delete, error, "Deleting permanently", |ui| {
+                alert(ui, Glyph::DeleteForever, error, "Deleting permanently", |ui| {
                     ui.add(egui::Label::new(RichText::new(path).monospace().small().weak()).truncate());
                     ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
                     ui.label(RichText::new(format!("{done} of {total} items")).small().weak());
@@ -196,7 +196,7 @@ impl Gui {
             ui.set_width(WIDTH);
             match &dialog {
                 Dialog::EnablePermanent { then } => {
-                    alert(ui, Glyph::Delete, warn, "Enable permanent delete?", |ui| {
+                    alert(ui, Glyph::DeleteForever, warn, "Enable permanent delete?", |ui| {
                         ui.label(format!(
                             "Items deleted this way skip the {TRASH_NAME} and cannot be recovered. \
                              Use it for {WHEN}. Each deletion asks first.",
@@ -215,7 +215,7 @@ impl Gui {
                     let size = tree.map(|t| format::size(t.size(*node))).unwrap_or_default();
                     let count = tree.map(|t| t.node(*node).file_count).unwrap_or_default();
                     let title = if is_dir { "Delete this folder permanently?" } else { "Delete this file permanently?" };
-                    alert(ui, Glyph::Delete, error, title, |ui| {
+                    alert(ui, Glyph::DeleteForever, error, title, |ui| {
                         let mut rows = vec![("Path", path.display().to_string()), ("Size", size)];
                         if is_dir {
                             rows.push(("Files", count.to_string()));
@@ -237,7 +237,7 @@ impl Gui {
                 #[cfg(feature = "trash")]
                 Dialog::TrashFailed { node, error: reason } => {
                     let path = self.app.path_of(*node).unwrap_or_default();
-                    alert(ui, Glyph::Delete, warn, &format!("Couldn't move to the {TRASH_NAME}"), |ui| {
+                    alert(ui, Glyph::DeleteForever, warn, &format!("Couldn't move to the {TRASH_NAME}"), |ui| {
                         ui.label(TRASH_REFUSED);
                         facts(ui, "trash-facts", &[("Path", path.display().to_string()), ("Error", reason.clone())]);
                     });
@@ -257,7 +257,7 @@ impl Gui {
                 }
                 Dialog::Report { path, outcome } => {
                     let title = if outcome.cancelled { "Deletion cancelled" } else { "Some items were not deleted" };
-                    alert(ui, Glyph::Delete, warn, title, |ui| {
+                    alert(ui, Glyph::DeleteForever, warn, title, |ui| {
                         facts(ui, "report-facts", &[
                             ("Path", path.display().to_string()),
                             ("Removed", outcome.removed.to_string()),

@@ -54,7 +54,7 @@ another GPL crate). License texts for upstream projects are in `LICENSES/`.
 - License: Apache-2.0 (`crates/dirstats-gui/assets/material-symbols/LICENSE`),
   used in `dirstats-gui` under GPL-3.0-or-later.
 - Glyphs used: `chevron_right` (also mirrored for back),
-  `keyboard_arrow_down`, `content_copy`, `open_in_new`, `delete`, `undo`,
+  `keyboard_arrow_down`, `content_copy`, `open_in_new`, `delete`, `delete_forever`, `undo`,
   `view_column`, `home`, `storage`, `folder`, `folder_open`, `cloud_off`
   and `cloud`, all from Material Symbols Outlined at 24px.
 - Sources: `crates/dirstats-gui/assets/material-symbols/` holds each SVG
