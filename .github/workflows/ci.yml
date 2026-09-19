@@ -52,6 +52,33 @@ jobs:
       - uses: taiki-e/install-action@cargo-hack
       - run: cargo hack check --workspace --each-feature --exclude-features e2e --all-targets --locked
 
+  # rustdoc only documents what a build compiles, so a doc link to an item
+  # behind a feature or platform breaks in some builds only. Each feature on
+  # its own, per platform, with warnings as errors. Then the full docs, as
+  # docs.rs would show them for this platform, go up as an artifact.
+  docs:
+    name: docs (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-hack
+      - run: cargo hack doc --workspace --no-deps --each-feature --exclude-features e2e --locked
+      # The binary's default features turn on every action in the libraries.
+      - run: cargo doc --workspace --no-deps --locked
+      - name: Upload docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-${{ runner.os }}
+          path: target/doc
+
   # No hosted Arch runner exists, so run in the official container. Catches
   # breakage from Arch's rolling toolchain/libc ahead of Ubuntu LTS.
   test-arch:
