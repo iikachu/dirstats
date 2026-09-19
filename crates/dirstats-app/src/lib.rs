@@ -46,15 +46,23 @@ pub struct Cursor {
     pub dir: NodeId,
     /// Index into `tree.children(dir)`.
     pub selected: usize,
-    /// Parent positions, innermost last, restored by [`App::back`].
+    /// Earlier `(dir, selected)` positions, most recent last, restored by
+    /// [`App::back`]. Pushed by [`App::enter`] and by [`App::zoom_to`], so
+    /// an entry is not always the parent.
     history: Vec<(NodeId, usize)>,
 }
 
+/// Application state shared by every front end: the scanned tree, where
+/// the user is in it, the scan in progress and what file actions changed.
 #[derive(Debug, Default)]
 pub struct App {
+    /// The last finished scan, if any.
     pub tree: Option<Tree>,
+    /// Position in [`App::tree`]; set whenever a tree is.
     pub cursor: Option<Cursor>,
+    /// Scan in progress, if any. [`App::poll`] adopts its result.
     pub scan: Option<RunningScan>,
+    /// Options for the next scan started here.
     pub options: ScanOptions,
     /// One-line status for the front end to show, cleared on the next action.
     pub message: Option<String>,
@@ -67,7 +75,7 @@ pub struct App {
     /// the trashed item's path on macOS, its trash entry's id elsewhere.
     /// Their descendants count as trashed too.
     pub trashed: foldhash::HashMap<NodeId, Option<PathBuf>>,
-    /// Nodes deleted permanently since the last scan (Windows). Their
+    /// Nodes deleted permanently since the last scan (Windows and Linux). Their
     /// descendants count as deleted too.
     pub deleted: foldhash::HashSet<NodeId>,
     /// Nodes whose iCloud download was removed since the scan; their
@@ -87,6 +95,7 @@ pub struct App {
 }
 
 impl App {
+    /// An app with no tree yet, scanning with `options` once asked to.
     #[must_use]
     pub fn new(options: ScanOptions) -> Self {
         Self { options, ..Self::default() }
@@ -119,13 +128,15 @@ impl App {
         }
     }
 
+    /// Stop the running scan, if any, and forget it; the current tree stays.
     pub fn cancel_scan(&mut self) {
         if let Some(scan) = self.scan.take() {
             scan.cancel();
         }
     }
 
-    /// Adopt a finished scan's tree if one is ready. Returns true when the tree changed.
+    /// Adopt a finished scan's tree if one is ready. Returns true when the tree changed;
+    /// a failed scan sets [`App::message`] and returns false.
     pub fn poll(&mut self) -> bool {
         let Some(scan) = &self.scan else { return false };
         match scan.try_finish() {
@@ -146,6 +157,9 @@ impl App {
         }
     }
 
+    /// Show `tree`: the cursor moves to its root, and hover, expansion and
+    /// the trashed, deleted and evicted marks are cleared. Probes whether the
+    /// root is on a Time Machine volume, which reads one directory.
     pub fn set_tree(&mut self, tree: Tree) {
         self.cursor = Some(Cursor { dir: tree.root(), selected: 0, history: Vec::new() });
         self.hovered = None;
@@ -157,6 +171,7 @@ impl App {
         self.tree = Some(tree);
     }
 
+    /// Whether a scan is running (not yet adopted by [`App::poll`]).
     #[must_use]
     pub fn is_scanning(&self) -> bool {
         self.scan.is_some()
@@ -194,6 +209,7 @@ impl App {
         self.trashed.get(&id).is_some_and(|location| location.is_some())
     }
 
+    /// Whether `pred` holds for `id` or any of its ancestors; false without a tree.
     fn ancestor_or_self(&self, id: NodeId, mut pred: impl FnMut(NodeId) -> bool) -> bool {
         let Some(tree) = &self.tree else { return false };
         let mut current = Some(id);
@@ -206,6 +222,7 @@ impl App {
         false
     }
 
+    /// Full path of `id` in the current tree; `None` without a tree.
     #[must_use]
     pub fn path_of(&self, id: NodeId) -> Option<PathBuf> {
         self.tree.as_ref().map(|t| t.path(id))
@@ -213,7 +230,9 @@ impl App {
 
     /// Why `id` must not be removed, if it is one of the places no disk
     /// usage tool should offer to delete: the scan root, a drive or
-    /// filesystem root, or the user's home folder.
+    /// filesystem root, the user's home folder, or (on macOS) anything in
+    /// a Time Machine backup. Refusals are `PermissionDenied` errors, as is
+    /// asking with no tree.
     pub fn check_removable(&self, id: NodeId) -> io::Result<()> {
         let Some(tree) = &self.tree else { return refuse("no scan") };
         if id == tree.root() {

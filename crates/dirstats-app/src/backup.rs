@@ -66,7 +66,8 @@ fn is_dated(name: &str, ext: &str) -> bool {
         && b.iter().enumerate().all(|(i, c)| if matches!(i, 4 | 7 | 10) { *c == b'-' } else { c.is_ascii_digit() })
 }
 
-/// Mount point of the volume holding `path`.
+/// Mount point of the volume holding `path`: from `statfs` on macOS, and
+/// elsewhere the highest ancestor on the same device.
 #[cfg(unix)]
 fn volume_root(path: &Path) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]
@@ -96,13 +97,16 @@ fn volume_root(path: &Path) -> Option<std::path::PathBuf> {
     }
 }
 
+/// The drive root (or share) at the top of `path`.
 #[cfg(not(unix))]
 fn volume_root(path: &Path) -> Option<std::path::PathBuf> {
     path.ancestors().last().map(Path::to_path_buf)
 }
 
 impl crate::App {
-    /// Whether `id` is part of a Time Machine backup; see [`NOTE`].
+    /// Whether `id` is part of a Time Machine backup: the whole scan is when
+    /// it sits on a backup volume, otherwise anything under a
+    /// `Backups.backupdb` folder. See [`NOTE`].
     #[must_use]
     pub fn is_time_machine(&self, id: crate::NodeId) -> bool {
         // By ancestor names rather than `tree.path`, which allocates, since
