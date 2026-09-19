@@ -37,12 +37,13 @@ pub(super) enum Dialog {
     /// The permanent-delete gate. `then` is the node whose deletion was
     /// asked for, confirmed next if the gate is accepted.
     EnablePermanent { then: Option<NodeId> },
-    /// Confirm deleting `node` without the Recycle Bin.
+    /// Confirm deleting `node` without the Recycle Bin or Trash.
     ConfirmDelete(NodeId),
-    /// The Recycle Bin refused `node`; offer permanent deletion instead.
+    /// The Recycle Bin or Trash refused `node`, with the error it gave; offer
+    /// permanent deletion instead.
     #[cfg(feature = "trash")]
     TrashFailed { node: NodeId, error: String },
-    /// A finished deletion that did not remove everything.
+    /// A finished deletion of `path` that was cancelled or left failures.
     Report { path: std::path::PathBuf, outcome: dirstats_app::DeleteOutcome },
 }
 
@@ -58,8 +59,10 @@ impl Gui {
         }
     }
 
-    /// Draw the running-deletion progress and whichever dialog is open.
-    /// Both are modal: nothing behind them takes input.
+    /// Collect a finished deletion (opening a report if it was cancelled or
+    /// left failures), then draw the running-deletion progress or, when
+    /// none is running, whichever dialog is open. Both are modal: nothing
+    /// behind them takes input.
     #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     pub(super) fn dialogs(&mut self, ctx: &egui::Context) {
         use egui::{Modal, RichText};

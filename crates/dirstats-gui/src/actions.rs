@@ -19,6 +19,7 @@ use crate::menu::{NodeAction, Permanent, TrashState};
 use crate::{Gui, Selection};
 
 impl Gui {
+    /// The selected node, or `None` when nothing or an extension is selected.
     pub(super) fn selected_node(&self) -> Option<NodeId> {
         match &self.selection {
             Some(Selection::Node(id)) => Some(*id),
@@ -26,6 +27,8 @@ impl Gui {
         }
     }
 
+    /// The selected extension, or `None` when nothing or a node is selected.
+    /// The inner `None` is the "no extension" group.
     pub(super) fn selected_extension(&self) -> Option<&Option<String>> {
         match &self.selection {
             Some(Selection::Extension(ext)) => Some(ext),
@@ -41,6 +44,8 @@ impl Gui {
         self.scroll_to = Some(id);
     }
 
+    /// What the context menu should offer for `node` given what this session
+    /// did to it. Put back wins over trashed, then deleted, then Time Machine.
     pub(super) fn trash_state(&self, node: NodeId) -> TrashState {
         if self.app.can_put_back(node) {
             TrashState::CanPutBack
@@ -55,6 +60,8 @@ impl Gui {
         }
     }
 
+    /// Whether permanent delete can be offered: never outside Windows and
+    /// Linux, otherwise enabled or still behind its gate.
     pub(super) fn permanent(&self) -> Permanent {
         if !cfg!(any(windows, target_os = "linux")) {
             Permanent::Unavailable
@@ -65,8 +72,10 @@ impl Gui {
         }
     }
 
-    /// iCloud status of `node`, looked up once per tree. The lookups cost
-    /// microseconds and only displayed rows ask, so this stays cheap.
+    /// iCloud status of `node`, looked up once per tree (the cache is cleared
+    /// when the tree changes). An eviction done this session reports
+    /// `Evicted` without a lookup. The lookups cost microseconds and only
+    /// displayed rows and an open context menu ask, so this stays cheap.
     pub(super) fn cloud_status(&mut self, node: NodeId) -> dirstats_app::cloud::CloudStatus {
         use dirstats_app::cloud::{CloudStatus, status};
         if self.app.is_evicted(node) {
@@ -83,7 +92,8 @@ impl Gui {
         status
     }
 
-    /// Carry out a context-menu action on `node`.
+    /// Select `node`, then carry out a context-menu action on it. Failures
+    /// go to the footer message.
     pub(super) fn apply(&mut self, node: NodeId, action: NodeAction) {
         self.select(node);
         match action {
@@ -135,7 +145,8 @@ impl Gui {
         }
     }
 
-    /// Zoom into `id`, or its parent when it is a file.
+    /// Zoom into `id`, or its parent when it has no children (a file or an
+    /// empty folder).
     pub(super) fn zoom(&mut self, id: NodeId) {
         let Some(tree) = &self.app.tree else { return };
         let target = if tree.children(id).is_empty() { tree.node(id).parent } else { Some(id) };

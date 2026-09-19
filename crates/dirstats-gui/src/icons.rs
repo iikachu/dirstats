@@ -8,39 +8,51 @@
 
 
 //! Material Symbols Outlined glyphs (Apache-2.0, by Google), each the
-//! `d` attribute of its 24px SVG in the 960-unit viewBox with y up.
+//! `d` attribute of its 24px SVG in the `0 -960 960 960` viewBox, so y runs
+//! from -960 at the top to 0 at the bottom.
 //! A glyph is rasterised once with an even-odd scanline fill into a
 //! cached alpha texture, then drawn tinted, so paths with holes (the
 //! copy sheets, the can) render exactly as designed.
 
 use eframe::egui::{self, Color32, Rect, TextureHandle, TextureOptions};
 
+/// An icon; each variant is the Material symbol of the same name unless
+/// its doc says otherwise.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[allow(dead_code)] // Open and the trash glyphs are only reachable with their features.
 pub enum Glyph {
+    /// `chevron_right`, a collapsed tree row.
     ChevronRight,
     /// `chevron_right` mirrored; Material's `chevron_left` is the same shape.
     ChevronLeft,
     /// `keyboard_arrow_down`, the same shape as `expand_more`.
     ExpandMore,
+    /// `content_copy`, two sheets.
     ContentCopy,
+    /// `open_in_new`.
     OpenInNew,
+    /// `delete`, the can.
     Delete,
+    /// `undo`, for putting an item back.
     Undo,
     /// Column picker.
     ViewColumn,
+    /// `home`.
     Home,
     /// `storage`, a stack of drives.
     Storage,
+    /// `folder`.
     Folder,
     /// Open folder, for browsing to one.
     FolderOpen,
     /// `cloud_off`.
     CloudOff,
+    /// `cloud`.
     Cloud,
 }
 
 impl Glyph {
+    /// SVG path data, verbatim from the vendored upstream file (a test checks).
     fn path(self) -> &'static str {
         match self {
             Glyph::ChevronRight | Glyph::ChevronLeft => "M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z",
@@ -59,12 +71,13 @@ impl Glyph {
         }
     }
 
+    /// Whether the path is flipped left to right when rasterised.
     fn mirrored(self) -> bool {
         self == Glyph::ChevronLeft
     }
 }
 
-/// Texture side in pixels; glyphs are drawn at 14–18px so this is plenty.
+/// Texture side in pixels; glyphs are drawn at 14–22px so this is plenty.
 const TEXTURE_SIDE: usize = 48;
 /// Sub-samples per pixel per axis.
 const SUPERSAMPLE: usize = 4;
@@ -91,7 +104,9 @@ fn texture_for(ctx: &egui::Context, glyph: Glyph) -> TextureHandle {
     texture
 }
 
-/// Even-odd scanline coverage of the path at `TEXTURE_SIDE` square.
+/// Even-odd scanline coverage of the path at `TEXTURE_SIDE` square: one
+/// alpha byte per pixel, row by row from the top, mirrored left to right if
+/// asked.
 fn rasterise(d: &str, mirrored: bool) -> Vec<u8> {
     let rings = flatten_svg_path(d);
     // Edges in texture sub-sample space.
@@ -137,7 +152,8 @@ fn rasterise(d: &str, mirrored: bool) -> Vec<u8> {
 }
 
 /// Parse and flatten SVG path syntax (M, L, H, V, Q, T, Z, absolute or
-/// relative) into closed rings in path units.
+/// relative) into closed rings in path units. Quadratic curves become
+/// eight segments; other commands are ignored.
 fn flatten_svg_path(d: &str) -> Vec<Vec<(f32, f32)>> {
     struct State {
         rings: Vec<Vec<(f32, f32)>>,

@@ -16,8 +16,10 @@ use crate::theme::hover_fill;
 use crate::{Gui, icons};
 
 impl Gui {
-    /// Home, disks and root to choose from, shown in the treemap area when
-    /// nothing has been scanned. Clicking one starts its scan.
+    /// Home, disks and root to choose from, plus a Browse… row for any other
+    /// folder, floated over the middle of the whole body when there is no
+    /// scan and no tree. Clicking one starts its scan. When Full Disk Access
+    /// is known to be missing (macOS), it says what that costs.
     pub(super) fn location_picker(&mut self, ui: &mut egui::Ui) {
         if self.locations.is_none() {
             self.full_disk_access = dirstats_app::locations::full_disk_access();

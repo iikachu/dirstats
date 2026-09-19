@@ -11,39 +11,49 @@
 /// Integer rectangle, right/bottom exclusive.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rect {
+    /// First column inside the rectangle.
     pub left: i32,
+    /// First row inside the rectangle.
     pub top: i32,
+    /// First column past the rectangle.
     pub right: i32,
+    /// First row past the rectangle.
     pub bottom: i32,
 }
 
 impl Rect {
+    /// Rectangle from its edges; right and bottom are exclusive.
     #[must_use]
     pub const fn new(left: i32, top: i32, right: i32, bottom: i32) -> Self {
         Self { left, top, right, bottom }
     }
 
+    /// `right - left`; negative if the edges are crossed.
     #[must_use]
     pub const fn width(&self) -> i32 {
         self.right - self.left
     }
 
+    /// `bottom - top`; negative if the edges are crossed.
     #[must_use]
     pub const fn height(&self) -> i32 {
         self.bottom - self.top
     }
 
+    /// True if the rectangle covers no pixels: zero or negative width or height.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.width() <= 0 || self.height() <= 0
     }
 
+    /// True if the pixel at `(x, y)` is inside; right and bottom edges are excluded.
     #[must_use]
     pub const fn contains(&self, x: i32, y: i32) -> bool {
         x >= self.left && x < self.right && y >= self.top && y < self.bottom
     }
 }
 
+/// How [`arrange`] splits a box among siblings.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Style {
     /// KDirStat-style rows: fill a row until children get too thin.
@@ -55,7 +65,11 @@ pub enum Style {
 
 /// Arrange children with `weights` inside `bounds`; `out[i]` receives child `i`'s rectangle.
 ///
-/// `weights` must be non-increasing (zeroes last) and sum to `parent_weight`.
+/// `weights` must be non-increasing (zeroes last) and sum to `parent_weight`;
+/// only debug builds check this. `out` is cleared and gets one rectangle per
+/// weight. The non-empty rectangles tile `bounds` exactly. Zero-weight children
+/// get an empty rectangle, except when every weight is zero: then all children
+/// share `bounds` in equal-width columns.
 pub fn arrange(style: Style, bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut Vec<Rect>) {
     debug_assert!(weights.windows(2).all(|w| w[0] >= w[1]));
     debug_assert_eq!(weights.iter().sum::<u64>(), parent_weight);
@@ -78,10 +92,14 @@ pub fn arrange(style: Style, bounds: Rect, parent_weight: u64, weights: &[u64], 
     }
 }
 
+/// Whether child `i` is the last one drawn in the row ending at `row_end`
+/// (zero-weight children after it count as not drawn). The last child takes
+/// the row's far edge, so rounding never leaves a gap.
 fn is_last_in_row(weights: &[u64], i: usize, row_end: usize) -> bool {
     i + 1 == row_end || (i + 1 < weights.len() && weights[i + 1] == 0)
 }
 
+/// Split `bounds` into equal-width, full-height columns, one per entry of `out`.
 fn arrange_equal_rows(bounds: Rect, out: &mut [Rect]) {
     let count = out.len();
     let width = f64::from(bounds.width()) / count as f64;
@@ -94,6 +112,10 @@ fn arrange_equal_rows(bounds: Rect, out: &mut [Rect]) {
     }
 }
 
+/// [`Style::Rows`]: stack rows along the shorter side of `bounds`, each
+/// spanning the longer side, adding children to a row until the next one
+/// would be narrower than `MIN_PROPORTION` times the row's thickness. Zero-weight children
+/// join the row before them.
 fn arrange_rows(bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut [Rect]) {
     const MIN_PROPORTION: f64 = 0.4;
     let horizontal = bounds.width() >= bounds.height();
@@ -159,6 +181,9 @@ fn arrange_rows(bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut [Re
     }
 }
 
+/// [`Style::Squarified`]: lay a strip spanning the shorter side of the
+/// remaining box, growing it while its worst aspect ratio improves, then repeat on what
+/// is left. Zero-weight children join the final strip.
 fn arrange_squarified(bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut [Rect]) {
     let mut remaining = bounds;
     let mut remaining_weight = parent_weight;

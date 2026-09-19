@@ -8,18 +8,25 @@
 //! Perceptual colour: everything is shaded in OKLCH and converted to sRGB
 //! only when a pixel is written.
 
-/// sRGB, 8 bits per channel. Output only.
+/// Gamma-encoded sRGB, 8 bits per channel: what [`Oklch::to_srgb`] writes
+/// and [`Oklch::from_srgb`] reads.
 pub type Rgb = [u8; 3];
 
-/// OKLCH: lightness 0..=1, chroma ≥ 0 (about 0.4 is the sRGB limit), hue in degrees.
+/// OKLCH: lightness 0..=1, chroma ≥ 0 (about 0.32 is the sRGB limit, reached
+/// only by some hues), hue in degrees.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Oklch {
+    /// Perceived lightness, 0 (black) to 1 (white).
     pub l: f64,
+    /// Chroma, the distance from grey; 0 is grey.
     pub c: f64,
+    /// Hue angle in degrees.
     pub h: f64,
 }
 
 impl Oklch {
+    /// Colour from its components, stored as given: nothing is clamped until
+    /// it is converted.
     #[must_use]
     pub const fn new(l: f64, c: f64, h: f64) -> Self {
         Self { l, c, h }
@@ -31,27 +38,33 @@ impl Oklch {
         Self { l, c: 0.0, h: 0.0 }
     }
 
+    /// Same hue and chroma at lightness `l`, clamped to 0..=1.
     #[must_use]
     pub fn with_lightness(self, l: f64) -> Self {
         Self { l: l.clamp(0.0, 1.0), ..self }
     }
 
+    /// Add `delta` to the lightness (negative darkens), clamped to 0..=1.
     #[must_use]
     pub fn lighten(self, delta: f64) -> Self {
         self.with_lightness(self.l + delta)
     }
 
+    /// Multiply the lightness by `factor`, clamped to 0..=1.
     #[must_use]
     pub fn scale_lightness(self, factor: f64) -> Self {
         self.with_lightness(self.l * factor)
     }
 
+    /// Multiply the chroma by `factor`, floored at 0. May leave the gamut;
+    /// [`Oklch::to_srgb`] maps it back.
     #[must_use]
     pub fn scale_chroma(self, factor: f64) -> Self {
         Self { c: (self.c * factor).max(0.0), ..self }
     }
 
-    /// Largest chroma that stays inside sRGB at this lightness and hue.
+    /// Largest chroma that stays inside sRGB at this lightness (clamped to
+    /// 0..=1) and hue, found by bisection in 0..0.5.
     #[must_use]
     pub fn max_chroma(self) -> f64 {
         let l = self.l.clamp(0.0, 1.0);
@@ -68,13 +81,16 @@ impl Oklch {
     }
 
     /// Move chroma a fraction of the way toward the gamut edge for this hue,
-    /// so every hue gets a comparable perceived boost.
+    /// so every hue gets a comparable perceived boost. `fraction` is clamped
+    /// to 0..=1; chroma already past the edge is left alone.
     #[must_use]
     pub fn toward_max_chroma(self, fraction: f64) -> Self {
         let max = self.max_chroma();
         Self { c: self.c + (max - self.c).max(0.0) * fraction.clamp(0.0, 1.0), ..self }
     }
 
+    /// Convert from gamma-encoded sRGB. Hue comes out in 0..360; for greys
+    /// chroma is about 0 and the hue is meaningless.
     #[must_use]
     pub fn from_srgb(rgb: Rgb) -> Self {
         let [r, g, b] = rgb.map(|c| srgb_to_linear(f64::from(c) / 255.0));
@@ -90,7 +106,8 @@ impl Oklch {
         Self { l, c, h }
     }
 
-    /// Convert to sRGB, reducing chroma until the colour fits the gamut.
+    /// Convert to sRGB, clamping lightness to 0..=1 and reducing chroma
+    /// (keeping hue) until the colour fits the gamut.
     #[must_use]
     pub fn to_srgb(self) -> Rgb {
         let l = self.l.clamp(0.0, 1.0);
@@ -110,7 +127,7 @@ impl Oklch {
         Self { l, c: lo, h: self.h }.try_srgb().unwrap_or_else(|| Self::grey(l).try_srgb().unwrap_or([0; 3]))
     }
 
-    /// sRGB if every channel is within 0..=1, else `None`.
+    /// sRGB if every linear channel is within 0..=1 (give or take 1e-4), else `None`.
     fn try_srgb(self) -> Option<Rgb> {
         let (a, b) = self.h.to_radians().sin_cos();
         let (a, b) = (self.c * b, self.c * a);
@@ -130,10 +147,12 @@ impl Oklch {
     }
 }
 
+/// sRGB transfer function, decoding: gamma-encoded 0..=1 to linear.
 fn srgb_to_linear(c: f64) -> f64 {
     if c <= 0.040_45 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
 }
 
+/// sRGB transfer function, encoding: linear 0..=1 to gamma-encoded.
 fn linear_to_srgb(c: f64) -> f64 {
     if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
 }

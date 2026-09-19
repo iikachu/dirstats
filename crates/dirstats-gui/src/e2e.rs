@@ -15,8 +15,9 @@
 //! cargo test -p dirstats-gui --features e2e,egui-fonts -- --ignored   # scans the whole disk
 //! ```
 //!
-//! Each test saves its last frame as a PNG under `DIRSTATS_E2E_OUT`
-//! (default `target/e2e`), which CI uploads for a person to look over.
+//! Tests save frames along the way as `<name>-<os>.png` under
+//! `DIRSTATS_E2E_OUT` (default `target/e2e`), which CI uploads for a person
+//! to look over.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -57,7 +58,7 @@ fn fixture_dir(name: &str) -> tempfile::TempDir {
 }
 
 /// Step frames until the scan is adopted, then a few more so the treemap
-/// and its texture are built.
+/// and its texture are built. Panics if the scan outlasts `limit`.
 fn wait_for_scan(harness: &mut Harness<'_, Gui>, limit: Duration) {
     let start = Instant::now();
     harness.step();
@@ -156,7 +157,8 @@ fn fixture_scan_lists_and_zooms() {
     assert!(!harness.state().app.can_back());
 }
 
-/// Scans the machine's whole system disk; for throwaway CI runners.
+/// Scans the machine's whole system disk (`/` or `C:\`), or
+/// `DIRSTATS_E2E_ROOT` when set; for throwaway CI runners.
 #[test]
 #[ignore = "scans the whole disk"]
 fn real_disk_scan() {
@@ -204,12 +206,14 @@ fn right_click_at(harness: &mut Harness<'_, Gui>, pos: egui::Pos2) {
     harness.step();
 }
 
+/// [`right_click_at`] the middle of the labelled widget.
 fn right_click(harness: &mut Harness<'_, Gui>, label: &str) {
     let pos = harness.get_by_label(label).rect().center();
     right_click_at(harness, pos);
 }
 
-/// Screen position of the middle of `node`'s box in the treemap.
+/// Screen position of the middle of the treemap box of the file named
+/// `name`. Panics if no leaf box has that name.
 fn treemap_point(harness: &Harness<'_, Gui>, name: &str) -> egui::Pos2 {
     let gui = harness.state();
     let tree = gui.app.tree.as_ref().unwrap();
@@ -226,6 +230,7 @@ fn treemap_point(harness: &Harness<'_, Gui>, name: &str) -> egui::Pos2 {
     image.min + egui::vec2((r.left + r.right) as f32 / 2.0, (r.top + r.bottom) as f32 / 2.0)
 }
 
+/// Name of the directory the view is zoomed into.
 fn dir_name(harness: &Harness<'_, Gui>) -> String {
     let gui = harness.state();
     gui.app.tree.as_ref().unwrap().node(gui.app.dir().unwrap()).name.to_string_lossy().into_owned()

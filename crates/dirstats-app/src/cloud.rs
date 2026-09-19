@@ -10,6 +10,7 @@
 use std::io;
 use std::path::Path;
 
+/// Where an item stands with iCloud Drive, from [`status`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloudStatus {
     /// Not managed by iCloud Drive.
@@ -33,7 +34,8 @@ fn url(path: &Path) -> io::Result<objc2::rc::Retained<objc2_foundation::NSURL>> 
 /// Membership is the system's own `isUbiquitousItem` answer, which also
 /// covers items excluded from sync inside a synced folder (`.DS_Store`,
 /// `.nosync` names, the file-provider ignore attribute). For a file the
-/// download state is the kernel's dataless flag; a directory reads as
+/// download state is the kernel's dataless flag (the sizes when it cannot
+/// be read); a directory reads as
 /// evicted when nothing below it occupies disk, from the scanned sizes.
 /// Both lookups are a few microseconds, so front ends ask per displayed
 /// node and cache per tree. Errors read as "local", so the menu never
@@ -90,12 +92,16 @@ pub fn evict(path: &Path) -> io::Result<()> {
         .map_err(|err| io::Error::other(err.localizedDescription().to_string()))
 }
 
+/// Without iCloud support (not macOS, or no `icloud` feature) every path
+/// is [`CloudStatus::Local`].
 #[cfg(not(all(target_os = "macos", feature = "icloud")))]
 #[must_use]
 pub fn status(_path: &Path, _is_dir: bool, _apparent: u64, _allocated: u64) -> CloudStatus {
     CloudStatus::Local
 }
 
+/// Without iCloud support (not macOS, or no `icloud` feature) always an
+/// `Unsupported` error.
 #[cfg(not(all(target_os = "macos", feature = "icloud")))]
 pub fn evict(_path: &Path) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "no cloud storage on this platform"))
@@ -103,7 +109,9 @@ pub fn evict(_path: &Path) -> io::Result<()> {
 
 #[cfg(feature = "icloud")]
 impl crate::App {
-    /// Remove the local copy of a synced iCloud item, keeping it in the cloud.
+    /// Remove the local copy of a synced iCloud item, keeping it in the cloud,
+    /// and mark `id` evicted for [`App::is_evicted`](crate::App::is_evicted).
+    /// Sizes stay as scanned until the next scan.
     pub fn evict_node(&mut self, id: crate::NodeId) -> io::Result<()> {
         let path = self.path_of(id).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such entry"))?;
         evict(&path)?;

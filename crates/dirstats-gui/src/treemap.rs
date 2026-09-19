@@ -16,7 +16,7 @@ use eframe::egui::{self, Color32, ColorImage, Sense, TextureOptions};
 use crate::menu::{node_menu, zoom_label};
 use crate::{Gui, Highlight, Selection};
 
-/// Period of the highlight pulse.
+/// Period of the highlight pulse, in seconds.
 pub(super) const PULSE_SECONDS: f64 = 2.4;
 
 /// How far toward the sRGB gamut edge a highlighted colour's chroma moves.
@@ -32,7 +32,9 @@ pub(super) fn vivid(color: dirstats_app::treemap::Oklch) -> dirstats_app::treema
 }
 
 impl Gui {
-    /// Re-render the treemap when the directory, size or tree changed.
+    /// Re-render the treemap when the directory, size or tree changed, or
+    /// when `map_key` was cleared (a layout style change or zoom), then bring
+    /// the highlight overlay up to date with what is hovered.
     pub(super) fn ensure_map(&mut self, ctx: &egui::Context, width: u32, height: u32) {
         let (Some(tree), Some(dir), Some(colors)) = (&self.app.tree, self.app.dir(), &self.colors) else {
             return;
@@ -108,6 +110,11 @@ impl Gui {
         self.highlight_key = highlight_key;
     }
 
+    /// The treemap pane, filling `ui`: the base render, the pulsing
+    /// highlight, hollowed-out trashed and evicted boxes and selection
+    /// outlines. Click selects, double-click zooms to the enclosing folder
+    /// and right-click opens the context menu. Until there is a render it
+    /// shows the scan progress instead.
     pub(super) fn treemap(&mut self, ui: &mut egui::Ui) {
         let available = ui.available_size();
         let (width, height) = (available.x.max(1.0) as u32, available.y.max(1.0) as u32);

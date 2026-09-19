@@ -17,21 +17,26 @@ use crate::icons;
 /// What a node's context menu asked for; applied after the menu closes.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum NodeAction {
+    /// Zoom into the node, or into its folder when it is a file.
     Zoom,
+    /// Put the node's full path on the clipboard.
     CopyPath,
+    /// Open with the desktop's default handler.
     #[cfg(feature = "open")]
     Open,
+    /// Move to the platform trash ([`TRASH_NAME`]).
     #[cfg(feature = "trash")]
     Trash,
+    /// Move back from the trash to where it was scanned.
     #[cfg(feature = "trash")]
     PutBack,
     /// macOS: drop the local copy of an iCloud item.
     #[cfg(feature = "icloud")]
     Evict,
-    /// Windows: delete without the Recycle Bin, after the gate and a confirmation.
+    /// Windows and Linux: delete without the trash, after the gate and a confirmation.
     #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     DeletePermanently,
-    /// Windows: open the gate dialog, then delete if it is accepted.
+    /// Windows and Linux: open the gate dialog, then delete if it is accepted.
     #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     EnablePermanentDelete,
 }
@@ -64,7 +69,9 @@ pub(super) fn zoom_label(tree: &dirstats_app::Tree, current: Option<NodeId>, nod
 }
 
 /// Menu items for a node: the same in the tree and the treemap. `zoom` is
-/// the label of the zoom item, if one is offered. Returns the chosen action.
+/// the label of the zoom item, if one is offered; `trashed`, `permanent` and
+/// `cloud` pick the trash, permanent-delete and iCloud rows, each shown only
+/// when its feature is on. Returns the chosen action and closes the menu.
 pub(super) fn node_menu(
     ui: &mut egui::Ui,
     path: &std::path::Path,
@@ -191,15 +198,16 @@ pub(super) fn node_menu(
 /// Trash state of the node a menu is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TrashState {
+    /// On disk as scanned.
     Present,
     /// Trashed, and the app knows where it went.
     CanPutBack,
     /// Trashed, location unknown.
     Trashed,
-    /// Deleted permanently (Windows), or under something that was.
+    /// Deleted permanently (Windows and Linux), or under something that was.
     Deleted,
-    /// Part of a Time Machine backup: noted in the menu, and on macOS not
-    /// offered for the trash, since Time Machine removes its own backups.
+    /// Part of a Time Machine backup: noted in the menu, and on macOS the
+    /// trash row is shown disabled, since Time Machine removes its own backups.
     TimeMachine,
 }
 
@@ -330,6 +338,7 @@ mod tests {
         (painted, actions)
     }
 
+    /// Every piece of text one frame of the menu paints, in order.
     fn labels(path: &Path, args: Args) -> Vec<String> {
         run(path, args, &[vec![]]).0.into_iter().map(|p| p.text).collect()
     }

@@ -25,6 +25,7 @@ use ratatui::{DefaultTerminal, Frame};
 use std::io;
 use std::time::Duration;
 
+/// How long to wait for a key before redrawing, so scan progress keeps moving.
 const TICK: Duration = Duration::from_millis(100);
 
 /// Run the interface until the user quits. Sets up and restores the terminal.
@@ -35,6 +36,7 @@ pub fn run(app: &mut App) -> io::Result<()> {
     result
 }
 
+/// Poll the app, redraw and handle one key per tick until a quit key.
 fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     // Extension ranking is per tree, so it is rebuilt only when a scan lands.
     let mut colors: Option<ExtensionColors> = None;
@@ -155,6 +157,8 @@ fn footer_line(app: &App) -> Line<'static> {
     Line::from(Span::styled(keys, Style::default().fg(Color::DarkGray)))
 }
 
+/// The current directory's entries, largest first, with size, share bar and
+/// percentage of the directory, or a waiting line before the first scan lands.
 fn draw_list(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default().borders(Borders::RIGHT);
     let Some(tree) = &app.tree else {

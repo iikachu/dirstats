@@ -13,8 +13,12 @@ use ratatui::style::{Color, Modifier};
 
 /// Stop subdividing below this many cells; smaller boxes read as noise.
 const MIN_CELLS: i32 = 4;
+/// Nodes this many levels below the root are filled as one box.
 const MAX_DEPTH: u32 = 6;
 
+/// Draw the subtree at `root` into `area` of `buffer`, one terminal cell per
+/// layout unit. A `selected` child of `root` is drawn as one box with a
+/// blinking outline.
 pub fn render(
     buffer: &mut Buffer,
     tree: &Tree,
@@ -28,12 +32,15 @@ pub fn render(
     }
     let colour = |t: &Tree, id: NodeId| colors.color(t, id);
     let bounds = MapRect::new(0, 0, i32::from(area.width), i32::from(area.height));
-    // Terminal cells are roughly twice as tall as wide; lay out in a space with
-    // doubled width so squarified boxes look square on screen.
+    // Laid out in plain cells: terminal cells are roughly twice as tall as
+    // wide, so squarified boxes come out about twice as tall as they are wide.
     let mut scratch = Vec::new();
     draw_node(buffer, tree, root, bounds, 0, selected, &colour, area, &mut scratch);
 }
 
+/// Lay out `node`'s children in `rect` and recurse, or fill `rect` with the
+/// node's colour once it is a leaf, too deep or too small. `scratch` is a
+/// reusable layout buffer.
 #[allow(clippy::too_many_arguments)]
 fn draw_node(
     buffer: &mut Buffer,
@@ -77,6 +84,8 @@ fn draw_node(
     }
 }
 
+/// Paint `rect` (relative to `area`) in `colour`, darkened by `depth`, with a
+/// seam on its right and bottom edges; cells outside `area` are skipped.
 fn fill(buffer: &mut Buffer, area: Rect, rect: MapRect, colour: Oklch, depth: u32, selected: bool) {
     // Deeper nodes get darker so nesting is visible without borders.
     let face = colour.lighten(-0.05 * f64::from(depth));

@@ -30,14 +30,16 @@ use std::time::Instant;
 /// One path the worker could not remove, with the reason.
 #[derive(Debug)]
 pub struct DeleteFailure {
+    /// The file, link or directory that is still there (or was already gone).
     pub path: PathBuf,
+    /// Error from the last attempt.
     pub error: io::Error,
 }
 
 /// What a finished deletion did.
 #[derive(Debug, Default)]
 pub struct DeleteOutcome {
-    /// Files and directories removed.
+    /// Files, links and directories removed.
     pub removed: u64,
     /// Paths that could not be removed, in the order they were tried.
     pub failures: Vec<DeleteFailure>,
@@ -45,17 +47,23 @@ pub struct DeleteOutcome {
     pub cancelled: bool,
 }
 
+/// Answer from [`RunningDelete::try_finish`].
 pub enum DeleteStatus {
+    /// Still removing.
     Running,
+    /// Finished, cancelled, or the thread died (reported as one failure).
     Done(DeleteOutcome),
 }
 
-/// A permanent deletion running on its own thread.
+/// A permanent deletion running on its own thread. Dropping the handle
+/// cancels it.
 #[derive(Debug)]
 pub struct RunningDelete {
     /// Node the deletion was asked for.
     pub node: NodeId,
+    /// Path of [`RunningDelete::node`] as scanned.
     pub path: PathBuf,
+    /// When [`RunningDelete::spawn`] was called.
     pub started: Instant,
     /// Entries to remove, for progress.
     pub total: u64,
@@ -65,7 +73,9 @@ pub struct RunningDelete {
 }
 
 impl RunningDelete {
-    /// Start removing `node` and everything under it.
+    /// Start removing `node` and everything under it on a new
+    /// `dirstats-delete` thread. The paths are gathered from `tree` first,
+    /// on the calling thread. Panics if the thread cannot be spawned.
     pub fn spawn(tree: &Tree, node: NodeId) -> Self {
         let (files, dirs) = collect(tree, node);
         let total = (files.len() + dirs.len()) as u64;
@@ -86,6 +96,7 @@ impl RunningDelete {
         Self { node, path: tree.path(node), started: Instant::now(), total, done, cancel, receiver }
     }
 
+    /// Stop before the next entry; what is already removed stays removed.
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
@@ -143,7 +154,8 @@ pub fn delete_permanently(path: &Path) -> io::Result<DeleteOutcome> {
 }
 
 /// Split the subtree at `node` into files and links (any order) and
-/// directories deepest-first, so each directory is empty when its turn comes.
+/// directories with every child before its parent, so each directory is
+/// empty when its turn comes.
 fn collect(tree: &Tree, node: NodeId) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut files = Vec::new();
     let mut dirs = Vec::new();
@@ -164,6 +176,9 @@ fn collect(tree: &Tree, node: NodeId) -> (Vec<PathBuf>, Vec<PathBuf>) {
     (files, dirs)
 }
 
+/// Remove `files`, then `dirs`, in order, counting every attempt in `done`.
+/// Failures are collected and the walk goes on; `cancel` is checked
+/// before each entry.
 fn run(files: Vec<PathBuf>, dirs: Vec<PathBuf>, done: &AtomicU64, cancel: &AtomicBool) -> DeleteOutcome {
     let mut outcome = DeleteOutcome::default();
     let mut record = |path: PathBuf, result: io::Result<()>| {
@@ -226,8 +241,9 @@ fn remove_dir_force(path: &Path) -> io::Result<()> {
 #[cfg(any(windows, target_os = "linux"))]
 impl crate::App {
     /// Start deleting `id` permanently on a worker thread, bypassing the
-    /// Recycle Bin. Refused unless [`crate::App::permanent_delete`] is on. Only
-    /// one deletion runs at a time. The front end is expected to have
+    /// trash. Refused unless [`crate::App::permanent_delete`] is on. Only
+    /// one deletion runs at a time, and [`crate::App::check_removable`]
+    /// applies. The front end is expected to have
     /// confirmed with the user; nothing here asks.
     pub fn delete_node_permanently(&mut self, id: NodeId) -> io::Result<()> {
         if !self.permanent_delete() {
@@ -352,8 +368,8 @@ mod sys {
     }
 }
 
-/// Elsewhere the retries are no-ops; the module exists so the walker can be
-/// unit-tested on any platform.
+/// Elsewhere (Linux, and macOS where only the tests use it) there are no
+/// attributes to clear, and delete-on-close is a plain second `remove_file`.
 #[cfg(not(windows))]
 mod sys {
     use std::io;

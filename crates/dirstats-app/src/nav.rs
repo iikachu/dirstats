@@ -47,7 +47,8 @@ impl App {
     }
 
     /// Rows of a tree view rooted at the current directory: each node in
-    /// display order with its depth below the root, following `expanded`.
+    /// display order with its depth, 0 for the directory's own children,
+    /// following `expanded`.
     #[must_use]
     pub fn tree_rows(&self) -> Vec<(NodeId, u32)> {
         let (Some(tree), Some(dir)) = (&self.tree, self.dir()) else { return Vec::new() };
@@ -70,6 +71,7 @@ impl App {
 
     /// Make `dir` the current directory, remembering the way back. Any node
     /// with children is accepted, so a treemap can zoom straight into a deep folder.
+    /// Returns false, changing nothing, for a childless node or the current directory.
     pub fn zoom_to(&mut self, dir: NodeId) -> bool {
         let Some(tree) = &self.tree else { return false };
         if tree.children(dir).is_empty() {
@@ -86,6 +88,7 @@ impl App {
     }
 
     /// Select `id` wherever it is: zoom to its parent, then pick it.
+    /// Returns false for the root, which has no parent to show it in.
     pub fn reveal(&mut self, id: NodeId) -> bool {
         let Some(tree) = &self.tree else { return false };
         let Some(parent) = tree.node(id).parent else { return false };
@@ -104,6 +107,8 @@ impl App {
         }
     }
 
+    /// The selected entry of the current directory; `None` without a tree
+    /// or when the directory is empty.
     #[must_use]
     pub fn selected(&self) -> Option<NodeId> {
         let cursor = self.cursor.as_ref()?;
@@ -124,6 +129,7 @@ impl App {
         out
     }
 
+    /// Move the selection by `delta` rows, stopping at the first and last entry.
     pub fn move_selection(&mut self, delta: isize) {
         let len = self.entries().len();
         if let Some(cursor) = &mut self.cursor
@@ -134,12 +140,14 @@ impl App {
         }
     }
 
+    /// Select the first (largest) entry.
     pub fn select_first(&mut self) {
         if let Some(cursor) = &mut self.cursor {
             cursor.selected = 0;
         }
     }
 
+    /// Select the last (smallest) entry.
     pub fn select_last(&mut self) {
         let len = self.entries().len();
         if let Some(cursor) = &mut self.cursor {
@@ -176,7 +184,9 @@ impl App {
         self.cursor.as_ref().is_some_and(|c| !c.history.is_empty())
     }
 
-    /// Return to the parent directory, reselecting the directory just left.
+    /// Return to the directory shown before the last [`App::enter`] or
+    /// [`App::zoom_to`], with its selection as it was. Returns false when
+    /// there is no history.
     pub fn back(&mut self) -> bool {
         let Some(cursor) = &mut self.cursor else { return false };
         let Some((dir, selected)) = cursor.history.pop() else { return false };

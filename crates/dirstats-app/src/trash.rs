@@ -16,7 +16,7 @@
 //!   platform said where it went.
 //!
 //! [`App::check_removable`] refuses the scan root, drive roots, the home
-//! folder and Time Machine backups before anything moves.
+//! folder and (on macOS) Time Machine backups before anything moves.
 //!
 //! Programs without an [`App`] use the path-based functions the methods
 //! are built on: [`move_to_trash`] and [`put_back`], which refuse what
@@ -49,7 +49,9 @@ impl App {
         Ok(())
     }
 
-    /// Move `id` back from the trash to where it was scanned.
+    /// Move `id` back from the trash to where it was scanned. Fails with
+    /// `Unsupported` when the trash location is unknown and `AlreadyExists`
+    /// when something else now has the original path.
     pub fn put_back(&mut self, id: NodeId) -> io::Result<()> {
         let original = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
         let Some(Some(location)) = self.trashed.get(&id).cloned() else {
@@ -129,8 +131,7 @@ pub const NAME: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
 /// Move `path` to the trash and return where it went, when the platform
 /// reports it. On macOS the direct NSFileManager call is used rather than
 /// scripting Finder, so no Automation permission is requested, and the
-/// resulting URL is kept for Put Back. Elsewhere the trash crate's default
-/// applies and the location is unknown.
+/// resulting URL is kept for Put Back.
 #[cfg(target_os = "macos")]
 fn platform_trash(path: &Path) -> io::Result<Option<PathBuf>> {
     use objc2_foundation::{NSFileManager, NSString, NSURL};

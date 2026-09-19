@@ -39,11 +39,20 @@ pub fn device_path(root: &Path) -> Option<String> {
 
 /// A stretch of the table: where it lies on the volume and which record it starts with.
 struct Piece {
+    /// Byte offset on the volume.
     volume_offset: u64,
     first_record: u64,
+    /// Bytes, at most [`CHUNK`].
     length: usize,
 }
 
+/// Read the master file table of `device` (from [`device_path`]) and build
+/// the tree for `root` from it, with up to `options.threads` readers.
+/// `progress.entries` counts names as they are read.
+///
+/// Fails when the volume cannot be opened (not elevated), is not NTFS, has
+/// a geometry [`CHUNK`] does not divide, or cannot be read; with
+/// [`io::ErrorKind::Interrupted`] once `cancel` is set.
 pub fn scan(
     root: &Path,
     device: &str,
@@ -172,6 +181,8 @@ fn pieces(extents: &[(u64, u64, u64)], cluster: u64, record_size: u64) -> Vec<Pi
     pieces
 }
 
+/// `DeviceIoControl` without overlap. Any failure is an error, including
+/// `ERROR_MORE_DATA`, where `output` still holds what fitted.
 fn control(file: &File, code: u32, input: &[u8], output: *mut c_void, output_size: usize) -> io::Result<()> {
     let mut returned = 0u32;
     // SAFETY: `input` and `output` are live for the call with the sizes
@@ -192,6 +203,7 @@ fn control(file: &File, code: u32, input: &[u8], output: *mut c_void, output_siz
     if ok == 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
+/// Fill `bytes` from `offset`; `UnexpectedEof` if the volume ends first.
 fn read_exact_at(file: &File, mut bytes: &mut [u8], mut offset: u64) -> io::Result<()> {
     while !bytes.is_empty() {
         match file.seek_read(bytes, offset)? {

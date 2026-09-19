@@ -14,8 +14,13 @@ use std::path::{Path, PathBuf};
 pub const FIXTURE: &str = "dirstats-mft-fixture";
 
 /// Create `root\dirstats-mft-fixture` with `files` files spread over
-/// directories 3 levels deep, unless it already holds that many. Sizes mix
-/// records small enough to live inside the MFT with ones that need clusters.
+/// directories 3 levels deep, 100 to a directory, unless an earlier call
+/// with the same `files` completed (its `complete-{files}` stamp, one more
+/// file, is there); any other fixture is deleted first. Sizes mix records
+/// small enough to live inside the MFT with ones that need clusters.
+///
+/// # Panics
+/// If a directory or file cannot be written.
 pub fn fixture(root: &Path, files: usize) -> PathBuf {
     let dir = root.join(FIXTURE);
     let stamp = dir.join(format!("complete-{files}"));
@@ -43,8 +48,9 @@ pub fn find(tree: &Tree, path: &Path) -> Option<NodeId> {
     })
 }
 
-/// Empty Windows' standby list so the next scan reads file data and
-/// metadata from disk. Needs administrator rights.
+/// Flush the modified list and empty Windows' standby list so the next
+/// scan reads file data and metadata from disk. Needs administrator rights;
+/// panics without them.
 #[cfg(windows)]
 pub fn purge_standby_list() {
     use std::ffi::c_void;

@@ -16,27 +16,35 @@ use std::sync::Arc;
 use std::time::Instant;
 
 /// Scan `root` on the calling thread, through the same fast paths as
-/// [`RunningScan`].
+/// [`RunningScan`]. It cannot be cancelled and reports no progress.
 pub fn scan(root: impl AsRef<std::path::Path>, options: &ScanOptions) -> io::Result<Tree> {
     scan_with(root, options, &AtomicBool::new(false), &Progress::default())
 }
 
+/// Answer from [`RunningScan::try_finish`].
 pub enum ScanStatus {
+    /// No result yet.
     Running,
+    /// The scan's result; an error too if the scan thread died without one.
     Done(io::Result<Tree>),
 }
 
-/// A scan running on its own thread.
+/// A scan running on its own thread. Dropping the handle cancels it.
 #[derive(Debug)]
 pub struct RunningScan {
+    /// Directory being scanned.
     pub root: PathBuf,
+    /// When [`RunningScan::spawn`] was called.
     pub started: Instant,
+    /// Counters the scan thread updates as it goes.
     pub progress: Arc<Progress>,
     cancel: Arc<AtomicBool>,
     receiver: Receiver<io::Result<Tree>>,
 }
 
 impl RunningScan {
+    /// Start scanning `root` on a new `dirstats-scan` thread. Panics if the
+    /// thread cannot be spawned.
     pub fn spawn(root: PathBuf, options: ScanOptions) -> Self {
         let progress = Arc::new(Progress::default());
         let cancel = Arc::new(AtomicBool::new(false));
@@ -55,15 +63,19 @@ impl RunningScan {
         Self { root, started: Instant::now(), progress, cancel, receiver }
     }
 
+    /// Ask the scan to stop; it then finishes early with an error.
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
 
+    /// Entries added to the tree so far.
     #[must_use]
     pub fn entries(&self) -> u64 {
         self.progress.entries.load(Ordering::Relaxed)
     }
 
+    /// Directories that could not be listed plus entries whose metadata
+    /// could not be read, so far.
     #[must_use]
     pub fn errors(&self) -> u64 {
         self.progress.errors.load(Ordering::Relaxed)

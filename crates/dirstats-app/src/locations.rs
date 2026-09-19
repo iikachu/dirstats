@@ -7,11 +7,13 @@
 //! macOS lists the boot volume and whatever is mounted under `/Volumes`,
 //! skipping the system's own hidden mounts (Preboot, VM, the Data volume
 //! and friends) that would only duplicate the root, as Disk Inventory X
-//! does. Linux lists mounts backed by a block device or a network share.
+//! does. Linux lists mounts backed by a block device, a network share,
+//! ZFS or FUSE.
 //! Windows lists every drive letter, as WinDirStat does.
 
 use std::path::PathBuf;
 
+/// What sort of place a [`Location`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// The user's home folder.
@@ -22,10 +24,14 @@ pub enum Kind {
     Root,
 }
 
+/// A place offered to scan, with its filesystem's size.
 #[derive(Clone, Debug)]
 pub struct Location {
+    /// Label to show: "Home", "Root", a volume or drive name.
     pub name: String,
+    /// Where to scan.
     pub path: PathBuf,
+    /// What sort of place it is.
     pub kind: Kind,
     /// Capacity in bytes, when the filesystem reports it.
     pub total: Option<u64>,
@@ -92,6 +98,7 @@ pub fn open_full_disk_access_settings() -> std::io::Result<()> {
         .map(drop)
 }
 
+/// `USERPROFILE` or else `HOME`, when it names an existing directory.
 fn home() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).filter(|p| p.is_dir())
 }
