@@ -49,5 +49,9 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 objc2-foundation = { version = "0.3", optional = true, default-features = false, features = ["std", "NSError", "NSFileManager", "NSString", "NSURL", "NSValue", "NSObject"] }
 objc2 = { version = "0.6", optional = true }
 
+[[example]]
+name = "largest"
+required-features = ["trash"]
+
 [dev-dependencies]
 tempfile.workspace = true

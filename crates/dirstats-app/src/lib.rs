@@ -37,7 +37,7 @@ pub use dirstats_treemap as treemap;
 pub use scanner::{RunningScan, ScanStatus};
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Navigation state within a finished [`Tree`].
 #[derive(Clone, Debug)]
@@ -215,24 +215,46 @@ impl App {
     /// usage tool should offer to delete: the scan root, a drive or
     /// filesystem root, or the user's home folder.
     pub fn check_removable(&self, id: NodeId) -> io::Result<()> {
-        let refuse = |why: &str| Err(io::Error::new(io::ErrorKind::PermissionDenied, why.to_string()));
         let Some(tree) = &self.tree else { return refuse("no scan") };
         if id == tree.root() {
             return refuse("the scanned folder itself is not removable; scan its parent");
         }
-        let path = tree.path(id);
-        if path.parent().is_none_or(|p| p.as_os_str().is_empty()) {
-            return refuse("a drive root is not removable");
-        }
-        let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
-        if home.is_some_and(|home| home == path) {
-            return refuse("the home folder is not removable");
-        }
+        check_not_root_or_home(&tree.path(id))?;
         if backup::BLOCKS_TRASH && self.is_time_machine(id) {
             return refuse(backup::NOTE);
         }
         Ok(())
     }
+}
+
+/// Why `path` must not be removed, if it is one of the places no disk
+/// usage tool should offer to delete: a drive or filesystem root, the
+/// user's home folder, or on macOS part of a Time Machine backup.
+///
+/// The path-based actions, `trash::move_to_trash` and
+/// `delete::delete_permanently`, call this themselves. It looks at the
+/// path and, for backups, at the top level of its volume; nothing else.
+pub fn check_removable(path: &Path) -> io::Result<()> {
+    check_not_root_or_home(path)?;
+    if backup::BLOCKS_TRASH && (backup::in_backup_path(path) || backup::is_backup_volume(path)) {
+        return refuse(backup::NOTE);
+    }
+    Ok(())
+}
+
+fn check_not_root_or_home(path: &Path) -> io::Result<()> {
+    if path.parent().is_none_or(|p| p.as_os_str().is_empty()) {
+        return refuse("a drive root is not removable");
+    }
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
+    if home.is_some_and(|home| home == path) {
+        return refuse("the home folder is not removable");
+    }
+    Ok(())
+}
+
+fn refuse(why: &str) -> io::Result<()> {
+    Err(io::Error::new(io::ErrorKind::PermissionDenied, why.to_string()))
 }
 
 #[cfg(test)]
@@ -267,6 +289,18 @@ pub(crate) mod tests {
         let tree = app.tree.clone().unwrap();
         app.set_tree(tree);
         assert!(!app.is_trashed(sub));
+    }
+
+    #[test]
+    fn path_check_refuses_roots_and_home() {
+        // Only checked, never removed.
+        let root = if cfg!(windows) { Path::new("C:\\") } else { Path::new("/") };
+        assert_eq!(check_removable(root).unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).unwrap();
+        assert_eq!(check_removable(Path::new(&home)).unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("f"), b"x").unwrap();
+        assert!(check_removable(&dir.path().join("f")).is_ok());
     }
 
     #[test]

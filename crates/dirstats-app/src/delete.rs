@@ -12,7 +12,12 @@
 //!
 //! Front ends start one with `App::delete_node_permanently` and adopt the
 //! result with `App::poll_delete` each tick; both exist on Windows and
-//! Linux only.
+//! Linux only, where the trash can refuse items.
+//!
+//! Programs without an [`App`](crate::App) call [`delete_permanently`]
+//! with a path, on any platform. It checks [`crate::check_removable`]
+//! but asks nobody, and blocks until done; run it on a thread of your
+//! own to keep a UI responsive.
 
 use dirstats_scan::{Kind, NodeId, Tree};
 use std::io;
@@ -111,6 +116,30 @@ impl Drop for RunningDelete {
     fn drop(&mut self) {
         self.cancel();
     }
+}
+
+/// Delete `path` and everything under it permanently, bypassing the trash,
+/// on the calling thread.
+///
+/// The folder is scanned first and removed bottom-up like a scanned node,
+/// with the same attribute clearing and retries. Links are removed as
+/// links, never followed. The scan stays on `path`'s filesystem, so a
+/// disk mounted below it is not entered, and the folder it is mounted on
+/// fails to go rather than being emptied.
+///
+/// Refuses what [`crate::check_removable`] refuses, and fails without
+/// removing anything if `path` cannot be read. Otherwise the outcome
+/// lists what could not be removed; nothing here can be undone.
+pub fn delete_permanently(path: &Path) -> io::Result<DeleteOutcome> {
+    crate::check_removable(path)?;
+    let (files, dirs) = if std::fs::symlink_metadata(path)?.is_dir() {
+        // Not the app's scanner: that one may read a whole NTFS volume.
+        let tree = dirstats_scan::scan(path, &dirstats_scan::ScanOptions { same_filesystem: true, ..Default::default() })?;
+        collect(&tree, tree.root())
+    } else {
+        (vec![path.to_path_buf()], Vec::new())
+    };
+    Ok(run(files, dirs, &AtomicU64::new(0), &AtomicBool::new(false)))
 }
 
 /// Split the subtree at `node` into files and links (any order) and
@@ -405,5 +434,49 @@ mod tests {
         assert!(outcome.failures[0].path.ends_with("gone"));
         assert_eq!(outcome.removed, 2, "the other file and the directory still go");
         assert!(!dir.path().join("d").exists());
+    }
+
+    #[test]
+    fn deletes_a_folder_by_path() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        fs::write(dir.path().join("a/b/deep"), b"x").unwrap();
+        fs::write(dir.path().join("a/top"), b"y").unwrap();
+        fs::write(dir.path().join("keep"), b"z").unwrap();
+        let outcome = delete_permanently(&dir.path().join("a")).unwrap();
+        assert!(outcome.failures.is_empty(), "{:?}", outcome.failures);
+        assert_eq!(outcome.removed, 4, "two files, then b, then a itself");
+        assert!(!dir.path().join("a").exists());
+        assert!(dir.path().join("keep").exists(), "siblings are untouched");
+    }
+
+    #[test]
+    fn deletes_a_file_by_path() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("f"), b"x").unwrap();
+        assert_eq!(delete_permanently(&dir.path().join("f")).unwrap().removed, 1);
+        assert!(!dir.path().join("f").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deleting_by_path_does_not_follow_links() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("target")).unwrap();
+        fs::write(dir.path().join("target/file"), b"x").unwrap();
+        fs::create_dir(dir.path().join("victim")).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("target"), dir.path().join("victim/link")).unwrap();
+        // A link as the path itself goes too, as a link.
+        std::os::unix::fs::symlink(dir.path().join("target"), dir.path().join("toplink")).unwrap();
+        assert!(delete_permanently(&dir.path().join("victim")).unwrap().failures.is_empty());
+        assert!(delete_permanently(&dir.path().join("toplink")).unwrap().failures.is_empty());
+        assert!(!dir.path().join("victim").exists() && !dir.path().join("toplink").exists());
+        assert!(dir.path().join("target/file").exists(), "link target must survive");
+    }
+
+    #[test]
+    fn deleting_a_missing_path_fails_without_removing_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(delete_permanently(&dir.path().join("nope")).unwrap_err().kind(), io::ErrorKind::NotFound);
     }
 }

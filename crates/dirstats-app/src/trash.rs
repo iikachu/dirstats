@@ -17,6 +17,10 @@
 //!
 //! [`App::check_removable`] refuses the scan root, drive roots, the home
 //! folder and Time Machine backups before anything moves.
+//!
+//! Programs without an [`App`] use the path-based functions the methods
+//! are built on: [`move_to_trash`] and [`put_back`], which refuse what
+//! [`crate::check_removable`] refuses.
 
 use crate::{App, NodeId};
 use std::io;
@@ -39,9 +43,9 @@ impl App {
     pub fn trash_node(&mut self, id: NodeId) -> io::Result<()> {
         let path = self.path_of(id).ok_or(io::ErrorKind::NotFound)?;
         self.check_removable(id)?;
-        let location = dataless::materialising(|| trash_backend::trash(&path))?;
+        let location = move_unchecked(&path)?;
         self.trashed.insert(id, location);
-        self.message = Some(format!("moved to {}: {}", TRASH_NAME, path.display()));
+        self.message = Some(format!("moved to {}: {}", NAME, path.display()));
         Ok(())
     }
 
@@ -51,14 +55,38 @@ impl App {
         let Some(Some(location)) = self.trashed.get(&id).cloned() else {
             return Err(io::Error::new(io::ErrorKind::Unsupported, "trash location unknown"));
         };
-        if original.exists() {
-            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "something else is at the original path"));
-        }
-        dataless::materialising(|| trash_backend::put_back(&location, &original))?;
+        put_back(&location, &original)?;
         self.trashed.remove(&id);
         self.message = Some(format!("put back: {}", original.display()));
         Ok(())
     }
+}
+
+/// Move `path` to the trash, and return where it went when the platform
+/// says: the trashed item's path on macOS, its trash entry's id on Windows,
+/// Linux and BSD. Keep it for [`put_back`].
+///
+/// Refuses what [`crate::check_removable`] refuses. On Windows the shell
+/// refuses, rather than permanently deleting, items too large for the
+/// Recycle Bin or on a drive without one.
+pub fn move_to_trash(path: &Path) -> io::Result<Option<PathBuf>> {
+    crate::check_removable(path)?;
+    move_unchecked(path)
+}
+
+/// [`move_to_trash`] without the path checks, for [`App`], whose own
+/// checks also know the scan root and the scanned tree.
+fn move_unchecked(path: &Path) -> io::Result<Option<PathBuf>> {
+    dataless::materialising(|| trash_backend::trash(path))
+}
+
+/// Move a trashed item from `location`, as [`move_to_trash`] returned it,
+/// back to `original`. Refuses when something else is at `original` now.
+pub fn put_back(location: &Path, original: &Path) -> io::Result<()> {
+    if original.exists() {
+        return Err(io::Error::new(io::ErrorKind::AlreadyExists, "something else is at the original path"));
+    }
+    dataless::materialising(|| trash_backend::put_back(location, original))
 }
 
 /// Actions that move or open files must be allowed to fetch an evicted
@@ -96,7 +124,7 @@ mod dataless {
 }
 
 /// What the platform calls its trash, for messages.
-const TRASH_NAME: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
+pub const NAME: &str = if cfg!(windows) { "Recycle Bin" } else { "Trash" };
 
 /// Move `path` to the trash and return where it went, when the platform
 /// reports it. On macOS the direct NSFileManager call is used rather than
@@ -149,7 +177,7 @@ fn platform_put_back(location: &Path, original: &Path) -> io::Result<()> {
 fn platform_put_back(location: &Path, original: &Path) -> io::Result<()> {
     let items = trash::os_limited::list().map_err(io::Error::other)?;
     let Some(item) = items.into_iter().find(|item| Path::new(&item.id) == location) else {
-        return Err(io::Error::new(io::ErrorKind::NotFound, format!("no longer in the {TRASH_NAME}")));
+        return Err(io::Error::new(io::ErrorKind::NotFound, format!("no longer in the {NAME}")));
     };
     trash::os_limited::restore_all([item]).map_err(io::Error::other)?;
     if original.exists() { Ok(()) } else { Err(io::Error::other("restored somewhere else")) }
@@ -352,6 +380,33 @@ mod tests {
             let root = app.tree.as_ref().unwrap().root();
             assert_eq!(app.trash_node(root).unwrap_err().kind(), io::ErrorKind::PermissionDenied);
             assert!(!app.is_trashed(root));
+            assert_eq!(fs::read_dir(&trash).unwrap().count(), 0);
+        }
+
+        #[test]
+        fn path_functions_trash_and_put_back_without_an_app() {
+            let trash = Fake::install(true);
+            let dir = tempfile::tempdir().unwrap();
+            let file = dir.path().join("f");
+            fs::write(&file, b"x").unwrap();
+
+            let location = crate::trash::move_to_trash(&file).unwrap().expect("fake reports where it went");
+            assert!(!file.exists());
+            assert_eq!(fs::read_dir(&trash).unwrap().count(), 1);
+
+            fs::write(&file, b"new").unwrap();
+            assert_eq!(crate::trash::put_back(&location, &file).unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+            fs::remove_file(&file).unwrap();
+            crate::trash::put_back(&location, &file).unwrap();
+            assert_eq!(fs::read(&file).unwrap(), b"x");
+        }
+
+        #[test]
+        fn path_functions_refuse_the_home_folder() {
+            let trash = Fake::install(true);
+            let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).unwrap();
+            let err = crate::trash::move_to_trash(std::path::Path::new(&home)).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
             assert_eq!(fs::read_dir(&trash).unwrap().count(), 0);
         }
     }
