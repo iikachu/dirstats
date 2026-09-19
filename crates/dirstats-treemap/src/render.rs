@@ -37,32 +37,40 @@ pub enum Shading {
     Flat,
 }
 
+/// Layout, colour and lighting settings for [`render()`].
 #[derive(Clone, Debug)]
 pub struct TreemapOptions {
+    /// How siblings are laid out.
     pub style: Style,
+    /// How faces are lit.
     pub shading: Shading,
     /// Leave a one-pixel grid line between leaves.
     pub grid: bool,
+    /// Colour of the grid lines, and of any area no leaf covers, when `grid` is on.
     pub grid_color: Oklch,
+    /// Colour of any area no leaf covers when `grid` is off.
     pub background: Oklch,
-    /// OKLCH lightness of a leaf face before shading, 0..=1.
+    /// OKLCH lightness of a leaf face before shading, 0..=1, for a colour at
+    /// [`PALETTE_LIGHTNESS`]; other colours are scaled by the same ratio.
     pub lightness: f64,
     /// Chroma multiplier applied to leaf colours; 0 gives greys.
     pub saturation: f64,
-    /// Ridge height "H"; 0 disables cushions.
+    /// Ridge height "H" (scaled down for the glow); 0 disables cushions.
     pub height: f64,
-    /// Ridge height falloff per level "F", 0..=1.
+    /// Ridge height falloff per level "F", 0..=1; 0 disables cushions.
     pub scale_factor: f64,
-    /// Ambient light "Ia", 0..=1; 1 disables cushions.
+    /// WinDirStat's ambient light "Ia", 0..=1. Glow shading does not use
+    /// the value; 1 or more disables cushions.
     pub ambient_light: f64,
-    /// Light direction, -4..=4; negative is left.
+    /// Horizontal light direction, -4..=4 (not enforced); negative is from the left.
     pub light_x: f64,
-    /// Light direction, -4..=4; negative is top.
+    /// Vertical light direction, -4..=4 (not enforced); negative is from the top.
     pub light_y: f64,
 }
 
 impl Default for TreemapOptions {
-    /// WinDirStat's "Classic" preset.
+    /// Rows layout and cushion parameters from WinDirStat's "Classic"
+    /// preset, with glow shading at [`PALETTE_LIGHTNESS`] on black.
     fn default() -> Self {
         Self {
             style: Style::Rows,
@@ -82,6 +90,8 @@ impl Default for TreemapOptions {
 }
 
 impl TreemapOptions {
+    /// Whether faces get cushion geometry: glow shading with settings that
+    /// leave a ridge to light.
     fn cushion_shading(&self) -> bool {
         self.shading == Shading::Glow
             && self.ambient_light < 1.0
@@ -90,27 +100,38 @@ impl TreemapOptions {
     }
 }
 
+/// A node that got a box in a [`Treemap`].
 #[derive(Clone, Copy, Debug)]
 pub struct VisibleItem {
+    /// The node this box shows.
     pub node: NodeId,
+    /// The node's box in image pixels, grid line included.
     pub rect: Rect,
+    /// Levels below the rendered root, which is 0.
     pub depth: u32,
-    /// No visible descendants: the box is drawn as a single face.
+    /// No visible descendants, so hit tests land here. The box is painted as
+    /// one face only if the node has no children and the box is wider and
+    /// taller than the grid line; otherwise the background shows through.
     pub leaf: bool,
-    /// Cushion surface the face was shaded with; see [`Treemap::shade_leaves`].
+    /// Cushion surface `[x², y², x, y]` coefficients the face was shaded
+    /// with, zero if it has no face; see [`Treemap::shade_leaves`].
     pub surface: [f64; 4],
 }
 
 /// A rendered treemap: RGBA8 pixels plus the rectangle of every visible node.
 #[derive(Clone, Debug)]
 pub struct Treemap {
+    /// Image width in pixels.
     pub width: u32,
+    /// Image height in pixels.
     pub height: u32,
+    /// `width * height` RGBA8 pixels, row-major from the top left, all opaque.
     pub pixels: Vec<u8>,
     /// Parents precede their descendants.
     pub items: Vec<VisibleItem>,
     /// Leaf item indices per `GRID_CELL`-pixel cell, row-major.
     grid: Vec<Vec<u32>>,
+    /// Cells per row of `grid`.
     grid_columns: usize,
     /// Node to its index in `items` (WinDirStat keeps the same map beside its item list).
     index: foldhash::HashMap<NodeId, u32>,
@@ -120,6 +141,8 @@ pub struct Treemap {
 const GRID_CELL: i32 = 16;
 
 impl Treemap {
+    /// Derive the lookups from `items`: clear `leaf` on every item with a
+    /// child item, fill `index`, and bucket the leaves into `grid`.
     fn build_grid(&mut self) {
         let columns = ((self.width as i32 + GRID_CELL - 1) / GRID_CELL).max(1) as usize;
         let rows = ((self.height as i32 + GRID_CELL - 1) / GRID_CELL).max(1) as usize;
@@ -151,7 +174,7 @@ impl Treemap {
         self.grid_columns = columns;
     }
 
-    /// Deepest visible node at a pixel.
+    /// Deepest visible node at a pixel; `None` outside the image.
     #[must_use]
     pub fn hit_test(&self, x: i32, y: i32) -> Option<NodeId> {
         if x < 0 || y < 0 || x >= self.width as i32 || y >= self.height as i32 {
@@ -180,7 +203,13 @@ impl Treemap {
     /// Shade the leaves `leaves` (item index and colour) into an RGBA buffer
     /// covering `bounds`, transparent elsewhere, using the same cushion
     /// geometry as the base render so an overlay keeps the glow. Cost is
-    /// proportional to the area of the leaves, not the map.
+    /// proportional to the area of the leaves, not the map. `bounds` is in
+    /// image pixels; the buffer is its width × height, row-major. Colours get
+    /// the same `saturation` and `lightness` treatment as in [`render()`].
+    ///
+    /// # Panics
+    ///
+    /// If an index is out of range for [`Treemap::items`].
     #[must_use]
     pub fn shade_leaves(
         &self,
@@ -269,6 +298,8 @@ impl ExtensionColors {
         &self.ranked
     }
 
+    /// Colour for node `id`: its extension's hue, or neutral grey for
+    /// directories and extensions this ranking has not seen.
     #[must_use]
     pub fn color(&self, tree: &Tree, id: NodeId) -> Oklch {
         let node = tree.node(id);
@@ -278,7 +309,8 @@ impl ExtensionColors {
         self.colors.get(&extension_of(node)).copied().unwrap_or(self.directory)
     }
 
-    /// Colour of the extension at `rank` in [`Self::entries`].
+    /// Colour of the extension at `rank` in [`Self::entries`]; neutral grey
+    /// if `rank` is out of range.
     #[must_use]
     pub fn color_at(&self, rank: usize) -> Oklch {
         self.ranked.get(rank).map_or(self.directory, |(_, _, c)| *c)
@@ -287,10 +319,11 @@ impl ExtensionColors {
     /// Per-node breakdown of bytes by extension, for drawing size bars as
     /// stacked colour segments.
     ///
-    /// One bottom-up pass over the tree: every directory's tally is merged
-    /// into its parent's and then reduced to its `keep` largest extensions,
-    /// so the work is linear in the number of nodes times the extension
-    /// count and the result is a few entries per node. Nodes are stored
+    /// One bottom-up pass over the tree: every node's full tally is merged
+    /// into its parent's, so totals stay exact, and only the copy kept for
+    /// the node is cut to its `keep` largest extensions. The work is linear
+    /// in the number of nodes times the extension count and the result is a
+    /// few entries per node. Nodes are stored
     /// parent-first, so walking indices in reverse visits children before
     /// their parents.
     #[must_use]
@@ -339,6 +372,7 @@ impl ExtensionColors {
         self.colors.len()
     }
 
+    /// True if the tree had no files, symlinks or other non-directories.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.colors.is_empty()
@@ -365,16 +399,22 @@ fn extension_of(node: &dirstats_scan::Node) -> Option<String> {
     std::path::Path::new(&*node.name).extension().map(|e| e.to_string_lossy().to_lowercase())
 }
 
+/// One box waiting to be laid out during [`render()`].
 struct DrawState {
     surface: [f64; 4],
     rect: Rect,
     node: NodeId,
     ridge_height: f64,
+    /// The rendered root gets no ridge of its own.
     as_root: bool,
     depth: u32,
 }
 
 /// Render the subtree at `root` into a `width` × `height` image.
+///
+/// `color` gives each leaf's base colour; `options` adjust and shade it. Nodes
+/// whose box comes out empty are not recorded. An empty `root` is one leaf
+/// item painted with the background.
 pub fn render(
     tree: &Tree,
     root: NodeId,
@@ -455,6 +495,7 @@ struct Job {
     glow: bool,
 }
 
+/// The image being rendered and the leaf jobs still to rasterise into it.
 struct Canvas<'a> {
     width: u32,
     height: u32,
@@ -483,7 +524,8 @@ fn leaf_face(mut rect: Rect, options: &TreemapOptions) -> Rect {
     rect
 }
 
-/// A leaf's shading job. The palette supplies hue and chroma; the options set the face lightness.
+/// A leaf's shading job. The colour supplies hue and chroma (scaled by `saturation`); its
+/// lightness is rescaled so a colour at [`PALETTE_LIGHTNESS`] lands on `options.lightness`.
 fn leaf_job(rect: Rect, surface: &[f64; 4], color: Oklch, options: &TreemapOptions) -> Job {
     let color = color.scale_chroma(options.saturation).with_lightness(options.lightness * color.l / PALETTE_LIGHTNESS);
     let glow = options.shading == Shading::Glow && options.cushion_shading();
@@ -613,6 +655,7 @@ fn shade_job(job: &Job, light: [f64; 3], left: i32, width: i32, top: i32, bottom
     }
 }
 
+/// Add one cushion ridge of height `h` over `rect` to `surface` (WinDirStat's `AddRidge`).
 fn add_ridge(rect: Rect, surface: &mut [f64; 4], h: f64) {
     let h4 = 4.0 * h;
     let wf = h4 / f64::from(rect.width());
