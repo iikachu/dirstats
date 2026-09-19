@@ -12,7 +12,9 @@
 //! - `dirstats.ico` for Windows, with PNG images from 16 to 256,
 //! - `dirstats.icns` for macOS, on Apple's icon grid, 16 to 1024 including @2x,
 //! - `dirstats-hero.svg`, the README banner: the macOS icon on a gradient
-//!   with the name and tagline. It is checked in as `assets/dirstats-hero.svg`.
+//!   with the name and tagline. It is checked in as `assets/dirstats-hero.svg`,
+//! - `dirstats-logo.svg`, the square icon alone: the logo and favicon of the
+//!   API docs, checked in as `assets/dirstats-logo.svg`.
 //!
 //! ```text
 //! cargo run -p dirstats-treemap --example icon -- OUT_DIR
@@ -76,12 +78,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     write(&out.join("dirstats.icns"), &icns)?;
 
     write(&out.join("dirstats-hero.svg"), hero(&png(HERO_ICON, Shape::Macos)?).as_bytes())?;
+    write(&out.join("dirstats-logo.svg"), logo(&png(LOGO_ICON, Shape::Square)?).as_bytes())?;
     Ok(())
 }
 
 /// Pixel size of the icon embedded in the banner: shown at 280 points, so
 /// sharp on a 2× screen without making the SVG large.
 const HERO_ICON: u32 = 512;
+
+/// Pixel size of the icon in the docs logo: rustdoc shows it at up to 100
+/// points in the sidebar and 16 as the favicon.
+const LOGO_ICON: u32 = 256;
+
+/// The docs logo and favicon: the square icon wrapped in an SVG so it can
+/// sit beside the banner in `assets/` without a `*.png` ignore exception.
+fn logo(icon_png: &[u8]) -> String {
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}" width="{s}" height="{s}" role="img" aria-label="dirstats"><image width="{s}" height="{s}" href="data:image/png;base64,{icon}"/></svg>
+"#,
+        s = LOGO_ICON,
+        icon = base64(icon_png)
+    )
+}
 
 /// The README banner. It carries its own background, so it reads the same
 /// on GitHub's light and dark themes.
