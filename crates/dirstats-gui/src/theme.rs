@@ -16,7 +16,7 @@ use eframe::egui::{self, Color32};
 pub(super) const MONO_STEP: f32 = 1.5;
 
 /// egui's bundled fonts with the platform's own UI and monospace faces put
-/// in front of them: SF Pro and SF Mono (or Menlo) on macOS, Segoe UI and
+/// in front of them: SF Pro (or Helvetica Neue) and SF Mono (or Menlo) on macOS, Segoe UI and
 /// Cascadia Mono (or Consolas) on Windows. The bundled fonts stay as
 /// fallbacks for glyphs the system faces lack, and are used alone on other
 /// platforms or when no candidate file can be read. The flag says whether
@@ -59,6 +59,8 @@ pub(super) fn system_fonts() -> (egui::FontDefinitions, bool) {
 /// sets Segoe UI at 9pt (12px) with 11px captions. egui's defaults suit
 /// its bundled Ubuntu Light, which sits smaller on the line than either.
 /// Only called when a system face loaded, which today means macOS or Windows.
+/// The monospace entry is set to body size here; `configure` then replaces
+/// it with body size less [`MONO_STEP`].
 pub(super) fn system_text_sizes() -> std::collections::BTreeMap<egui::TextStyle, egui::FontId> {
     use egui::FontFamily::{Monospace, Proportional};
     use egui::{FontId, TextStyle};
@@ -68,7 +70,7 @@ pub(super) fn system_text_sizes() -> std::collections::BTreeMap<egui::TextStyle,
         // Unreachable today: no system faces are looked up elsewhere.
         _ => return egui::Style::default().text_styles,
     };
-    // Monospace is derived from body once the fonts are settled; see `run`.
+    // Monospace is derived from body once the fonts are settled; see `configure`.
     let mono = body;
     [
         (TextStyle::Small, FontId::new(small, Proportional)),

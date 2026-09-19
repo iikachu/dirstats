@@ -18,6 +18,8 @@ use crate::{Gui, icons};
 
 impl Gui {
     /// Toolbar: back, breadcrumbs, totals; layout toggle and rescan on the right.
+    /// While a scan runs it shows the scan root and Cancel instead, and with
+    /// no tree just the app name.
     pub(super) fn header(&mut self, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing.x = 6.0;
         let icon_button = |ui: &mut egui::Ui, glyph: icons::Glyph, enabled: bool, tip: &str| -> egui::Response {
@@ -151,7 +153,9 @@ impl Gui {
         });
     }
 
-    /// One fixed-height line: the hovered path, or the last message.
+    /// One fixed-height line: the hovered path, or the last message. A
+    /// failure (a message containing "failed", shown in the error colour)
+    /// or a message under four seconds old takes precedence over the hover.
     pub(super) fn footer(&mut self, ui: &mut egui::Ui) {
         const HOLD: std::time::Duration = std::time::Duration::from_secs(4);
         // Track when the message last changed.

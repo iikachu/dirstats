@@ -18,7 +18,8 @@ use crate::{Gui, Highlight, Selection};
 
 impl Gui {
     /// Extensions ranked by total size, largest first, in cells aligned to
-    /// the header: swatch and name, share, size.
+    /// the header: swatch and name, share, size. Hovering a row highlights
+    /// that extension's boxes in the treemap; clicking one selects it.
     pub(super) fn legend(&mut self, ui: &mut egui::Ui, edges: [f32; 4], row_height: f32) {
         let Some(colors) = &self.colors else {
             return;

@@ -17,7 +17,7 @@ use crate::menu::{NodeAction, TrashState, node_menu, zoom_label};
 use crate::theme::hover_fill;
 use crate::{Gui, Highlight, Selection, format_time, icons};
 
-/// A node's share of its parent as a bar on `track`, the filled part
+/// A node's share of its parent (`share`, in percent) as a bar on `track`, the filled part
 /// split into the largest extensions below the node in their treemap
 /// colours. The tail of smaller extensions stays in the plain bar colour.
 fn share_bar(ui: &egui::Ui, bar: egui::Rect, track: Color32, palette: Option<(&ExtensionMix, &ExtensionColors)>, id: NodeId, share: f64, size: u64) {
@@ -210,10 +210,12 @@ fn current_dir_row(
 impl Gui {
     /// Keyboard navigation in the tree. Up and down move through the visible
     /// rows; Home and End (or Cmd+Up/Down on macOS, Ctrl+Home/End elsewhere)
-    /// jump to the ends; Page Up and Page Down (or Option+Up/Down on macOS)
-    /// move by a screenful; right expands a directory or steps into its first
-    /// child; left collapses it or steps to the parent. `rows` is refreshed
-    /// when the expansion changes.
+    /// jump to the ends; Page Up and Page Down (or Option/Alt+Up/Down) move
+    /// by a screenful; right expands a directory or steps into its first
+    /// child; left collapses it or steps to the parent. With nothing selected,
+    /// the arrows and Page keys select the first row. Any of these keys stops
+    /// hover highlighting until the pointer moves. `rows` is refreshed when the
+    /// expansion changes.
     pub(super) fn keyboard_navigation(&mut self, ui: &egui::Ui, rows: &mut Vec<(NodeId, u32)>, row_step: f32) {
         let Some(tree) = &self.app.tree else { return };
         let page = ((ui.available_height() / row_step).floor() as usize).max(1);
@@ -303,7 +305,9 @@ impl Gui {
         }
     }
 
-    /// Rows of the tree. `edges` are the absolute x positions of the name,
+    /// The current directory's row, then the tree under it; keyboard
+    /// navigation, clicks and context-menu actions are applied after the rows
+    /// are drawn. `edges` are the absolute x positions of the name,
     /// bar, share, size, items, files, dirs and modified columns and the
     /// right edge of modified, straight from the header, so cells always
     /// line up with it.

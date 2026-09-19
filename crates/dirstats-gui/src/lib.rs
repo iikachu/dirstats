@@ -104,8 +104,11 @@ fn configure(ctx: &egui::Context) {
     apply_theme(ctx);
 }
 
+/// The window's state around the [`App`]: caches for the treemap renders
+/// and per-node lookups, and what is selected, hovered and pending.
 struct Gui {
     app: App,
+    /// Colour for each extension, ranked by size; `None` until there is a tree.
     colors: Option<ExtensionColors>,
     /// Largest extensions below every node, for the share bar segments.
     mix: Option<ExtensionMix>,
@@ -119,8 +122,11 @@ struct Gui {
     cloud: std::collections::HashMap<NodeId, dirstats_app::cloud::CloudStatus>,
     /// Bumped whenever a new tree arrives so cached renders are invalidated.
     tree_version: u64,
+    /// Last treemap render, kept for hit-testing boxes and re-shading highlights.
     map: Option<Treemap>,
+    /// What `map` was rendered for; `None` forces a re-render.
     map_key: Option<MapKey>,
+    /// `map`'s pixels on the GPU.
     texture: Option<TextureHandle>,
     /// Transparent overlay the size of the map; the hovered target's leaves
     /// are re-shaded vivid into it (cushions intact) and it is blended over
@@ -128,7 +134,10 @@ struct Gui {
     highlight: Option<TextureHandle>,
     /// Region of `highlight` currently holding pixels, cleared on the next change.
     highlight_bounds: Option<dirstats_app::treemap::Rect>,
+    /// What `highlight` was last drawn for; `None` after a re-render or
+    /// while nothing is hovered.
     highlight_key: Option<HighlightKey>,
+    /// Treemap layout, switched from the toolbar.
     style: Style,
     /// Current selection: a node or an extension, never both.
     selection: Option<Selection>,
@@ -190,6 +199,8 @@ impl Gui {
         }
     }
 
+    /// A new tree arrived: drop the selection, iCloud cache and treemap,
+    /// and rank extension colours for it.
     fn tree_changed(&mut self) {
         self.tree_version += 1;
         self.selection = None;

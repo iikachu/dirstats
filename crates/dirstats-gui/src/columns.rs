@@ -18,14 +18,20 @@ use crate::{Gui, icons};
 /// The counts and date start off so the plain layout is what opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct ShownColumns {
+    /// Share of the parent as a bar split by extension.
     pub(super) bar: bool,
+    /// Share of the parent in percent.
     pub(super) share: bool,
     pub(super) size: bool,
+    /// Files and folders below, together.
     pub(super) items: bool,
     pub(super) files: bool,
+    /// Folders below.
     pub(super) dirs: bool,
     pub(super) modified: bool,
+    /// Extension's share of the whole tree in percent.
     pub(super) ext_share: bool,
+    /// Extension's total size.
     pub(super) ext_size: bool,
 }
 
@@ -35,8 +41,9 @@ impl Default for ShownColumns {
     }
 }
 
-/// Widths of every column in the flat header. The treemap takes whatever is
-/// left between the size and extensions columns.
+/// Widths of every column in the flat header, in points, kept for hidden
+/// columns too. The treemap takes whatever is left between the tree and
+/// extension columns, and at least [`Columns::MIN_MAP`].
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Columns {
     pub(super) name: f32,
@@ -53,6 +60,7 @@ pub(super) struct Columns {
 }
 
 impl Columns {
+    /// Narrowest each column can be dragged, unless the treemap needs the room.
     pub(super) const MIN: Columns = Columns {
         name: 80.0,
         bar: 24.0,
@@ -71,6 +79,9 @@ impl Columns {
     /// Width of the draggable divider between columns.
     pub(super) const DIVIDER: f32 = 6.0;
 
+    /// Starting widths for a body `window` wide: the name column 22% of it,
+    /// kept within 160 to 420, and figures sized in digits of `mono_char`,
+    /// the width of a monospace `0`.
     pub(super) fn initial(window: f32, mono_char: f32) -> Self {
         Self {
             name: (window * 0.22).clamp(160.0, 420.0),
@@ -87,7 +98,7 @@ impl Columns {
         }
     }
 
-    /// Width of the tree columns that are shown.
+    /// Width of the tree columns that are shown, name included.
     pub(super) fn tree_width(&self, show: ShownColumns) -> f32 {
         let optional = [
             (show.bar, self.bar),
@@ -101,7 +112,7 @@ impl Columns {
         self.name + optional.iter().filter(|(on, _)| *on).map(|(_, w)| w).sum::<f32>()
     }
 
-    /// Width of the extension columns that are shown.
+    /// Width of the extension columns that are shown, name included.
     pub(super) fn extensions_width(&self, show: ShownColumns) -> f32 {
         self.ext_name + if show.ext_share { self.ext_share } else { 0.0 } + if show.ext_size { self.ext_size } else { 0.0 }
     }
@@ -109,7 +120,8 @@ impl Columns {
 
 impl Gui {
     /// One flat header across the window, then the tree, treemap and
-    /// extensions laid out under their columns.
+    /// extensions laid out under their columns, and the location picker over
+    /// them before the first scan. Also commits this frame's hover highlight.
     pub(super) fn body(&mut self, ui: &mut egui::Ui) {
         if ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO || i.pointer.any_pressed()) {
             self.hover_active = true;
