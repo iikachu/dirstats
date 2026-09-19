@@ -19,6 +19,10 @@ egui-fonts = []
 # End-to-end tests that drive the whole GUI headlessly (CI only; pulls in wgpu).
 e2e = ["dep:egui_kittest", "dep:tempfile"]
 
+[build-dependencies]
+# Draws the window icon at build time; nothing from it is linked into the GUI.
+dirstats-icon.workspace = true
+
 [dependencies]
 dirstats-core.workspace = true
 eframe.workspace = true

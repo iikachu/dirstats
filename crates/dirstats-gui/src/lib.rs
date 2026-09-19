@@ -91,14 +91,12 @@ pub fn run(app: App) -> eframe::Result<()> {
     )
 }
 
-/// The treemap app icon for the window and, on macOS, the Dock. Drawn at
-/// start-up (a few milliseconds) rather than shipped as an image; macOS gets
-/// the margin its Dock icons have.
+/// The treemap app icon for the window and, on macOS, the Dock: 256 × 256
+/// RGBA drawn by `build.rs`, with the margin Dock icons have on macOS.
 fn app_icon() -> egui::IconData {
-    use dirstats_core::treemap::icon::{Shape, icon};
     const SIZE: u32 = 256;
-    let shape = if cfg!(target_os = "macos") { Shape::Macos } else { Shape::Square };
-    egui::IconData { rgba: icon(SIZE, shape), width: SIZE, height: SIZE }
+    let rgba = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
+    egui::IconData { rgba: rgba.to_vec(), width: SIZE, height: SIZE }
 }
 
 /// Fonts, text sizes and theme, set once before the first frame.
