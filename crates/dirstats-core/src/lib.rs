@@ -328,6 +328,6 @@ pub(crate) mod tests {
         let root = app.tree.as_ref().unwrap().root();
         assert!(app.check_removable(root).is_err());
         assert!(app.check_removable(app.entries()[0]).is_ok());
-        assert!(app.is_gone(app.entries()[0]) == false);
+        assert!(!app.is_gone(app.entries()[0]));
     }
 }

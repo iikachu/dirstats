@@ -25,7 +25,7 @@ impl Gui {
         }
         let locations = self.locations.get_or_insert_with(dirstats_core::locations::list);
         let rect = ui.available_rect_before_wrap();
-        let width = (rect.width() - 2.0 * PAD - 32.0).min(560.0).max(200.0);
+        let width = (rect.width() - 2.0 * PAD - 32.0).clamp(200.0, 560.0);
         let row_height = 48.0;
         let height = 44.0
             + if self.app.message.is_some() { 22.0 } else { 0.0 }
