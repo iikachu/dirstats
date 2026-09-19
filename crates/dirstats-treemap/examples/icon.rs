@@ -10,7 +10,9 @@
 //!
 //! - `dirstats-<size>.png` at 16 to 1024 pixels (Linux hicolor sizes and more),
 //! - `dirstats.ico` for Windows, with PNG images from 16 to 256,
-//! - `dirstats.icns` for macOS, on Apple's icon grid, 16 to 1024 including @2x.
+//! - `dirstats.icns` for macOS, on Apple's icon grid, 16 to 1024 including @2x,
+//! - `dirstats-hero.svg`, the README banner: the macOS icon on a gradient
+//!   with the name and tagline. It is checked in as `assets/dirstats-hero.svg`.
 //!
 //! ```text
 //! cargo run -p dirstats-treemap --example icon -- OUT_DIR
@@ -72,7 +74,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     icns.extend_from_slice(&(body.len() as u32 + 8).to_be_bytes());
     icns.extend_from_slice(&body);
     write(&out.join("dirstats.icns"), &icns)?;
+
+    write(&out.join("dirstats-hero.svg"), hero(&png(HERO_ICON, Shape::Macos)?).as_bytes())?;
     Ok(())
+}
+
+/// Pixel size of the icon embedded in the banner: shown at 280 points, so
+/// sharp on a 2× screen without making the SVG large.
+const HERO_ICON: u32 = 512;
+
+/// The README banner. It carries its own background, so it reads the same
+/// on GitHub's light and dark themes.
+fn hero(icon_png: &[u8]) -> String {
+    format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" width="1200" height="440" role="img" aria-label="dirstats: see what is filling your disk">
+  <defs>
+    <radialGradient id="warm" cx="20%" cy="10%" r="65%"><stop offset="0" stop-color="#ffb38a"/><stop offset="1" stop-color="#ffb38a" stop-opacity="0"/></radialGradient>
+    <radialGradient id="cool" cx="90%" cy="30%" r="55%"><stop offset="0" stop-color="#8a9bff"/><stop offset="1" stop-color="#8a9bff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="base" cx="50%" cy="100%" r="90%"><stop offset="0" stop-color="#5ad1c0"/><stop offset="0.75" stop-color="#2b3a67"/></radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#000" flood-opacity="0.35"/></filter>
+    <filter id="glow"><feDropShadow dx="0" dy="1" stdDeviation="4" flood-color="#000" flood-opacity="0.3"/></filter>
+    <clipPath id="card"><rect width="1200" height="440" rx="24"/></clipPath>
+  </defs>
+  <g clip-path="url(#card)">
+    <rect width="1200" height="440" fill="url(#base)"/>
+    <rect width="1200" height="440" fill="url(#warm)"/>
+    <rect width="1200" height="440" fill="url(#cool)"/>
+  </g>
+  <image x="250" y="70" width="300" height="300" filter="url(#shadow)" href="data:image/png;base64,{icon}"/>
+  <g fill="#fff" filter="url(#glow)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Cantarell, 'Helvetica Neue', Arial, sans-serif">
+    <text x="600" y="210" font-size="76" font-weight="700">dirstats</text>
+    <text x="604" y="262" font-size="28" opacity="0.9">See what is filling your disk.</text>
+  </g>
+</svg>
+"##,
+        icon = base64(icon_png)
+    )
+}
+
+/// Standard base64 with padding, for the PNG embedded in the banner.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().enumerate().fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() { ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
 }
 
 fn png(size: u32, shape: Shape) -> Result<Vec<u8>, png::EncodingError> {
