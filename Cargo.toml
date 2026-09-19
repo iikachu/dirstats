@@ -11,6 +11,7 @@ rust-version = "1.88"
 dirstats-scan = { path = "crates/dirstats-scan", version = "0.1.0" }
 dirstats-ntfs = { path = "crates/dirstats-ntfs", version = "0.1.0" }
 dirstats-treemap = { path = "crates/dirstats-treemap", version = "0.1.0" }
+dirstats-icon = { path = "crates/dirstats-icon", version = "0.1.0" }
 dirstats-core = { path = "crates/dirstats-core", version = "0.1.0" }
 dirstats-tui = { path = "crates/dirstats-tui", version = "0.1.0" }
 dirstats-gui = { path = "crates/dirstats-gui", version = "0.1.0" }

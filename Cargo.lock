@@ -1145,10 +1145,20 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirstats-core",
+ "dirstats-icon",
  "eframe",
  "egui_kittest",
  "rfd",
  "tempfile",
+]
+
+[[package]]
+name = "dirstats-icon"
+version = "0.1.0"
+dependencies = [
+ "dirstats-scan",
+ "dirstats-treemap",
+ "png 0.17.16",
 ]
 
 [[package]]
@@ -1176,7 +1186,6 @@ version = "0.1.0"
 dependencies = [
  "dirstats-scan",
  "foldhash 0.1.5",
- "png 0.17.16",
  "rayon",
  "tempfile",
 ]

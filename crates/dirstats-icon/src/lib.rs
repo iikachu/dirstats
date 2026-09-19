@@ -7,17 +7,29 @@
 // (at your option) any later version.
 
 //! The dirstats app icon: a cushion treemap of a small made-up tree, drawn
-//! by [`render()`](crate::render()) with the same palette and shading as the app, set in
-//! a dark rounded frame.
+//! by [`dirstats_treemap::render()`] with the same palette and shading as
+//! the app, set in a dark rounded frame.
 //!
-//! The icon is computed, not stored, so every size is drawn for that size
-//! and the GUI can make its window icon at start-up. [`svg()`] gives a
-//! small vector version, the logo of these docs. The `icon` example writes
-//! the PNG, ICO and ICNS files a package needs, the README banner and the
-//! docs logo.
+//! Nothing here is compiled into dirstats itself. The GUI's build script
+//! calls [`icon()`] and embeds the pixels, and the `dirstats-icon` program
+//! writes every other file:
+//!
+//! ```text
+//! cargo run -p dirstats-icon --features cli -- OUT_DIR
+//! ```
+//!
+//! Every size is drawn for that size rather than scaled. [`svg()`] gives a
+//! small vector version, the logo of these docs.
 
-use crate::layout::Style;
-use crate::render::{ExtensionColors, Oklch, Shading, TreemapOptions, render};
+// docs.rs only allows https: images (its CSP is `img-src 'self' https:`), so
+// the logo is a link to the generated file, not a data URL.
+#![doc(
+    html_logo_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg",
+    html_favicon_url = "https://raw.githubusercontent.com/iikachu/dirstats/HEAD/assets/dirstats-logo.svg"
+)]
+
+use dirstats_treemap::Style;
+use dirstats_treemap::render::{ExtensionColors, Oklch, Shading, TreemapOptions, render};
 use dirstats_scan::{Kind, Node, NodeId, SizeMetric, Tree, TreeBuilder};
 
 /// The outline the treemap is set in.

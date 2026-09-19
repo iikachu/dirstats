@@ -20,5 +20,4 @@ foldhash.workspace = true
 
 
 [dev-dependencies]
-png.workspace = true
 tempfile.workspace = true
