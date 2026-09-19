@@ -45,6 +45,12 @@ impl Shape {
 const SUPERSAMPLE: u32 = 4;
 /// Frame colour around the treemap: the app's dark panel.
 const FRAME: Oklch = Oklch::grey(0.24);
+/// Colour of the lines between tiles: lighter than the frame, so they part
+/// the tiles without drawing a heavy outline.
+const GRID: Oklch = Oklch::grey(0.42);
+/// Subpixels per treemap pixel. The grid line is one treemap pixel, so at 2
+/// of the 4 subpixels it comes out half a pixel wide.
+const MAP_SCALE: u32 = 2;
 /// Frame width as a fraction of the body.
 const FRAME_WIDTH: f64 = 0.04;
 /// Below this many pixels the tree is cut to its top levels, so the tiles
@@ -63,15 +69,15 @@ pub fn icon(size: u32, shape: Shape) -> Vec<u8> {
     let frame = (body.side * FRAME_WIDTH).round();
     let inner = body.inset(frame);
 
-    // The treemap is drawn at output resolution so its grid lines are one
-    // crisp pixel, then sampled per subpixel; only the rounded edges need the
-    // supersampling. Tiny icons skip the grid, which would eat the tiles.
-    let map_side = (inner.side / f64::from(SUPERSAMPLE)).ceil() as u32;
+    // The treemap is drawn coarser than the subpixel grid so its grid lines
+    // come out a thin, even half pixel, then sampled per subpixel. Tiny icons
+    // skip the grid, which would eat the tiles.
+    let map_side = (inner.side / f64::from(MAP_SCALE)).ceil() as u32;
     let options = TreemapOptions {
         style: Style::Squarified,
         shading: Shading::Glow,
         grid: size >= SMALL,
-        grid_color: FRAME,
+        grid_color: GRID,
         ..TreemapOptions::default()
     };
     let map = render(&tree, tree.root(), map_side, map_side, &options, |t, id| colors.color(t, id));
@@ -90,7 +96,7 @@ pub fn icon(size: u32, shape: Shape) -> Vec<u8> {
                 continue;
             }
             let rgb = if inner.contains(fx, fy) {
-                let (mx, my) = ((i64::from(x) - map_origin) / i64::from(SUPERSAMPLE), (i64::from(y) - map_origin) / i64::from(SUPERSAMPLE));
+                let (mx, my) = ((i64::from(x) - map_origin) / i64::from(MAP_SCALE), (i64::from(y) - map_origin) / i64::from(MAP_SCALE));
                 let (mx, my) = (mx.clamp(0, i64::from(map_side) - 1), my.clamp(0, i64::from(map_side) - 1));
                 let i = (my as usize * map_side as usize + mx as usize) * 4;
                 [map.pixels[i], map.pixels[i + 1], map.pixels[i + 2]]
