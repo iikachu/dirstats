@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! Permanent-delete modals (Windows and Linux): the gate, the confirmation, progress and the report.
 
 use dirstats_core::{NodeId, format};
@@ -131,9 +130,11 @@ impl Gui {
                     let count = tree.map(|t| t.node(*node).file_count).unwrap_or_default();
                     ui.label(RichText::new(if is_dir { format!("{size}, {count} files") } else { size }).weak());
                     ui.label(
-                        RichText::new(format!("It will not go to the {TRASH_NAME} and cannot be recovered. \
-                                        Links are removed without touching what they point at."))
-                            .color(ui.visuals().error_fg_color),
+                        RichText::new(format!(
+                            "It will not go to the {TRASH_NAME} and cannot be recovered. \
+                                        Links are removed without touching what they point at."
+                        ))
+                        .color(ui.visuals().error_fg_color),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let delete = egui::Button::new(RichText::new("Delete Permanently").strong().color(ui.visuals().error_fg_color));
@@ -172,9 +173,7 @@ impl Gui {
                     ui.add(egui::Label::new(RichText::new(path.display().to_string()).weak()).truncate());
                     ui.label(format!("{} removed, {} failed.", outcome.removed, outcome.failures.len()));
                     if !outcome.failures.is_empty() {
-                        ui.label(
-                            RichText::new("Files in use and files needing administrator rights cannot be removed here.").weak(),
-                        );
+                        ui.label(RichText::new("Files in use and files needing administrator rights cannot be removed here.").weak());
                         egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                             for failure in &outcome.failures {
                                 ui.add(egui::Label::new(RichText::new(failure.path.display().to_string()).monospace().small()).truncate());

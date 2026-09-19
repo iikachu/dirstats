@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! Toolbar above the columns and status footer below them.
 
 use dirstats_core::format;
@@ -100,8 +99,10 @@ impl Gui {
                         // needs no second one after it.
                         if !separated {
                             ui.add(
-                                egui::Label::new(egui::RichText::new(std::path::MAIN_SEPARATOR_STR).size(15.0).color(ui.visuals().weak_text_color()))
-                                    .selectable(false),
+                                egui::Label::new(
+                                    egui::RichText::new(std::path::MAIN_SEPARATOR_STR).size(15.0).color(ui.visuals().weak_text_color()),
+                                )
+                                .selectable(false),
                             );
                         }
                         let name = tree.node(id).name.to_string_lossy().into_owned();

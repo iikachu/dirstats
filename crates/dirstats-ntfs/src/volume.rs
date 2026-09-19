@@ -18,8 +18,8 @@ use std::path::{Component, Path, Prefix};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, GENERIC_READ};
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_FLAG_NO_BUFFERING, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, SYNCHRONIZE,
+    FILE_FLAG_NO_BUFFERING, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    SYNCHRONIZE,
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{FSCTL_GET_NTFS_VOLUME_DATA, FSCTL_GET_RETRIEVAL_POINTERS, NTFS_VOLUME_DATA_BUFFER};
@@ -53,19 +53,9 @@ struct Piece {
 /// Fails when the volume cannot be opened (not elevated), is not NTFS, has
 /// a geometry [`CHUNK`] does not divide, or cannot be read; with
 /// [`io::ErrorKind::Interrupted`] once `cancel` is set.
-pub fn scan(
-    root: &Path,
-    device: &str,
-    options: &ScanOptions,
-    cancel: &AtomicBool,
-    progress: &Progress,
-) -> io::Result<Tree> {
+pub fn scan(root: &Path, device: &str, options: &ScanOptions, cancel: &AtomicBool, progress: &Progress) -> io::Result<Tree> {
     let open_volume = || {
-        OpenOptions::new()
-            .access_mode(GENERIC_READ | SYNCHRONIZE)
-            .share_mode(SHARE_ALL)
-            .custom_flags(FILE_FLAG_NO_BUFFERING)
-            .open(device)
+        OpenOptions::new().access_mode(GENERIC_READ | SYNCHRONIZE).share_mode(SHARE_ALL).custom_flags(FILE_FLAG_NO_BUFFERING).open(device)
     };
     let volume = open_volume()?;
     // SAFETY: plain data, fully written by the call below before use.

@@ -140,8 +140,7 @@ fn arrange_rows(bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut [Re
                 break;
             }
             let candidate_fraction = (row_weight + child_weight) as f64 / parent_weight;
-            let child_width =
-                child_weight as f64 / parent_weight * normalized_width / candidate_fraction;
+            let child_width = child_weight as f64 / parent_weight * normalized_width / candidate_fraction;
             if child_width / candidate_fraction < MIN_PROPORTION {
                 break;
             }
@@ -163,11 +162,7 @@ fn arrange_rows(bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut [Re
         let mut left = column_near;
         for i in row_begin..row_end {
             let next_left = left + weights[i] as f64 / row_weight as f64 * column_extent;
-            let right = if is_last_in_row(weights, i, row_end) {
-                column_far
-            } else {
-                next_left as i32
-            };
+            let right = if is_last_in_row(weights, i, row_end) { column_far } else { next_left as i32 };
             out[i] = if horizontal {
                 Rect::new(left as i32, top as i32, right, bottom)
             } else {
@@ -187,8 +182,7 @@ fn arrange_rows(bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut [Re
 fn arrange_squarified(bounds: Rect, parent_weight: u64, weights: &[u64], out: &mut [Rect]) {
     let mut remaining = bounds;
     let mut remaining_weight = parent_weight;
-    let weight_per_pixel =
-        remaining_weight as f64 / f64::from(remaining.width()) / f64::from(remaining.height());
+    let weight_per_pixel = remaining_weight as f64 / f64::from(remaining.width()) / f64::from(remaining.height());
 
     let mut head = 0;
     while head < weights.len() {
@@ -214,8 +208,7 @@ fn arrange_squarified(bounds: Rect, parent_weight: u64, weights: &[u64], out: &m
             }
             let next_weight = (row_weight + child_weight) as f64;
             let squared_weight = next_weight * next_weight;
-            let next_worst = (squared_row_weight * largest / squared_weight)
-                .max(squared_weight / squared_row_weight / child_weight as f64);
+            let next_worst = (squared_row_weight * largest / squared_weight).max(squared_weight / squared_row_weight / child_weight as f64);
             if next_worst > worst {
                 break;
             }
@@ -229,8 +222,7 @@ fn arrange_squarified(bounds: Rect, parent_weight: u64, weights: &[u64], out: &m
 
         let remaining_extent = if horizontal { remaining.width() } else { remaining.height() };
         let row_width = if row_weight < remaining_weight {
-            ((row_weight as f64 / remaining_weight as f64 * f64::from(remaining_extent)) as i32)
-                .clamp(1, remaining_extent)
+            ((row_weight as f64 / remaining_weight as f64 * f64::from(remaining_extent)) as i32).clamp(1, remaining_extent)
         } else {
             remaining_extent
         };
@@ -245,11 +237,7 @@ fn arrange_squarified(bounds: Rect, parent_weight: u64, weights: &[u64], out: &m
         let mut begin = f64::from(if horizontal { row.top } else { row.left });
         for i in row_begin..row_end {
             let next = begin + weights[i] as f64 / row_weight as f64 * span;
-            let end = if is_last_in_row(weights, i, row_end) {
-                if horizontal { row.bottom } else { row.right }
-            } else {
-                next as i32
-            };
+            let end = if is_last_in_row(weights, i, row_end) { if horizontal { row.bottom } else { row.right } } else { next as i32 };
             out[i] = if horizontal {
                 Rect::new(row.left, begin as i32, row.right, end)
             } else {

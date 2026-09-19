@@ -34,12 +34,7 @@ pub fn scan(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<Tree> {
 /// `progress.entries` is reset to zero and the walk runs instead. A tree
 /// read from the table never sets [`Node::error`](dirstats_scan::Node::error)
 /// and counts nothing in `progress.errors`.
-pub fn scan_with(
-    root: impl AsRef<Path>,
-    options: &ScanOptions,
-    cancel: &AtomicBool,
-    progress: &Progress,
-) -> io::Result<Tree> {
+pub fn scan_with(root: impl AsRef<Path>, options: &ScanOptions, cancel: &AtomicBool, progress: &Progress) -> io::Result<Tree> {
     #[cfg(windows)]
     {
         use std::sync::atomic::Ordering;
@@ -65,7 +60,6 @@ pub fn scan_with(
 #[doc(hidden)]
 pub fn scan_mft(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<Tree> {
     let root = root.as_ref();
-    let device = volume::device_path(root)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "not a drive root"))?;
+    let device = volume::device_path(root).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "not a drive root"))?;
     volume::scan(root, &device, options, &AtomicBool::new(false), &Progress::default())
 }

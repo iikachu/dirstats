@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! What shows before there is a tree: the location picker and scan progress.
 
 use dirstats_core::format;
@@ -102,7 +101,8 @@ impl Gui {
                     weak,
                 );
                 // Fill bar for used space, like a Finder or Explorer drive row.
-                let bar = egui::Rect::from_min_max(egui::pos2(right - 160.0, row_rect.max.y - 16.0), egui::pos2(right, row_rect.max.y - 10.0));
+                let bar =
+                    egui::Rect::from_min_max(egui::pos2(right - 160.0, row_rect.max.y - 16.0), egui::pos2(right, row_rect.max.y - 10.0));
                 painter.rect_filled(bar, 2.0, child.visuals().faint_bg_color);
                 let mut filled = bar;
                 filled.set_width(bar.width() * (format::percent(used, total) / 100.0) as f32);
@@ -146,12 +146,7 @@ impl Gui {
             Some(scan) => (
                 "Scanning".to_string(),
                 scan.root.display().to_string(),
-                format!(
-                    "{} entries · {} skipped · {:.1}s",
-                    scan.entries(),
-                    scan.errors(),
-                    scan.started.elapsed().as_secs_f64()
-                ),
+                format!("{} entries · {} skipped · {:.1}s", scan.entries(), scan.errors(), scan.started.elapsed().as_secs_f64()),
             ),
             None => ("No scan".to_string(), String::new(), self.app.message.clone().unwrap_or_default()),
         };
@@ -171,8 +166,10 @@ impl Gui {
         if self.app.scan.is_some() && self.full_disk_access == Some(false) {
             child.add_space(12.0);
             child.label(
-                egui::RichText::new("If the count stops, macOS is probably asking for permission in a dialog, possibly behind this window.")
-                    .color(child.visuals().weak_text_color()),
+                egui::RichText::new(
+                    "If the count stops, macOS is probably asking for permission in a dialog, possibly behind this window.",
+                )
+                .color(child.visuals().weak_text_color()),
             );
         }
     }

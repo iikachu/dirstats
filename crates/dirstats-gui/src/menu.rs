@@ -6,7 +6,6 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! The context menu shared by the tree and the treemap, and the rows it is built from.
 
 use dirstats_core::NodeId;
@@ -170,7 +169,8 @@ pub(super) fn node_menu(
                 }
             }
             // Only reachable with the trash feature: nothing else trashes.
-            TrashState::CanPutBack => {
+            TrashState::CanPutBack =>
+            {
                 #[cfg(feature = "trash")]
                 if menu_item(ui, Some(icons::Glyph::Undo), "Put Back", false).clicked() {
                     action = Some(NodeAction::PutBack);
@@ -327,10 +327,9 @@ mod tests {
                 .shapes
                 .iter()
                 .filter_map(|clipped| match &clipped.shape {
-                    egui::Shape::Text(text) => Some(Painted {
-                        text: text.galley.text().to_owned(),
-                        rect: text.galley.rect.translate(text.pos.to_vec2()),
-                    }),
+                    egui::Shape::Text(text) => {
+                        Some(Painted { text: text.galley.text().to_owned(), rect: text.galley.rect.translate(text.pos.to_vec2()) })
+                    }
                     _ => None,
                 })
                 .collect();

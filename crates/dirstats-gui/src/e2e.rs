@@ -75,8 +75,8 @@ fn wait_for_scan(harness: &mut Harness<'_, Gui>, limit: Duration) {
 
 /// Save the current frame where CI picks it up.
 fn screenshot(harness: &mut Harness<'_, Gui>, name: &str) {
-    let dir = std::env::var_os("DIRSTATS_E2E_OUT")
-        .map_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/e2e"), PathBuf::from);
+    let dir =
+        std::env::var_os("DIRSTATS_E2E_OUT").map_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/e2e"), PathBuf::from);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}-{}.png", std::env::consts::OS));
     harness.render().expect("offscreen render").save(&path).unwrap();
@@ -200,7 +200,12 @@ fn right_click_at(harness: &mut Harness<'_, Gui>, pos: egui::Pos2) {
     harness.event(egui::Event::PointerMoved(pos));
     harness.step();
     for pressed in [true, false] {
-        harness.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
+        harness.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
         harness.step();
     }
     harness.step();
@@ -218,7 +223,11 @@ fn treemap_point(harness: &Harness<'_, Gui>, name: &str) -> egui::Pos2 {
     let gui = harness.state();
     let tree = gui.app.tree.as_ref().unwrap();
     let map = gui.map.as_ref().expect("a treemap");
-    let item = map.items.iter().find(|item| item.leaf && *tree.node(item.node).name == *std::ffi::OsStr::new(name)).unwrap_or_else(|| panic!("no box for {name}"));
+    let item = map
+        .items
+        .iter()
+        .find(|item| item.leaf && *tree.node(item.node).name == *std::ffi::OsStr::new(name))
+        .unwrap_or_else(|| panic!("no box for {name}"));
     // The map is the only image the size of its layout.
     let size = egui::vec2(map.width as f32, map.height as f32);
     let image = harness

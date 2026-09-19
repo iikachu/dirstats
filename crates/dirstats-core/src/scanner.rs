@@ -10,9 +10,9 @@ use dirstats_scan::scan_with;
 use dirstats_scan::{Progress, ScanOptions, Tree};
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
-use std::sync::Arc;
 use std::time::Instant;
 
 /// Scan `root` on the calling thread, through the same fast paths as
@@ -86,9 +86,7 @@ impl RunningScan {
         match self.receiver.try_recv() {
             Ok(result) => ScanStatus::Done(result),
             Err(TryRecvError::Empty) => ScanStatus::Running,
-            Err(TryRecvError::Disconnected) => {
-                ScanStatus::Done(Err(io::Error::other("scan thread exited without a result")))
-            }
+            Err(TryRecvError::Disconnected) => ScanStatus::Done(Err(io::Error::other("scan thread exited without a result"))),
         }
     }
 }

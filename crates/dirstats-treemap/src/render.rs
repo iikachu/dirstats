@@ -93,10 +93,7 @@ impl TreemapOptions {
     /// Whether faces get cushion geometry: glow shading with settings that
     /// leave a ridge to light.
     fn cushion_shading(&self) -> bool {
-        self.shading == Shading::Glow
-            && self.ambient_light < 1.0
-            && self.height > 0.0
-            && self.scale_factor > 0.0
+        self.shading == Shading::Glow && self.ambient_light < 1.0 && self.height > 0.0 && self.scale_factor > 0.0
     }
 }
 
@@ -211,12 +208,7 @@ impl Treemap {
     ///
     /// If an index is out of range for [`Treemap::items`].
     #[must_use]
-    pub fn shade_leaves(
-        &self,
-        options: &TreemapOptions,
-        bounds: Rect,
-        leaves: impl IntoIterator<Item = (usize, Oklch)>,
-    ) -> Vec<u8> {
+    pub fn shade_leaves(&self, options: &TreemapOptions, bounds: Rect, leaves: impl IntoIterator<Item = (usize, Oklch)>) -> Vec<u8> {
         let (width, height) = (bounds.width().max(0), bounds.height().max(0));
         let mut pixels = vec![0; width as usize * height as usize * 4];
         if bounds.is_empty() {
@@ -237,10 +229,7 @@ impl Treemap {
     pub fn subtree(&self, node: NodeId) -> &[VisibleItem] {
         let Some(start) = self.item_index(node) else { return &[] };
         let depth = self.items[start].depth;
-        let end = self.items[start + 1..]
-            .iter()
-            .position(|item| item.depth <= depth)
-            .map_or(self.items.len(), |n| start + 1 + n);
+        let end = self.items[start + 1..].iter().position(|item| item.depth <= depth).map_or(self.items.len(), |n| start + 1 + n);
         &self.items[start..end]
     }
 }
@@ -278,9 +267,7 @@ impl ExtensionColors {
         let ranked: Vec<_> = ranked
             .into_iter()
             .enumerate()
-            .map(|(i, (ext, total))| {
-                (ext, total, Oklch::new(PALETTE_LIGHTNESS, PALETTE_CHROMA, (i as f64 * GOLDEN_ANGLE) % 360.0))
-            })
+            .map(|(i, (ext, total))| (ext, total, Oklch::new(PALETTE_LIGHTNESS, PALETTE_CHROMA, (i as f64 * GOLDEN_ANGLE) % 360.0)))
             .collect();
         let colors = ranked.iter().map(|(ext, _, color)| (ext.clone(), *color)).collect();
         Self { colors, ranked, directory: Oklch::grey(PALETTE_LIGHTNESS) }
@@ -439,14 +426,7 @@ pub fn render(
     let ridge_height = options.height * GLOW_RIDGE;
     let mut weights = Vec::new();
     let mut regions = Vec::new();
-    let mut stack = vec![DrawState {
-        surface: [0.0; 4],
-        rect: bounds,
-        node: root,
-        ridge_height,
-        as_root: true,
-        depth: 0,
-    }];
+    let mut stack = vec![DrawState { surface: [0.0; 4], rect: bounds, node: root, ridge_height, as_root: true, depth: 0 }];
 
     while let Some(mut state) = stack.pop() {
         items.push(VisibleItem { node: state.node, rect: state.rect, depth: state.depth, leaf: true, surface: [0.0; 4] });
@@ -534,14 +514,7 @@ fn leaf_job(rect: Rect, surface: &[f64; 4], color: Oklch, options: &TreemapOptio
 
 impl<'a> Canvas<'a> {
     fn new(width: u32, height: u32, options: &'a TreemapOptions) -> Self {
-        Self {
-            width,
-            height,
-            pixels: vec![255; width as usize * height as usize * 4],
-            options,
-            light: light_of(options),
-            jobs: Vec::new(),
-        }
+        Self { width, height, pixels: vec![255; width as usize * height as usize * 4], options, light: light_of(options), jobs: Vec::new() }
     }
 
     fn finish(mut self, items: Vec<VisibleItem>) -> Treemap {
@@ -676,10 +649,7 @@ mod tests {
         for (name, size) in [("a.rs", 5000), ("b.rs", 4000), ("c.png", 3000), ("d.txt", 100), ("e", 50)] {
             std::fs::write(dir.path().join(name), vec![0u8; size]).unwrap();
         }
-        let options = dirstats_scan::ScanOptions {
-            size_metric: dirstats_scan::SizeMetric::Apparent,
-            ..Default::default()
-        };
+        let options = dirstats_scan::ScanOptions { size_metric: dirstats_scan::SizeMetric::Apparent, ..Default::default() };
         let tree = dirstats_scan::scan(dir.path(), &options).unwrap();
         let colors = ExtensionColors::rank(&tree);
         assert_eq!(colors.len(), 4, "rs, png, txt and no extension");
@@ -703,21 +673,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), vec![0u8; 30_000]).unwrap();
         std::fs::write(dir.path().join("b.bin"), vec![0u8; 10_000]).unwrap();
-        let options = dirstats_scan::ScanOptions {
-            size_metric: dirstats_scan::SizeMetric::Apparent,
-            ..Default::default()
-        };
+        let options = dirstats_scan::ScanOptions { size_metric: dirstats_scan::SizeMetric::Apparent, ..Default::default() };
         let tree = dirstats_scan::scan(dir.path(), &options).unwrap();
         let colors = ExtensionColors::rank(&tree);
         for style in [Style::Rows, Style::Squarified] {
-            let map = render(
-                &tree,
-                tree.root(),
-                64,
-                48,
-                &TreemapOptions { style, ..Default::default() },
-                |t, id| colors.color(t, id),
-            );
+            let map = render(&tree, tree.root(), 64, 48, &TreemapOptions { style, ..Default::default() }, |t, id| colors.color(t, id));
             assert_eq!(map.pixels.len(), 64 * 48 * 4);
             assert_eq!(map.items.len(), 3);
             let hit = map.hit_test(1, 1).unwrap();

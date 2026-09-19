@@ -6,11 +6,10 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-
 //! The entry list: the zoom directory's row, the expandable tree under it and keyboard navigation.
 
-use dirstats_core::{NodeId, format};
 use dirstats_core::treemap::render::{ExtensionColors, ExtensionMix};
+use dirstats_core::{NodeId, format};
 use eframe::egui::{self, Color32, Key, Sense};
 
 use crate::menu::{NodeAction, TrashState, node_menu, zoom_label};
@@ -20,7 +19,15 @@ use crate::{Gui, Highlight, Selection, format_time, icons};
 /// A node's share of its parent (`share`, in percent) as a bar on `track`, the filled part
 /// split into the largest extensions below the node in their treemap
 /// colours. The tail of smaller extensions stays in the plain bar colour.
-fn share_bar(ui: &egui::Ui, bar: egui::Rect, track: Color32, palette: Option<(&ExtensionMix, &ExtensionColors)>, id: NodeId, share: f64, size: u64) {
+fn share_bar(
+    ui: &egui::Ui,
+    bar: egui::Rect,
+    track: Color32,
+    palette: Option<(&ExtensionMix, &ExtensionColors)>,
+    id: NodeId,
+    share: f64,
+    size: u64,
+) {
     ui.painter().rect_filled(bar, 2.0, track);
     let mut filled = bar;
     filled.set_width(bar.width() * (share / 100.0) as f32);
@@ -416,10 +423,8 @@ impl Gui {
 
                     // Name column: indent, expander, then a truncating label clipped to the column.
                     let name_cell = cell(edges[0], edges[1]);
-                    let expander_rect = egui::Rect::from_min_size(
-                        egui::pos2(edges[0] + pad + indent * depth as f32, top),
-                        egui::vec2(18.0, row_height),
-                    );
+                    let expander_rect =
+                        egui::Rect::from_min_size(egui::pos2(edges[0] + pad + indent * depth as f32, top), egui::vec2(18.0, row_height));
                     if is_dir {
                         let glyph = if self.app.expanded.contains(&id) { icons::Glyph::ExpandMore } else { icons::Glyph::ChevronRight };
                         let response = ui.interact(expander_rect, ui.id().with(("expander", id)), Sense::click());
@@ -436,7 +441,8 @@ impl Gui {
                     if node.error {
                         name.push_str("  !");
                     }
-                    let label_rect = egui::Rect::from_min_max(egui::pos2(expander_rect.max.x + 2.0, top), egui::pos2(name_cell.max.x - pad, bottom));
+                    let label_rect =
+                        egui::Rect::from_min_max(egui::pos2(expander_rect.max.x + 2.0, top), egui::pos2(name_cell.max.x - pad, bottom));
                     // A small cloud after the name for iCloud items, crossed out
                     // when only a placeholder is on disk. The truncating label
                     // would take the whole cell, so its room is held back first.
@@ -448,7 +454,8 @@ impl Gui {
                     let icon_room = if glyph.is_some() { 18.0 } else { 0.0 };
                     let text_rect = egui::Rect::from_min_max(label_rect.min, egui::pos2(label_rect.max.x - icon_room, bottom));
                     if text_rect.width() > 4.0 {
-                        let mut name_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                        let mut name_ui = ui
+                            .new_child(egui::UiBuilder::new().max_rect(text_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
                         name_ui.set_clip_rect(text_rect.intersect(ui.clip_rect()));
                         let mut rich = egui::RichText::new(name).color(text);
                         if trashed {

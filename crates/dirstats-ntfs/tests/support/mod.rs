@@ -43,9 +43,7 @@ pub fn fixture(root: &Path, files: usize) -> PathBuf {
 
 /// The node at `path` (relative to the tree's root), found by name.
 pub fn find(tree: &Tree, path: &Path) -> Option<NodeId> {
-    path.components().try_fold(tree.root(), |id, part| {
-        tree.children(id).iter().copied().find(|&c| *tree.node(c).name == *part.as_os_str())
-    })
+    path.components().try_fold(tree.root(), |id, part| tree.children(id).iter().copied().find(|&c| *tree.node(c).name == *part.as_os_str()))
 }
 
 /// Flush the modified list and empty Windows' standby list so the next
@@ -56,8 +54,7 @@ pub fn purge_standby_list() {
     use std::ffi::c_void;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LUID};
     use windows_sys::Win32::Security::{
-        AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED,
-        TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
+        AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
     };
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -76,10 +73,8 @@ pub fn purge_standby_list() {
         let name: Vec<u16> = "SeProfileSingleProcessPrivilege\0".encode_utf16().collect();
         let mut luid = LUID { LowPart: 0, HighPart: 0 };
         assert!(LookupPrivilegeValueW(std::ptr::null(), name.as_ptr(), &mut luid) != 0);
-        let privileges = TOKEN_PRIVILEGES {
-            PrivilegeCount: 1,
-            Privileges: [LUID_AND_ATTRIBUTES { Luid: luid, Attributes: SE_PRIVILEGE_ENABLED }],
-        };
+        let privileges =
+            TOKEN_PRIVILEGES { PrivilegeCount: 1, Privileges: [LUID_AND_ATTRIBUTES { Luid: luid, Attributes: SE_PRIVILEGE_ENABLED }] };
         let adjusted = AdjustTokenPrivileges(token, 0, &privileges, 0, std::ptr::null_mut(), std::ptr::null_mut());
         CloseHandle(token);
         assert!(adjusted != 0, "cannot enable SeProfileSingleProcessPrivilege (elevated?)");

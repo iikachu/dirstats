@@ -151,13 +151,8 @@ impl Table {
                 ATTRIBUTE_FILE_NAME if !non_resident => {
                     let value = resident_value(attribute)?;
                     let units = usize::from(*value.get(64)?);
-                    let name: Vec<u16> = value
-                        .get(66..66 + units * 2)?
-                        .as_chunks::<2>()
-                        .0
-                        .iter()
-                        .map(|&pair| u16::from_le_bytes(pair))
-                        .collect();
+                    let name: Vec<u16> =
+                        value.get(66..66 + units * 2)?.as_chunks::<2>().0.iter().map(|&pair| u16::from_le_bytes(pair)).collect();
                     let dot = u16::from(b'.');
                     if *value.get(65)? != NAME_DOS_ONLY && name != [dot] && name != [dot, dot] {
                         let parent = u64_at(value, 0)? & 0xFFFF_FFFF_FFFF;
@@ -233,11 +228,8 @@ fn parse_data(entry: &mut Record, attribute: &[u8], non_resident: bool) -> Optio
         let name = attribute.get(name_offset..name_offset + name_units * 2)?;
         let is_wof = name.as_chunks::<2>().0.iter().map(|&pair| u16::from_le_bytes(pair)).eq("WofCompressedData".encode_utf16());
         if is_wof && first_piece {
-            entry.wof_physical_size = Some(if non_resident {
-                u64_at(attribute, 40)?
-            } else {
-                resident_sizes(attribute)?.next_multiple_of(8)
-            });
+            entry.wof_physical_size =
+                Some(if non_resident { u64_at(attribute, 40)? } else { resident_sizes(attribute)?.next_multiple_of(8) });
         }
         return Some(());
     }
@@ -249,11 +241,7 @@ fn parse_data(entry: &mut Record, attribute: &[u8], non_resident: bool) -> Optio
     } else if first_piece {
         entry.logical_size = Some(u64_at(attribute, 48)?);
         let flags = u16_at(attribute, 12)?;
-        let physical = if flags & (ATTRIBUTE_COMPRESSED | ATTRIBUTE_SPARSE) != 0 {
-            u64_at(attribute, 64)?
-        } else {
-            u64_at(attribute, 40)?
-        };
+        let physical = if flags & (ATTRIBUTE_COMPRESSED | ATTRIBUTE_SPARSE) != 0 { u64_at(attribute, 64)? } else { u64_at(attribute, 40)? };
         if physical > 0 {
             entry.physical_size = Some(physical);
         }
@@ -310,11 +298,7 @@ fn node(name: Box<std::ffi::OsStr>, parent: Option<NodeId>, record: &Record) -> 
         parent,
         kind,
         apparent_size: if is_directory { 0 } else { record.logical_size.unwrap_or(0) },
-        allocated_size: if is_directory {
-            0
-        } else {
-            record.wof_physical_size.or(record.physical_size).unwrap_or(0)
-        },
+        allocated_size: if is_directory { 0 } else { record.wof_physical_size.or(record.physical_size).unwrap_or(0) },
         file_count: u64::from(!is_directory),
         dir_count: 0,
         modified: record.modified.and_then(system_time),
@@ -457,34 +441,69 @@ mod tests {
             (5, record(dir, 0, &[file_name(5, ".", 3)])),
             (40, record(dir, 0, &[file_name(5, "docs", 1)])),
             // Resident data, with an 8.3 alias that must not show up.
-            (41, record(in_use, 0, &[
-                standard_information(modified),
-                file_name(40, "LONGNA~1.TXT", NAME_DOS_ONLY),
-                file_name(40, "long name.txt", 1),
-                attribute(ATTRIBUTE_DATA, false, 0, "", &[1; 13]),
-            ])),
+            (
+                41,
+                record(
+                    in_use,
+                    0,
+                    &[
+                        standard_information(modified),
+                        file_name(40, "LONGNA~1.TXT", NAME_DOS_ONLY),
+                        file_name(40, "long name.txt", 1),
+                        attribute(ATTRIBUTE_DATA, false, 0, "", &[1; 13]),
+                    ],
+                ),
+            ),
             // Hard linked, its data attribute held by an extension record.
             (42, record(in_use, 0, &[file_name(5, "big.bin", 3), file_name(40, "link.bin", 3)])),
-            (43, record(in_use, 42, &[
-                attribute(ATTRIBUTE_DATA, true, 0, "", &non_resident(0, 8192, 5000, 0)),
-                attribute(ATTRIBUTE_DATA, true, 0, "", &non_resident(2, 0, 0, 0)),
-            ])),
+            (
+                43,
+                record(
+                    in_use,
+                    42,
+                    &[
+                        attribute(ATTRIBUTE_DATA, true, 0, "", &non_resident(0, 8192, 5000, 0)),
+                        attribute(ATTRIBUTE_DATA, true, 0, "", &non_resident(2, 0, 0, 0)),
+                    ],
+                ),
+            ),
             // Sparse: the compressed size is what is allocated.
-            (44, record(in_use, 0, &[
-                file_name(5, "sparse", 1),
-                attribute(ATTRIBUTE_DATA, true, ATTRIBUTE_SPARSE, "", &non_resident(0, 1 << 20, 1 << 20, 4096)),
-            ])),
+            (
+                44,
+                record(
+                    in_use,
+                    0,
+                    &[
+                        file_name(5, "sparse", 1),
+                        attribute(ATTRIBUTE_DATA, true, ATTRIBUTE_SPARSE, "", &non_resident(0, 1 << 20, 1 << 20, 4096)),
+                    ],
+                ),
+            ),
             // Overlay-compressed: the named stream holds the real data.
-            (45, record(in_use, 0, &[
-                file_name(5, "wof.exe", 1),
-                attribute(ATTRIBUTE_DATA, true, ATTRIBUTE_SPARSE, "", &non_resident(0, 65536, 60000, 0)),
-                attribute(ATTRIBUTE_DATA, true, 0, "WofCompressedData", &non_resident(0, 16384, 15000, 0)),
-                attribute(ATTRIBUTE_DATA, false, 0, "Zone.Identifier", &[0; 26]),
-            ])),
-            (46, record(dir, 0, &[
-                file_name(5, "junction", 1),
-                attribute(ATTRIBUTE_REPARSE_POINT, false, 0, "", &REPARSE_TAG_MOUNT_POINT.to_le_bytes()),
-            ])),
+            (
+                45,
+                record(
+                    in_use,
+                    0,
+                    &[
+                        file_name(5, "wof.exe", 1),
+                        attribute(ATTRIBUTE_DATA, true, ATTRIBUTE_SPARSE, "", &non_resident(0, 65536, 60000, 0)),
+                        attribute(ATTRIBUTE_DATA, true, 0, "WofCompressedData", &non_resident(0, 16384, 15000, 0)),
+                        attribute(ATTRIBUTE_DATA, false, 0, "Zone.Identifier", &[0; 26]),
+                    ],
+                ),
+            ),
+            (
+                46,
+                record(
+                    dir,
+                    0,
+                    &[
+                        file_name(5, "junction", 1),
+                        attribute(ATTRIBUTE_REPARSE_POINT, false, 0, "", &REPARSE_TAG_MOUNT_POINT.to_le_bytes()),
+                    ],
+                ),
+            ),
             // Deleted: not in use.
             (47, record(0, 0, &[file_name(5, "deleted", 1)])),
         ]);

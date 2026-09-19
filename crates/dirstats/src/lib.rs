@@ -11,10 +11,10 @@
 
 pub use dirstats_core as core;
 pub use dirstats_core::{scan, treemap};
-#[cfg(feature = "tui")]
-pub use dirstats_tui as tui;
 #[cfg(feature = "gui")]
 pub use dirstats_gui as gui;
+#[cfg(feature = "tui")]
+pub use dirstats_tui as tui;
 
 pub mod session;
 

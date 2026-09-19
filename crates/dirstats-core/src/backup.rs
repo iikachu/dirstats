@@ -62,8 +62,7 @@ pub fn is_backup_volume(root: &Path) -> bool {
 fn is_dated(name: &str, ext: &str) -> bool {
     let Some(stem) = name.strip_suffix(ext) else { return false };
     let b = stem.as_bytes();
-    b.len() == 17
-        && b.iter().enumerate().all(|(i, c)| if matches!(i, 4 | 7 | 10) { *c == b'-' } else { c.is_ascii_digit() })
+    b.len() == 17 && b.iter().enumerate().all(|(i, c)| if matches!(i, 4 | 7 | 10) { *c == b'-' } else { c.is_ascii_digit() })
 }
 
 /// Mount point of the volume holding `path`: from `statfs` on macOS, and
