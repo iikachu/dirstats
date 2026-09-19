@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // by dirstats contributors
 
-//! Permanent deletion on Windows and Linux, bypassing the trash.
+//! Permanent deletion, bypassing the trash.
 //!
 //! The tree is not re-enumerated: the scan already knows every path, so
 //! the worker walks the scanned nodes, removes files first and then
@@ -11,8 +11,9 @@
 //! and confirm each deletion themselves.
 //!
 //! Front ends start one with `App::delete_node_permanently` and adopt the
-//! result with `App::poll_delete` each tick; both exist on Windows and
-//! Linux only, where the trash can refuse items.
+//! result with `App::poll_delete` each tick; both exist on Windows, Linux
+//! and macOS. The GUI only offers them on Windows and Linux, where the
+//! trash can refuse items; on macOS they are for other front ends.
 //!
 //! Programs without an [`App`](crate::App) call [`delete_permanently`]
 //! with a path, on any platform. It checks [`crate::check_removable`]
@@ -193,7 +194,7 @@ fn run(files: Vec<PathBuf>, dirs: Vec<PathBuf>, done: &AtomicU64, cancel: &Atomi
 }
 
 /// Remove a file or link, clearing read-only, hidden and system attributes
-/// and retrying when the first attempt is refused, then falling back to
+/// (Windows) or the locked and append-only flags (macOS) and retrying when the first attempt is refused, then falling back to
 /// delete-on-close, which also handles files opened with delete sharing.
 fn remove_file_force(path: &Path) -> io::Result<()> {
     let first = match std::fs::remove_file(path) {
@@ -212,7 +213,7 @@ fn remove_file_force(path: &Path) -> io::Result<()> {
     sys::delete_on_close(path).map_err(|_| first)
 }
 
-/// Remove an emptied directory, clearing its attributes first when refused.
+/// Remove an emptied directory, clearing its attributes or flags when refused.
 fn remove_dir_force(path: &Path) -> io::Result<()> {
     match std::fs::remove_dir(path) {
         Ok(()) => Ok(()),
@@ -223,10 +224,10 @@ fn remove_dir_force(path: &Path) -> io::Result<()> {
     }
 }
 
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 impl crate::App {
     /// Start deleting `id` permanently on a worker thread, bypassing the
-    /// Recycle Bin. Refused unless [`crate::App::permanent_delete`] is on. Only
+    /// trash. Refused unless [`crate::App::permanent_delete`] is on. Only
     /// one deletion runs at a time. The front end is expected to have
     /// confirmed with the user; nothing here asks.
     pub fn delete_node_permanently(&mut self, id: NodeId) -> io::Result<()> {
@@ -352,9 +353,48 @@ mod sys {
     }
 }
 
+/// Finder's Locked checkbox sets the user immutable flag, which makes
+/// `unlink` fail with `EPERM` even for the owner; append-only does the
+/// same. Only the item's own flags are cleared, never its parent's, so a
+/// locked folder still keeps its contents, as it does in the Finder. The
+/// system flags need root and are left alone.
+#[cfg(target_os = "macos")]
+mod sys {
+    use std::ffi::CString;
+    use std::io;
+    use std::os::macos::fs::MetadataExt;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+
+    // In libSystem, but not bound by the libc crate.
+    unsafe extern "C" {
+        fn lchflags(path: *const libc::c_char, flags: libc::c_uint) -> libc::c_int;
+    }
+
+    /// Clear `uchg` and `uappnd`. Returns whether anything changed.
+    pub fn clear_protective_attributes(path: &Path) -> io::Result<bool> {
+        const PROTECTIVE: u32 = libc::UF_IMMUTABLE | libc::UF_APPEND;
+        let flags = std::fs::symlink_metadata(path)?.st_flags();
+        if flags & PROTECTIVE == 0 {
+            return Ok(false);
+        }
+        let c_path = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
+        // SAFETY: `c_path` is NUL-terminated and outlives the call. lchflags
+        // changes a link itself, never what it points at.
+        if unsafe { lchflags(c_path.as_ptr(), flags & !PROTECTIVE) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(true)
+    }
+
+    pub fn delete_on_close(path: &Path) -> io::Result<()> {
+        std::fs::remove_file(path)
+    }
+}
+
 /// Elsewhere the retries are no-ops; the module exists so the walker can be
 /// unit-tested on any platform.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 mod sys {
     use std::io;
     use std::path::Path;
@@ -472,6 +512,26 @@ mod tests {
         assert!(delete_permanently(&dir.path().join("toplink")).unwrap().failures.is_empty());
         assert!(!dir.path().join("victim").exists() && !dir.path().join("toplink").exists());
         assert!(dir.path().join("target/file").exists(), "link target must survive");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn locked_files_are_unlocked_and_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("d")).unwrap();
+        fs::write(dir.path().join("d/locked"), b"x").unwrap();
+        fs::write(dir.path().join("d/appendonly"), b"y").unwrap();
+        let chflags = |flags, name: &str| {
+            let status = std::process::Command::new("chflags").arg(flags).arg(dir.path().join(name)).status().unwrap();
+            assert!(status.success());
+        };
+        chflags("uchg", "d/locked");
+        chflags("uappnd", "d/appendonly");
+        assert!(fs::remove_file(dir.path().join("d/locked")).is_err(), "uchg must block a plain unlink");
+        let outcome = delete_permanently(&dir.path().join("d")).unwrap();
+        assert!(outcome.failures.is_empty(), "{:?}", outcome.failures);
+        assert_eq!(outcome.removed, 3);
+        assert!(!dir.path().join("d").exists());
     }
 
     #[test]

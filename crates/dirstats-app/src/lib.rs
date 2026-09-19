@@ -67,7 +67,7 @@ pub struct App {
     /// the trashed item's path on macOS, its trash entry's id elsewhere.
     /// Their descendants count as trashed too.
     pub trashed: foldhash::HashMap<NodeId, Option<PathBuf>>,
-    /// Nodes deleted permanently since the last scan (Windows). Their
+    /// Nodes deleted permanently since the last scan. Their
     /// descendants count as deleted too.
     pub deleted: foldhash::HashSet<NodeId>,
     /// Nodes whose iCloud download was removed since the scan; their
@@ -75,7 +75,7 @@ pub struct App {
     pub evicted: foldhash::HashSet<NodeId>,
     /// Permanent deletion in progress, if any. Front ends call
     /// [`App::poll_delete`] each tick to adopt the outcome.
-    #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+    #[cfg(all(any(windows, target_os = "linux", target_os = "macos"), feature = "delete"))]
     pub delete: Option<RunningDelete>,
     /// Set by the permanent-delete gate for this run only; never saved.
     permanent_delete: bool,
@@ -92,11 +92,12 @@ impl App {
         Self { options, ..Self::default() }
     }
 
-    /// Whether permanent deletion is offered; only on Windows and Linux,
-    /// where the trash can refuse items, and only once the gate is passed.
+    /// Whether permanent deletion is allowed: once the gate is passed, on
+    /// Windows, Linux and macOS. The GUI only offers the gate on Windows and
+    /// Linux, where the trash can refuse items.
     #[must_use]
     pub fn permanent_delete(&self) -> bool {
-        cfg!(any(windows, target_os = "linux")) && self.permanent_delete
+        cfg!(any(windows, target_os = "linux", target_os = "macos")) && self.permanent_delete
     }
 
     /// Pass the permanent-delete gate until the app quits.

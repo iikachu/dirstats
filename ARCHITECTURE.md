@@ -18,7 +18,7 @@ a front end.
 | Layout | `dirstats-treemap` (`layout`) | GPL-3.0-or-later | Rows, squarified, Hilbert, Moore |
 | Render | `dirstats-treemap` (`render`) | GPL-3.0-or-later | Cushion shading, colour schemes, hit testing, frames and labels |
 | NTFS | `dirstats-ntfs` | GPL-3.0-or-later | Whole-volume scan from the master file table (Windows, needs administrator rights); walks with `dirstats-scan` otherwise |
-| App | `dirstats-app` | GPL-3.0-or-later | The library front ends and other programs use: state (current scan, selection, zoom, sort), the worker threads for scans and permanent deletes, and file actions (open, reveal, trash, put back, iCloud evict; on Windows and Linux also gated permanent delete). Re-exports `dirstats-scan` as `scan` and `dirstats-treemap` as `treemap` |
+| App | `dirstats-app` | GPL-3.0-or-later | The library front ends and other programs use: state (current scan, selection, zoom, sort), the worker threads for scans and permanent deletes, and file actions (open, reveal, trash, put back, iCloud evict, gated permanent delete). Re-exports `dirstats-scan` as `scan` and `dirstats-treemap` as `treemap` |
 | Front end | `dirstats-tui`, `dirstats-gui` | GPL-3.0-or-later | Presentation and input only; no scanning or layout logic |
 | Binary | `dirstats` (`src/main.rs`) | GPL-3.0-or-later | CLI parsing, picks a front end by feature flag |
 
@@ -78,10 +78,10 @@ Per-crate features:
 - `dirstats-app`: `open`, `trash`, `delete`, `icloud`, `ntfs-mft`; none by
   default. `ntfs-mft` pulls in `dirstats-ntfs` on Windows only; without it Windows walks
   directories like every other platform.
-  `trash` and `delete` are independent. In the app, `delete` only does
-  anything on Windows and Linux, so the macOS GUI and TUI without `trash`
-  cannot remove files; the library function `delete::delete_permanently`
-  works on every platform.
+  `trash` and `delete` are independent. `App`'s permanent delete exists
+  on Windows, Linux and macOS, and `delete::delete_permanently` on every
+  platform, but the GUI only offers it on Windows and Linux, so the macOS
+  GUI and TUI without `trash` cannot remove files.
 - `dirstats-gui`: forwards those, plus `egui-fonts` and `e2e` (headless
   end-to-end tests, CI only).
 - `dirstats-tui`: forwards `open`, `trash` and `ntfs-mft`.
@@ -146,8 +146,9 @@ largest entries and, with `--trash`, moves them to the trash.
   confirmation, progress and failure report; the trash path stays with the
   trash crate, which refuses rather than nukes items the Recycle Bin or a
   Linux mount without a writable `.Trash-$UID` folder cannot take, and the
-  refusal offers permanent delete as the next step. macOS is deliberately
-  left out: the Finder trash accepts items on every local and most network
+  refusal offers permanent delete as the next step. The macOS GUI
+  deliberately leaves it out, though the library has it (clearing
+  Finder's Locked flag where needed): the Finder trash accepts items on every local and most network
   volumes, so the escape hatch would only add a way to lose data, and Time
   Machine snapshots are guarded separately (`backup::BLOCKS_TRASH`).
 
