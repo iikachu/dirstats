@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // by dirstats contributors
 
+//! The `dirstats` binary: parses the command line and hands it to the
+//! `dirstats` library.
+
 use clap::Parser;
 use dirstats::Cli;
 use std::process::ExitCode;
@@ -16,6 +19,7 @@ fn main() -> ExitCode {
     }
 }
 
+/// `--png` wins over `--summary`, which wins over an interface.
 fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "png")]
     if let Some(out) = &cli.png {
@@ -29,7 +33,9 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Picks the interface. --tui and --gui decide outright. Otherwise the
 /// window is used when the session looks graphical, the terminal when it
-/// does not, and the terminal again if the window then fails to open.
+/// does not (or a printed summary when there is no terminal either), and
+/// the terminal again, if there is one, when the window then fails to
+/// open, except on Windows.
 #[cfg(all(feature = "gui", feature = "tui"))]
 fn front_end(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     use dirstats::session;

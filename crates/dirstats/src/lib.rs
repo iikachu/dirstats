@@ -22,6 +22,7 @@ use clap::{Parser, ValueEnum};
 use dirstats_app::{ScanOptions, SizeMetric};
 use std::path::{Component, Path, PathBuf};
 
+/// `--metric`: which [`SizeMetric`] the scan sorts and weighs by.
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 pub enum Metric {
     /// Bytes allocated on disk.
@@ -40,13 +41,17 @@ impl From<Metric> for SizeMetric {
     }
 }
 
+/// `--layout`: the treemap layout for `--png`.
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 pub enum LayoutStyle {
+    /// KDirStat-style rows.
     Rows,
+    /// Tiles kept close to square.
     #[default]
     Squarified,
 }
 
+/// `--shading`: the treemap shading for `--png`.
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
 pub enum ShadingStyle {
     /// Softly lit cushions with a broad highlight.
@@ -56,6 +61,7 @@ pub enum ShadingStyle {
     Flat,
 }
 
+/// Command-line options.
 #[derive(Debug, Parser)]
 #[command(name = "dirstats", version, about)]
 pub struct Cli {
@@ -101,6 +107,7 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// Scan options from the flags; `--threads 0` counts as 1.
     #[must_use]
     pub fn scan_options(&self) -> ScanOptions {
         let mut options = ScanOptions {
@@ -146,7 +153,8 @@ fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-/// Scan synchronously and print the largest entries under the root.
+/// Scan synchronously and print a totals line and the 20 largest entries
+/// under the root.
 pub fn print_summary(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
     let tree = dirstats_app::scanner::scan(cli.scan_root()?, &cli.scan_options())?;
@@ -164,7 +172,7 @@ pub fn print_summary(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Scan synchronously and write a cushion treemap PNG.
+/// Scan synchronously and write a 1600 × 1000 cushion treemap PNG to `out`.
 #[cfg(feature = "png")]
 pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     use dirstats_app::treemap::render::{ExtensionColors, render};
@@ -193,7 +201,9 @@ pub fn write_png(cli: &Cli, out: &std::path::Path) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-/// Start the graphical interface.
+/// Start the graphical interface and return when its window closes. A scan
+/// starts at once only when a path was given; otherwise the window offers
+/// places to pick from.
 #[cfg(feature = "gui")]
 pub fn run_gui(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = dirstats_app::App::new(cli.scan_options());
@@ -204,7 +214,8 @@ pub fn run_gui(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Start the interactive terminal interface.
+/// Start the interactive terminal interface, scanning the path given or
+/// the current directory, and return when it quits.
 #[cfg(feature = "tui")]
 pub fn run_tui(cli: &Cli) -> std::io::Result<()> {
     let mut app = dirstats_app::App::new(cli.scan_options());
