@@ -13,6 +13,7 @@ use dirstats_core::{NodeId, format};
 use eframe::egui;
 
 use crate::Gui;
+use crate::icons::{self, Glyph};
 use crate::menu::TRASH_NAME;
 
 /// When permanent delete is the way forward.
@@ -47,6 +48,79 @@ pub(super) enum Dialog {
     Report { path: std::path::PathBuf, outcome: dirstats_core::DeleteOutcome },
 }
 
+/// Width of every dialog: a compact utility panel, not a document.
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+const WIDTH: f32 = 380.0;
+
+/// The frame of a utility dialog: tight margins and small corners, like the
+/// system's own alerts rather than a floating card.
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+fn frame(ctx: &egui::Context) -> egui::Frame {
+    egui::Frame::window(&ctx.style()).inner_margin(egui::Margin::same(14)).corner_radius(4.0)
+}
+
+/// An alert body: `glyph` on the left in `tint`, then a bold title in body
+/// size and whatever `body` adds, all in one tight column.
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+fn alert(ui: &mut egui::Ui, glyph: Glyph, tint: egui::Color32, title: &str, body: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal_top(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+        icons::paint(ui.painter(), rect, glyph, tint);
+        ui.add_space(6.0);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.label(egui::RichText::new(title).strong());
+            body(ui);
+        });
+    });
+}
+
+/// A two-column table of facts ("Path", "Size"), keys dimmed, values
+/// selectable so a path can be copied.
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+fn facts(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
+    egui::Grid::new(id).num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
+        for (key, value) in rows {
+            ui.label(egui::RichText::new(*key).weak().small());
+            ui.add(egui::Label::new(egui::RichText::new(value).monospace().small()).wrap().selectable(true));
+            ui.end_row();
+        }
+    });
+}
+
+/// The button row under a separator, right-aligned, in reading order
+/// (the last is the default action). Returns which button was clicked.
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+fn buttons(ui: &mut egui::Ui, labels: &[(&str, Style)]) -> Option<usize> {
+    ui.add_space(4.0);
+    ui.separator();
+    let mut clicked = None;
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        ui.spacing_mut().button_padding = egui::vec2(10.0, 3.0);
+        for (i, (label, style)) in labels.iter().enumerate().rev() {
+            let text = egui::RichText::new(*label);
+            let button = match style {
+                Style::Plain => egui::Button::new(text),
+                Style::Default => egui::Button::new(text.strong()),
+                Style::Destructive => egui::Button::new(text.strong().color(egui::Color32::WHITE)).fill(ui.visuals().error_fg_color),
+            };
+            if ui.add(button.min_size(egui::vec2(76.0, 0.0))).clicked() {
+                clicked = Some(i);
+            }
+        }
+    });
+    clicked
+}
+
+/// How a dialog button looks.
+#[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
+#[derive(Clone, Copy)]
+enum Style {
+    Plain,
+    Default,
+    Destructive,
+}
+
 impl Gui {
     /// Open the confirmation for deleting `node` permanently, or explain
     /// why that is refused.
@@ -66,7 +140,6 @@ impl Gui {
     #[cfg(all(any(windows, target_os = "linux"), feature = "delete"))]
     pub(super) fn dialogs(&mut self, ctx: &egui::Context) {
         use egui::{Modal, RichText};
-        const WIDTH: f32 = 440.0;
 
         // A clean deletion only needs the footer message; anything else gets a report.
         if let Some((path, outcome)) = self.app.poll_delete()
@@ -75,21 +148,22 @@ impl Gui {
             self.dialog = Some(Dialog::Report { path, outcome });
         }
 
+        let warn = ctx.style().visuals.warn_fg_color;
+        let error = ctx.style().visuals.error_fg_color;
+
         if let Some(running) = &self.app.delete {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
             let (done, total) = (running.done(), running.total.max(1));
             let path = running.path.display().to_string();
             let mut cancel = false;
-            Modal::new(egui::Id::new("delete-progress")).show(ctx, |ui| {
+            Modal::new(egui::Id::new("delete-progress")).frame(frame(ctx)).show(ctx, |ui| {
                 ui.set_width(WIDTH);
-                ui.heading("Deleting permanently");
-                ui.add(egui::Label::new(RichText::new(path).weak()).truncate());
-                ui.add_space(8.0);
-                ui.add(egui::ProgressBar::new(done as f32 / total as f32).text(format!("{done} of {total} items")));
-                ui.add_space(8.0);
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    cancel = ui.button("Cancel").clicked();
+                alert(ui, Glyph::Delete, error, "Deleting permanently", |ui| {
+                    ui.add(egui::Label::new(RichText::new(path).monospace().small().weak()).truncate());
+                    ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
+                    ui.label(RichText::new(format!("{done} of {total} items")).small().weak());
                 });
+                cancel = buttons(ui, &[("Cancel", Style::Plain)]).is_some();
             });
             if cancel {
                 running.cancel();
@@ -101,92 +175,97 @@ impl Gui {
         let mut next = None;
         let mut confirmed_delete = None;
         let mut enable = None;
-        let response = Modal::new(egui::Id::new("dialog")).show(ctx, |ui| {
+        let response = Modal::new(egui::Id::new("dialog")).frame(frame(ctx)).show(ctx, |ui| {
             ui.set_width(WIDTH);
-            ui.spacing_mut().item_spacing.y = 8.0;
             match &dialog {
                 Dialog::EnablePermanent { then } => {
-                    ui.heading("Enable permanent delete?");
-                    ui.label(format!(
-                        "Files deleted this way skip the {TRASH_NAME} and cannot be recovered. \
-                         Use it for {WHEN}. \
-                         You will be asked to confirm each deletion.",
-                    ));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(RichText::new("Enable").strong()).clicked() {
-                            enable = Some(*then);
-                        }
-                        if ui.button("Cancel").clicked() {
-                            next = Some(None);
-                        }
+                    alert(ui, Glyph::Delete, warn, "Enable permanent delete?", |ui| {
+                        ui.label(format!(
+                            "Items deleted this way skip the {TRASH_NAME} and cannot be recovered. \
+                             Use it for {WHEN}. Each deletion asks first.",
+                        ));
                     });
+                    match buttons(ui, &[("Cancel", Style::Plain), ("Enable", Style::Default)]) {
+                        Some(0) => next = Some(None),
+                        Some(_) => enable = Some(*then),
+                        None => {}
+                    }
                 }
                 Dialog::ConfirmDelete(node) => {
                     let path = self.app.path_of(*node).unwrap_or_default();
                     let tree = self.app.tree.as_ref();
                     let is_dir = tree.is_some_and(|t| !t.children(*node).is_empty());
                     let size = tree.map(|t| format::size(t.size(*node))).unwrap_or_default();
-                    ui.heading(if is_dir { "Delete this folder permanently?" } else { "Delete this file permanently?" });
-                    ui.add(egui::Label::new(RichText::new(path.display().to_string()).strong()).wrap());
                     let count = tree.map(|t| t.node(*node).file_count).unwrap_or_default();
-                    ui.label(RichText::new(if is_dir { format!("{size}, {count} files") } else { size }).weak());
-                    ui.label(
-                        RichText::new(format!("It will not go to the {TRASH_NAME} and cannot be recovered. \
-                                        Links are removed without touching what they point at."))
-                            .color(ui.visuals().error_fg_color),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let delete = egui::Button::new(RichText::new("Delete Permanently").strong().color(ui.visuals().error_fg_color));
-                        if ui.add(delete).clicked() {
-                            confirmed_delete = Some(*node);
+                    let title = if is_dir { "Delete this folder permanently?" } else { "Delete this file permanently?" };
+                    alert(ui, Glyph::Delete, error, title, |ui| {
+                        let mut rows = vec![("Path", path.display().to_string()), ("Size", size)];
+                        if is_dir {
+                            rows.push(("Files", count.to_string()));
                         }
-                        if ui.button("Cancel").clicked() {
-                            next = Some(None);
-                        }
+                        facts(ui, "delete-facts", &rows);
+                        ui.label(
+                            RichText::new(format!("Skips the {TRASH_NAME}; this cannot be undone. \
+                                            Links are removed, not what they point at."))
+                                .small()
+                                .color(error),
+                        );
                     });
+                    match buttons(ui, &[("Cancel", Style::Plain), ("Delete Permanently", Style::Destructive)]) {
+                        Some(0) => next = Some(None),
+                        Some(_) => confirmed_delete = Some(*node),
+                        None => {}
+                    }
                 }
                 #[cfg(feature = "trash")]
-                Dialog::TrashFailed { node, error } => {
+                Dialog::TrashFailed { node, error: reason } => {
                     let path = self.app.path_of(*node).unwrap_or_default();
-                    ui.heading(format!("Couldn't move to the {TRASH_NAME}"));
-                    ui.add(egui::Label::new(RichText::new(path.display().to_string()).strong()).wrap());
-                    ui.label(TRASH_REFUSED);
-                    ui.label(RichText::new(error).weak().small());
+                    alert(ui, Glyph::Delete, warn, &format!("Couldn't move to the {TRASH_NAME}"), |ui| {
+                        ui.label(TRASH_REFUSED);
+                        facts(ui, "trash-facts", &[("Path", path.display().to_string()), ("Error", reason.clone())]);
+                    });
                     let enabled = self.app.permanent_delete();
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let label = if enabled { "Delete Permanently…" } else { "Enable Permanent Delete…" };
-                        if ui.button(RichText::new(label).strong()).clicked() {
+                    let label = if enabled { "Delete Permanently…" } else { "Enable Permanent Delete…" };
+                    match buttons(ui, &[("Cancel", Style::Plain), (label, Style::Default)]) {
+                        Some(0) => next = Some(None),
+                        Some(_) => {
                             next = Some(Some(if enabled {
                                 Dialog::ConfirmDelete(*node)
                             } else {
                                 Dialog::EnablePermanent { then: Some(*node) }
-                            }));
+                            }))
                         }
-                        if ui.button("Cancel").clicked() {
-                            next = Some(None);
-                        }
-                    });
+                        None => {}
+                    }
                 }
                 Dialog::Report { path, outcome } => {
-                    ui.heading(if outcome.cancelled { "Deletion cancelled" } else { "Some items were not deleted" });
-                    ui.add(egui::Label::new(RichText::new(path.display().to_string()).weak()).truncate());
-                    ui.label(format!("{} removed, {} failed.", outcome.removed, outcome.failures.len()));
-                    if !outcome.failures.is_empty() {
-                        ui.label(
-                            RichText::new("Files in use and files needing administrator rights cannot be removed here.").weak(),
-                        );
-                        egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-                            for failure in &outcome.failures {
-                                ui.add(egui::Label::new(RichText::new(failure.path.display().to_string()).monospace().small()).truncate());
-                                ui.add(egui::Label::new(RichText::new(failure.error.to_string()).weak().small()).truncate());
-                            }
-                        });
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("OK").clicked() {
-                            next = Some(None);
+                    let title = if outcome.cancelled { "Deletion cancelled" } else { "Some items were not deleted" };
+                    alert(ui, Glyph::Delete, warn, title, |ui| {
+                        facts(ui, "report-facts", &[
+                            ("Path", path.display().to_string()),
+                            ("Removed", outcome.removed.to_string()),
+                            ("Failed", outcome.failures.len().to_string()),
+                        ]);
+                        if !outcome.failures.is_empty() {
+                            ui.label(RichText::new("Files in use and files needing administrator rights cannot be removed here.").small().weak());
                         }
                     });
+                    if !outcome.failures.is_empty() {
+                        egui::Frame::group(ui.style()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
+                            egui::ScrollArea::vertical().max_height(180.0).auto_shrink([false, true]).show(ui, |ui| {
+                                egui::Grid::new("report-failures").num_columns(2).striped(true).spacing([10.0, 1.0]).show(ui, |ui| {
+                                    for failure in &outcome.failures {
+                                        ui.add(egui::Label::new(RichText::new(failure.path.display().to_string()).monospace().small()).truncate());
+                                        ui.add(egui::Label::new(RichText::new(failure.error.to_string()).weak().small()).truncate());
+                                        ui.end_row();
+                                    }
+                                });
+                            });
+                        });
+                    }
+                    if buttons(ui, &[("OK", Style::Default)]).is_some() {
+                        next = Some(None);
+                    }
                 }
             }
         });
