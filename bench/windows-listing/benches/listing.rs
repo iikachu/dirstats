@@ -406,12 +406,9 @@ fn make_cold(root: &Path) {
             "cannot open {letter}: (elevated?): {}",
             std::io::Error::last_os_error()
         );
-        let mut returned = 0;
-        for (code, what) in [
-            (FSCTL_LOCK_VOLUME, "lock"),
-            (FSCTL_DISMOUNT_VOLUME, "dismount"),
-        ] {
-            let ok = DeviceIoControl(
+        let control = |code| {
+            let mut returned = 0;
+            DeviceIoControl(
                 volume,
                 code,
                 std::ptr::null(),
@@ -420,13 +417,30 @@ fn make_cold(root: &Path) {
                 0,
                 &mut returned,
                 std::ptr::null_mut(),
-            );
+            ) != 0
+        };
+        // The lock fails while any handle on the volume is open. Something
+        // briefly holds one now and then (the walk that just finished, or
+        // Defender scanning the new volume), which failed the nightly on an
+        // unchanged commit, so retry for a few seconds before giving up.
+        let mut attempts = 1;
+        while !control(FSCTL_LOCK_VOLUME) {
+            let error = std::io::Error::last_os_error();
             assert!(
-                ok != 0,
-                "cannot {what} {letter}: (in use, or the system drive?): {}",
-                std::io::Error::last_os_error()
+                attempts < 50,
+                "cannot lock {letter}: after {attempts} attempts (in use, or the system drive?): {error}"
             );
+            attempts += 1;
+            std::thread::sleep(Duration::from_millis(100));
         }
+        if attempts > 1 {
+            eprintln!("locked {letter}: on attempt {attempts}");
+        }
+        assert!(
+            control(FSCTL_DISMOUNT_VOLUME),
+            "cannot dismount {letter}: {}",
+            std::io::Error::last_os_error()
+        );
         CloseHandle(volume);
     }
     purge_standby_list();
